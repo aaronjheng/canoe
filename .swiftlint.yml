@@ -1,0 +1,29 @@
+excluded:
+  - .build
+  - .swiftpm
+  - tools
+
+opt_in_rules:
+  - empty_count
+  - closure_spacing
+  - force_unwrapping
+  - implicitly_unwrapped_optional
+  - redundant_nil_coalescing
+
+disabled_rules:
+  - trailing_comma
+  - nesting
+  - function_body_length
+  - type_body_length
+  - file_length
+  - cyclomatic_complexity
+
+line_length: 140
+type_name:
+  min_length: 2
+identifier_name:
+  min_length: 2
+  max_length: 50
+  excluded:
+    - id
+    - ok

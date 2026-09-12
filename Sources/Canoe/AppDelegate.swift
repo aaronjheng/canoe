@@ -1,0 +1,237 @@
+import AppKit
+import Observation
+import SwiftUI
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    let appStore = AppStore()
+    private var window: NSWindow?
+    private var variablesMenuItem: NSMenuItem?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate()
+        AppAppearance.current.apply()
+        buildMenuBar()
+
+        let contentView = ContentView()
+            .environment(appStore)
+            .frame(minWidth: 980, minHeight: 620)
+
+        let mainWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        mainWindow.center()
+        mainWindow.title = "Canoe"
+        // Postman-style top bar: the SwiftUI content supplies the window
+        // chrome (a solid top bar hosting the traffic lights), so the system
+        // title bar is hidden - and its liquid-glass material with it.
+        mainWindow.titleVisibility = .hidden
+        mainWindow.titlebarAppearsTransparent = true
+        mainWindow.styleMask.insert(.fullSizeContentView)
+        mainWindow.contentView = NSHostingView(rootView: contentView)
+        mainWindow.tabbingMode = .disallowed
+        mainWindow.tabbingIdentifier = "Canoe"
+        mainWindow.collectionBehavior.insert(.fullScreenPrimary)
+        mainWindow.makeKeyAndOrderFront(nil)
+        AppAppearance.current.applyToWindow(mainWindow)
+        window = mainWindow
+        observeEnvironmentChanges()
+
+        Task {
+            await appStore.vault.prepare()
+        }
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Persist debounced request autosaves so quitting right after typing
+        // cannot lose the last keystrokes.
+        guard appStore.hasPendingRequestChanges else { return .terminateNow }
+        appStore.flushPendingRequest {
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
+    @objc func newRequest() {
+        appStore.addRequest()
+    }
+
+    @objc func newCollection() {
+        appStore.addCollection()
+    }
+
+    @objc func newWorkspace() {
+        appStore.addWorkspace()
+    }
+
+    @objc func newEnvironment() {
+        appStore.addEnvironment()
+    }
+
+    @objc func clearHistory() {
+        appStore.clearHistory()
+    }
+
+    @objc func saveRequest() {
+        appStore.flushPendingRequest()
+    }
+
+    @objc func closeTab() {
+        appStore.closeSelectedTab()
+    }
+
+    @objc func toggleFullScreen() {
+        NSApp.keyWindow?.toggleFullScreen(nil)
+    }
+
+    @objc func revealVault() {
+        appStore.vault.revealInFinder()
+    }
+
+    // MARK: - Inspectors
+
+    @objc func toggleVariablesSidebar() {
+        appStore.toggleVariablesSidebar()
+    }
+
+    /// Keeps the View-menu checkmark for the variables inspector in step with
+    /// the store, however the panel was shown or hidden (the tab-row buttons
+    /// are SwiftUI now and sync themselves).
+    private func observeEnvironmentChanges() {
+        withObservationTracking {
+            _ = appStore.showVariablesSidebar
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.variablesMenuItem?.state =
+                    self?.appStore.showVariablesSidebar == true ? .on : .off
+                self?.observeEnvironmentChanges()
+            }
+        }
+    }
+
+    @objc func setAppearance(_ sender: NSMenuItem) {
+        guard let appearance = AppAppearance(rawValue: sender.tag) else { return }
+        appearance.apply()
+        for window in NSApp.windows {
+            appearance.applyToWindow(window)
+        }
+        if let menu = sender.menu {
+            for item in menu.items where item.action == #selector(setAppearance(_:)) {
+                item.state = item.tag == sender.tag ? .on : .off
+            }
+        }
+    }
+
+    private func buildMenuBar() {
+        let mainMenu = NSMenu()
+
+        let appMenuItem = NSMenuItem()
+        mainMenu.addItem(appMenuItem)
+        let appMenu = NSMenu()
+        appMenu.addItem(
+            withTitle: "About Canoe",
+            action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
+            keyEquivalent: "")
+        appMenu.addItem(.separator())
+        appMenu.addItem(
+            withTitle: "Quit Canoe",
+            action: #selector(NSApplication.terminate(_:)),
+            keyEquivalent: "q")
+        appMenuItem.submenu = appMenu
+
+        let fileMenuItem = NSMenuItem()
+        mainMenu.addItem(fileMenuItem)
+        let fileMenu = NSMenu(title: "File")
+        fileMenu.addItem(
+            withTitle: "New Request",
+            action: #selector(newRequest),
+            keyEquivalent: "n")
+        fileMenu.addItem(
+            withTitle: "New Collection",
+            action: #selector(newCollection),
+            keyEquivalent: "N")
+        fileMenu.addItem(
+            withTitle: "New Workspace",
+            action: #selector(newWorkspace),
+            keyEquivalent: "")
+        fileMenu.addItem(
+            withTitle: "New Environment",
+            action: #selector(newEnvironment),
+            keyEquivalent: "e")
+        fileMenu.addItem(
+            withTitle: "Save",
+            action: #selector(saveRequest),
+            keyEquivalent: "s")
+        fileMenu.addItem(.separator())
+        fileMenu.addItem(
+            withTitle: "Close Tab",
+            action: #selector(closeTab),
+            keyEquivalent: "w")
+        fileMenu.addItem(.separator())
+        fileMenu.addItem(
+            withTitle: "Reveal Vault in Finder",
+            action: #selector(revealVault),
+            keyEquivalent: "R")
+        fileMenu.addItem(.separator())
+        fileMenu.addItem(
+            withTitle: "Clear History",
+            action: #selector(clearHistory),
+            keyEquivalent: "")
+        fileMenuItem.submenu = fileMenu
+
+        let editMenuItem = NSMenuItem()
+        mainMenu.addItem(editMenuItem)
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenuItem.submenu = editMenu
+
+        let viewMenuItem = NSMenuItem()
+        mainMenu.addItem(viewMenuItem)
+        let viewMenu = NSMenu(title: "View")
+        let fullScreenItem = NSMenuItem(
+            title: "Enter Full Screen",
+            action: #selector(toggleFullScreen),
+            keyEquivalent: "f")
+        fullScreenItem.keyEquivalentModifierMask = [.command, .control]
+        viewMenu.addItem(fullScreenItem)
+        viewMenu.addItem(.separator())
+        let variablesItem = NSMenuItem(
+            title: "Variables in Request",
+            action: #selector(toggleVariablesSidebar),
+            keyEquivalent: "v")
+        variablesItem.keyEquivalentModifierMask = [.command, .shift]
+        variablesItem.target = self
+        variablesItem.state = appStore.showVariablesSidebar ? .on : .off
+        variablesMenuItem = variablesItem
+        viewMenu.addItem(variablesItem)
+        viewMenu.addItem(.separator())
+        let currentAppearance = AppAppearance.current
+        for appearance in AppAppearance.allCases {
+            let item = NSMenuItem(
+                title: appearance.name,
+                action: #selector(setAppearance(_:)),
+                keyEquivalent: "")
+            item.tag = appearance.rawValue
+            item.target = self
+            item.state = currentAppearance == appearance ? .on : .off
+            viewMenu.addItem(item)
+        }
+        viewMenuItem.submenu = viewMenu
+
+        NSApp.mainMenu = mainMenu
+    }
+}
