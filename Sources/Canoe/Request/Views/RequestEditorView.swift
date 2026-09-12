@@ -71,6 +71,19 @@ struct RequestEditorView: View {
     /// Whether the URL popup (multi-line editor floating over the sections)
     /// is open.
     @State private var isURLPopupVisible = false
+    /// Whether the method dropdown panel is open.
+    @State private var isMethodMenuVisible = false
+    /// Method under the pointer in the dropdown (hover highlight).
+    @State private var hoveredMethod: HTTPMethod?
+    /// The dropdown's type-to-filter query.
+    @State private var methodFilter = ""
+    @FocusState private var methodFilterFieldFocused: Bool
+
+    /// Methods matching the dropdown's filter (empty shows all).
+    private var filteredMethods: [HTTPMethod] {
+        guard !methodFilter.isEmpty else { return HTTPMethod.allCases }
+        return HTTPMethod.allCases.filter { $0.rawValue.localizedCaseInsensitiveContains(methodFilter) }
+    }
     /// Measured height of the URL bar row - anchors the popup right below it.
     @State private var urlBarHeight: CGFloat = 0
     /// The raw text currently shown in the URL bar.
@@ -151,13 +164,40 @@ struct RequestEditorView: View {
         // The bar field stays a single line; gaining focus opens the
         // multi-line popup editor below and hands focus over to it.
         .onChange(of: urlFieldFocused) { _, focused in
-            guard focused == .url, !isURLPopupVisible else { return }
+            guard focused == .url else { return }
+            isMethodMenuVisible = false
+            if isURLPopupVisible {
+                // Clicking the bar while the popup is already open: the
+                // popup keeps the keystrokes, so release the bar's focus
+                // claim immediately instead of re-entering the fight below.
+                urlFieldFocused = nil
+                return
+            }
             isURLPopupVisible = true
             // Hand focus to the popup's editor once it is inserted.
             DispatchQueue.main.async { urlPopupField = .url }
         }
+        .onChange(of: isMethodMenuVisible) { _, visible in
+            guard visible else { return }
+            // The two floating surfaces are mutually exclusive.
+            isURLPopupVisible = false
+            hoveredMethod = nil
+            methodFilter = ""
+            // Postman drops you into the filter so typing narrows the list.
+            DispatchQueue.main.async { methodFilterFieldFocused = true }
+        }
         .onChange(of: urlPopupField) { _, focused in
-            if focused == nil { isURLPopupVisible = false }
+            if focused == .url {
+                // The popup editor owns the keystrokes now: drop the bar
+                // field's focus claim. Otherwise the bar's focus pass calls
+                // `makeFirstResponder` on every recompose, ripping focus back
+                // from the popup mid-typing - which closed the popup after
+                // the first typed character and dropped characters typed
+                // during the handoff.
+                urlFieldFocused = nil
+            } else {
+                isURLPopupVisible = false
+            }
         }
         .onAppear {
             draft = request
@@ -225,7 +265,7 @@ struct RequestEditorView: View {
     /// request has unsaved changes.
     private var saveButton: some View {
         Button {
-            store.flushPendingRequest()
+            store.savePendingChanges()
         } label: {
             // Explicit Image + Text (not Label): plain-style buttons on macOS
             // can collapse a Label to title-only, dropping the icon. The icon
@@ -254,27 +294,36 @@ struct RequestEditorView: View {
     private var urlBar: some View {
         VStack(spacing: AppSpacing.xSmall) {
             HStack(spacing: AppSpacing.small) {
-                Picker("Method", selection: $draft.httpMethod) {
-                    ForEach(HTTPMethod.allCases) { method in
-                        Text(method.rawValue)
-                            .foregroundStyle(method.color)
-                            .tag(method)
-                    }
+                // Postman-style unified bar: one bordered container holding
+                // the method picker and the URL field, separated by a
+                // hairline. Focusing the field highlights the whole bar.
+                HStack(spacing: 0) {
+                    MethodPicker(
+                        selection: $draft.httpMethod,
+                        isExpanded: $isMethodMenuVisible
+                    )
+                    Rectangle()
+                        .fill(AppColor.border)
+                        .frame(width: 1, height: 20)
+                    VariableHighlightEditor(
+                        text: urlBinding,
+                        variables: resolvedVariables,
+                        suggestions: requestSuggestions,
+                        font: .monoURLBar,
+                        placeholder: "https://api.example.com/users",
+                        focus: $urlFieldFocused,
+                        focusValue: .url,
+                        // The bar is a display surface: the popup editor owns
+                        // the keystrokes. Allowing the field to grab first
+                        // responder during updates would restart its editing
+                        // session mid-typing - a fresh NSTextField session
+                        // selects all, so the next character overwrites the
+                        // whole URL.
+                        autoFocusOnUpdate: false
+                    )
+                    .padding(.leading, AppSpacing.small + 2)
                 }
-                .pickerStyle(.menu)
-                .frame(width: AppSize.methodPickerWidth)
-                .labelsHidden()
-                .help("HTTP method")
-
-                VariableHighlightEditor(
-                    text: urlBinding,
-                    variables: resolvedVariables,
-                    suggestions: requestSuggestions,
-                    placeholder: "https://api.example.com/users",
-                    focus: $urlFieldFocused,
-                    focusValue: .url
-                )
-                .variableFieldBordered(isFocused: urlFieldFocused == .url)
+                .variableFieldBordered(isFocused: urlFieldFocused == .url, verticalPadding: 3)
 
                 if store.isSending {
                     ProgressView().controlSize(.small)
@@ -283,7 +332,10 @@ struct RequestEditorView: View {
                     Button {
                         store.send(draft)
                     } label: {
+                        // Lifts the label so the styled button lands on the
+                        // shared 30pt row height; the text itself is untouched.
                         Text("Send")
+                            .frame(minHeight: 22)
                     }
                     .buttonStyle(SendButtonStyle())
                     .disabled(draft.urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -333,7 +385,100 @@ struct RequestEditorView: View {
                     .padding(.trailing, AppSpacing.medium)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
+            if isMethodMenuVisible {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { isMethodMenuVisible = false }
+                Button("Close Method Menu") { isMethodMenuVisible = false }
+                    .keyboardShortcut(.cancelAction)
+                    .frame(width: 0, height: 0)
+                    .opacity(0)
+                    .accessibilityHidden(true)
+                methodMenuPanel
+                    // Anchors below the URL bar, left-aligned with the method
+                    // segment (the bar's leading padding).
+                    .padding(
+                        .top,
+                        AppSize.toolbarHeight + urlBarHeight + AppSpacing.xxSmall
+                    )
+                    .padding(.leading, AppSpacing.medium)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
         }
+    }
+
+    /// Postman-style method dropdown: a filter field up top (type to narrow
+    /// the list, Return picks the first match), then colored method names,
+    /// the current one (or the hovered one) highlighted with a soft pill.
+    private var methodMenuPanel: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: AppSpacing.xSmall) {
+                Image(systemName: "magnifyingglass")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                TextField("Filter methods", text: $methodFilter)
+                    .textFieldStyle(.plain)
+                    .font(.subheadline)
+                    .focused($methodFilterFieldFocused)
+                    .onSubmit {
+                        guard let first = filteredMethods.first else { return }
+                        draft.httpMethod = first
+                        isMethodMenuVisible = false
+                    }
+                    .onExitCommand { isMethodMenuVisible = false }
+            }
+            .padding(.horizontal, AppSpacing.small)
+            .frame(minHeight: 30)
+
+            Divider()
+
+            Group {
+                if filteredMethods.isEmpty {
+                    Text("No Matching Method")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity, minHeight: 28)
+                } else {
+                    ForEach(filteredMethods) { method in
+                        Button {
+                            draft.httpMethod = method
+                            isMethodMenuVisible = false
+                        } label: {
+                            Text(method.rawValue)
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(method.color)
+                                .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+                                .padding(.horizontal, AppSpacing.small)
+                                .background(
+                                    RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                                        .fill(
+                                            method == draft.httpMethod || method == hoveredMethod
+                                                ? AppColor.subtleBackground
+                                                : Color.clear
+                                        )
+                                )
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .onHover { hovering in
+                            hoveredMethod = hovering ? method : nil
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, AppSpacing.xSmall)
+            .padding(.vertical, AppSpacing.xSmall)
+        }
+        .frame(width: 144)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                .fill(.background)
+                .shadow(color: Color.primary.opacity(0.22), radius: 12, y: 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                .strokeBorder(AppColor.border, lineWidth: 1)
+        )
     }
 
     /// The floating multi-line URL editor: same two-way sync as the bar
@@ -450,5 +595,45 @@ struct RequestEditorView: View {
         case .body:
             BodyEditor(request: $draft)
         }
+    }
+}
+
+// MARK: - Method picker
+
+/// Postman-style method segment inside the unified URL bar: method name in
+/// its signature color plus a dropdown chevron, separated from the URL field
+/// by the container's hairline. Clicking toggles the dropdown panel hosted
+/// in the window-level overlay; while open the segment wears a focus ring.
+private struct MethodPicker: View {
+    @Binding var selection: HTTPMethod
+    @Binding var isExpanded: Bool
+
+    var body: some View {
+        Button {
+            isExpanded.toggle()
+        } label: {
+            HStack(spacing: AppSpacing.xSmall) {
+                Text(selection.rawValue)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(selection.color)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.leading, AppSpacing.small + 2)
+            .padding(.trailing, AppSpacing.small)
+            .frame(width: AppSize.methodPickerWidth, height: 24)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .strokeBorder(
+                        isExpanded ? AppColor.accent : .clear,
+                        lineWidth: isExpanded ? 2 : 1
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .help("HTTP method")
     }
 }

@@ -8,12 +8,16 @@ import SwiftUI
 struct WorkspaceDetailView: View {
     @Environment(AppStore.self) private var store
     @State private var draft: Workspace
-    @State private var saveTask: Task<Void, Never>?
 
     init(workspace: Workspace) {
         var workspace = workspace
         workspace.variables.sortByName()
         _draft = State(initialValue: workspace)
+    }
+
+    /// Whether the variables have unsaved edits (Save button).
+    private var isDirty: Bool {
+        store.hasPendingWorkspaceVariables(for: draft.id)
     }
 
     var body: some View {
@@ -29,6 +33,7 @@ struct WorkspaceDetailView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
+                saveButton
             }
             .padding(.horizontal, AppSpacing.medium)
             .padding(.vertical, AppSpacing.small)
@@ -48,21 +53,38 @@ struct WorkspaceDetailView: View {
             draft.variables.sortByName()
         }
         .onChange(of: draft) { _, newValue in
-            // Debounced like request edits - every keystroke must not rewrite
-            // the workspace file.
-            saveTask?.cancel()
-            saveTask = Task { [weak store] in
-                try? await Task.sleep(for: .milliseconds(500))
-                guard !Task.isCancelled else { return }
-                store?.updateWorkspaceVariables(newValue.id, variables: newValue.variables)
-            }
+            // Memory-only + dirty mark; the drafts mirror inside the store
+            // is debounced, so no per-keystroke disk write happens here.
+            store.updateWorkspaceVariables(newValue.id, variables: newValue.variables)
         }
         .onDisappear {
-            saveTask?.cancel()
-            let snapshot = draft
-            Task { [weak store] in
-                store?.updateWorkspaceVariables(snapshot.id, variables: snapshot.variables)
-            }
+            // Keep the edits alive across tab close: they stay in memory and
+            // the drafts mirror, ready to be restored on the next open.
+            store.updateWorkspaceVariables(draft.id, variables: draft.variables)
         }
+    }
+
+    /// Postman-style Save: a filled chip with icon + label, enabled while
+    /// the variables have unsaved changes.
+    private var saveButton: some View {
+        Button {
+            store.savePendingChanges()
+        } label: {
+            HStack(spacing: AppSpacing.xSmall) {
+                Image(systemName: "square.and.arrow.down")
+                Text("Save")
+            }
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(isDirty ? AppColor.accent : .secondary)
+            .padding(.horizontal, AppSpacing.small + 2)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                    .fill(isDirty ? AppColor.subtleBackground : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(!isDirty)
+        .help("Save Variables (⌘S)")
     }
 }

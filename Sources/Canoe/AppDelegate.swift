@@ -47,7 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         observeSettingsChanges()
 
         Task {
-            await appStore.vault.prepare()
+            await appStore.prepare()
         }
     }
 
@@ -56,10 +56,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        // Persist debounced request autosaves so quitting right after typing
-        // cannot lose the last keystrokes.
-        guard appStore.hasPendingRequestChanges else { return .terminateNow }
-        appStore.flushPendingRequest {
+        // Unsaved edits live in memory and are mirrored to drafts.json
+        // (debounced) - flush the mirror before quitting so the next launch
+        // restores the edited state. Nothing is prompted and nothing is
+        // persisted as saved content.
+        appStore.flushPendingDraftWrites {
             NSApp.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
@@ -86,7 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func saveRequest() {
-        appStore.flushPendingRequest()
+        appStore.savePendingChanges()
     }
 
     @objc func closeTab() {

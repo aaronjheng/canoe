@@ -46,7 +46,7 @@ Outer layers may use inner layers, never the reverse:
 
 ## Vault & Storage
 
-- The vault is a fixed folder (`~/Library/Application Support/Canoe/`) containing `workspaces/*.json`, `collections/*.json`, `environments/*.json`, and `vault.json`
+- The vault is a fixed folder (`~/Library/Application Support/Canoe/`) containing `workspaces/*.json`, `collections/*.json`, `environments/*.json`, `vault.json`, and `drafts.json` (unsaved request/environment/variable edits, restored on launch)
 - Storage is local-only; there is no iCloud integration. Git-based sync is planned for the future
 - Use **File -> Reveal Vault in Finder** to open the vault folder
 - App-level configuration (appearance) lives in `settings.json` next to the vault, owned solely by `SettingsStore`; `UserDefaults` holds only AppKit-managed UI state

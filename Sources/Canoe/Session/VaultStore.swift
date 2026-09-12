@@ -2,6 +2,21 @@ import AppKit
 import Foundation
 import Observation
 
+/// Unsaved edits mirrored to `drafts.json` so they survive relaunches
+/// without being written into the saved entity files. Keys are UUID strings
+/// (JSON objects need string keys).
+struct VaultDrafts: Codable {
+    var requests: [String: RequestItem] = [:]
+    var environments: [String: EnvProfile] = [:]
+    var workspaceVariables: [String: [Variable]] = [:]
+    var collectionVariables: [String: [Variable]] = [:]
+
+    var isEmpty: Bool {
+        requests.isEmpty && environments.isEmpty
+            && workspaceVariables.isEmpty && collectionVariables.isEmpty
+    }
+}
+
 /// Manages the on-disk vault: a fixed local folder in Application Support
 /// holding every workspace/collection/environment as a JSON file, plus
 /// loading and persisting changes. The vault layout is intentionally plain
@@ -25,6 +40,9 @@ final class VaultStore {
     private var collectionsDirectory: URL? { vaultURL?.appendingPathComponent("collections") }
     private var environmentsDirectory: URL? { vaultURL?.appendingPathComponent("environments") }
     private var configFileURL: URL? { vaultURL?.appendingPathComponent("vault.json") }
+    /// Unsaved request edits, mirrored so they survive relaunches without
+    /// being written into the saved request files.
+    private var draftsFileURL: URL? { vaultURL?.appendingPathComponent("drafts.json") }
 
     // MARK: - Derived
 
@@ -255,6 +273,33 @@ final class VaultStore {
         guard let configFileURL else { return }
         config.lastOpenedAt = Date()
         try? await FileStore.write(config, to: configFileURL)
+    }
+
+    // MARK: - Draft persistence
+
+    /// Reads the unsaved edits persisted by a previous session.
+    func loadDrafts() async -> VaultDrafts {
+        guard let draftsFileURL else { return VaultDrafts() }
+        guard let data = try? await FileStore.readDataIfExists(at: draftsFileURL), !data.isEmpty else {
+            return VaultDrafts()
+        }
+        do {
+            return try JSONDecoder.iso.decode(VaultDrafts.self, from: data)
+        } catch {
+            AppLogger.error("Failed to load drafts: \(error)", category: "Vault")
+            return VaultDrafts()
+        }
+    }
+
+    /// Mirrors the current unsaved edits to disk (atomic; the caller decides
+    /// when - debounced on edits, immediate on quit and after saves).
+    func saveDrafts(_ drafts: VaultDrafts) async {
+        guard let draftsFileURL else { return }
+        do {
+            try await FileStore.write(drafts, to: draftsFileURL)
+        } catch {
+            AppLogger.error("Failed to save drafts: \(error)", category: "Vault")
+        }
     }
 
     // MARK: - Finder

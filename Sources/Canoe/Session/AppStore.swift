@@ -144,14 +144,28 @@ final class AppStore {
     @ObservationIgnored private var sendTasks: [OpenTab: Task<Void, Never>] = [:]
     @ObservationIgnored private var sendTokens: [OpenTab: UUID] = [:]
     /// Unsaved request edits (Postman-style dirty state): the latest draft is
-    /// held here until an explicit save (Save button / ⌘S) or an automatic
-    /// flush (tab close, workspace switch, quit) persists it. Tracked by the
-    /// observation system so the Save button and tab "*" markers update live.
+    /// held here until an explicit save (Save button / ⌘S) persists it, and
+    /// mirrored to drafts.json so it survives relaunches. Tracked by the
+    /// observation system so the Save button and tab dirty dots update live.
     private var pendingRequestSnapshots: [UUID: RequestItem] = [:]
-    /// Last persisted content per request id. The debounced save compares
+    /// Unsaved environment edits - same model as the request snapshots.
+    private var pendingEnvironmentSnapshots: [UUID: EnvProfile] = [:]
+    /// Unsaved workspace/collection variable edits - same draft model.
+    private var pendingWorkspaceVariables: [UUID: [Variable]] = [:]
+    private var pendingCollectionVariables: [UUID: [Variable]] = [:]
+    /// Last persisted content per request id. The dirty check compares
     /// against this (NOT the in-memory copy, which updateRequest has already
     /// mutated - that comparison always matched, so edits never reached disk).
     @ObservationIgnored private var persistedRequestBaselines: [UUID: RequestItem] = [:]
+    /// Last persisted content per environment id - the environment dirty
+    /// check's baseline.
+    @ObservationIgnored private var persistedEnvironmentBaselines: [UUID: EnvProfile] = [:]
+    /// Last persisted variables per workspace/collection id.
+    @ObservationIgnored private var persistedWorkspaceVariableBaselines: [UUID: [Variable]] = [:]
+    @ObservationIgnored private var persistedCollectionVariableBaselines: [UUID: [Variable]] = [:]
+    /// Debounced writer for the drafts mirror; cancelled/rescheduled on
+    /// every edit so typing does not rewrite drafts.json per keystroke.
+    @ObservationIgnored private var draftSaveTask: Task<Void, Never>?
     private let historyLimit = 100
     private static let responseHistoryLimit = 20
 
@@ -333,9 +347,10 @@ final class AppStore {
     }
 
     /// Closes a tab, cancelling its in-flight send and dropping its cached
-    /// response. Activates the left neighbor (or the new first tab).
+    /// response. Activates the left neighbor (or the new first tab). Edits
+    /// are untouched: they live in memory and the drafts mirror, so closing
+    /// and reopening a tab brings the edited state right back.
     func closeTab(_ tab: OpenTab) {
-        flushPendingRequest()
         sendTasks[tab]?.cancel()
         sendTasks[tab] = nil
         sendTokens[tab] = nil
@@ -417,10 +432,14 @@ final class AppStore {
 
     func deleteWorkspace(_ id: UUID) {
         closeTab(.workspace(id))
+        pendingWorkspaceVariables[id] = nil
+        persistedWorkspaceVariableBaselines[id] = nil
         for collection in vault.collections where collection.workspaceID == id {
             closeTab(.collection(collection.id))
             for request in collection.requests {
                 closeTab(.request(request.id))
+                pendingRequestSnapshots[request.id] = nil
+                persistedRequestBaselines[request.id] = nil
             }
         }
         // Environment tabs of the doomed workspace close with it; the vault
@@ -438,7 +457,6 @@ final class AppStore {
     }
 
     func setActiveWorkspace(_ id: UUID?) {
-        flushPendingRequest()
         closeAllTabs()
         Task {
             await vault.setActiveWorkspace(id)
@@ -472,13 +490,25 @@ final class AppStore {
         Task { await vault.saveWorkspace(workspace) }
     }
 
-    /// Replaces a workspace's variables (backing the workspace variables tab).
+    /// Replaces a workspace's variables in memory and marks them dirty.
+    /// Nothing is written to disk until Save (⌘S / Save button); the edit is
+    /// mirrored to drafts.json so it survives relaunches.
     func updateWorkspaceVariables(_ id: UUID, variables: [Variable]) {
+        if persistedWorkspaceVariableBaselines[id] == nil {
+            persistedWorkspaceVariableBaselines[id] = vault.workspaces.first(where: { $0.id == id })?.variables
+        }
         guard let idx = vault.workspaces.firstIndex(where: { $0.id == id }) else { return }
         guard vault.workspaces[idx].variables != variables else { return }
         vault.workspaces[idx].variables = variables
-        let updated = vault.workspaces[idx]
-        Task { await vault.saveWorkspace(updated) }
+        pendingWorkspaceVariables[id] = variables
+        scheduleDraftPersistence()
+    }
+
+    /// Whether the workspace's variables have unsaved modifications.
+    func hasPendingWorkspaceVariables(for workspaceID: UUID) -> Bool {
+        guard let pending = pendingWorkspaceVariables[workspaceID] else { return false }
+        guard let baseline = persistedWorkspaceVariableBaselines[workspaceID] else { return true }
+        return pending != baseline
     }
 
     // MARK: - Collections
@@ -498,8 +528,14 @@ final class AppStore {
         let doomed = Set(
             vault.collections.filter { $0.id == id }.flatMap(\.requests).map(\.id)
         )
+        pendingCollectionVariables[id] = nil
+        persistedCollectionVariableBaselines[id] = nil
         for tab in openTabs where tab.requestID.map(doomed.contains) == true {
             closeTab(tab)
+        }
+        for requestID in doomed {
+            pendingRequestSnapshots[requestID] = nil
+            persistedRequestBaselines[requestID] = nil
         }
         closeTab(.collection(id))
         vault.collections.removeAll { $0.id == id }
@@ -507,14 +543,25 @@ final class AppStore {
         Task { await vault.deleteCollection(id) }
     }
 
-    /// Replaces a collection's variables (backing the collection variables
-    /// tab).
+    /// Replaces a collection's variables in memory and marks them dirty.
+    /// Nothing is written to disk until Save (⌘S / Save button); the edit is
+    /// mirrored to drafts.json so it survives relaunches.
     func updateCollectionVariables(_ id: UUID, variables: [Variable]) {
+        if persistedCollectionVariableBaselines[id] == nil {
+            persistedCollectionVariableBaselines[id] = vault.collections.first(where: { $0.id == id })?.variables
+        }
         guard let idx = vault.collections.firstIndex(where: { $0.id == id }) else { return }
         guard vault.collections[idx].variables != variables else { return }
         vault.collections[idx].variables = variables
-        let updated = vault.collections[idx]
-        Task { await vault.saveCollection(updated) }
+        pendingCollectionVariables[id] = variables
+        scheduleDraftPersistence()
+    }
+
+    /// Whether the collection's variables have unsaved modifications.
+    func hasPendingCollectionVariables(for collectionID: UUID) -> Bool {
+        guard let pending = pendingCollectionVariables[collectionID] else { return false }
+        guard let baseline = persistedCollectionVariableBaselines[collectionID] else { return true }
+        return pending != baseline
     }
 
     /// Renames a collection (sidebar has no inline editor, so this backs the
@@ -648,6 +695,8 @@ final class AppStore {
 
     func deleteRequest(_ id: UUID) {
         closeTab(.request(id))
+        pendingRequestSnapshots[id] = nil
+        persistedRequestBaselines[id] = nil
         for collection in vault.collections where collection.requests.contains(where: { $0.id == id }) {
             var updated = collection
             updated.requests.removeAll { $0.id == id }
@@ -660,7 +709,8 @@ final class AppStore {
     }
 
     /// Applies the draft to the in-memory vault and marks the request dirty.
-    /// Nothing is written to disk until an explicit or automatic flush.
+    /// Nothing is written to disk until Save (⌘S / Save button) or the
+    /// "Save" branch of a leave-point confirmation.
     func updateRequest(_ request: RequestItem) {
         // Capture the last persisted content once per dirty request so the
         // dirty check ignores no-op edits (which would otherwise light up the
@@ -678,33 +728,180 @@ final class AppStore {
         }
 
         pendingRequestSnapshots[request.id] = request
+        scheduleDraftPersistence()
+    }
+
+    /// Loads the vault, then restores the unsaved edits persisted by the
+    /// last session so requests and environments reopen in their edited
+    /// state (dirty markers lit; nothing written to the saved files).
+    func prepare() async {
+        await vault.prepare()
+        let drafts = await vault.loadDrafts()
+        applyRequestDrafts(drafts.requests)
+        applyEnvironmentDrafts(drafts.environments)
+        applyWorkspaceVariableDrafts(drafts.workspaceVariables)
+        applyCollectionVariableDrafts(drafts.collectionVariables)
+    }
+
+    /// Re-applies request drafts on top of the loaded vault. Drafts whose
+    /// request no longer exists are dropped (the next mirror write prunes
+    /// them from drafts.json).
+    private func applyRequestDrafts(_ drafts: [String: RequestItem]) {
+        guard !drafts.isEmpty else { return }
+        var restored: [UUID: RequestItem] = [:]
+        for (key, draft) in drafts {
+            guard let id = UUID(uuidString: key) else { continue }
+            for ci in vault.collections.indices {
+                if let ri = vault.collections[ci].requests.firstIndex(where: { $0.id == id }) {
+                    if persistedRequestBaselines[id] == nil {
+                        persistedRequestBaselines[id] = vault.collections[ci].requests[ri]
+                    }
+                    vault.collections[ci].requests[ri] = draft
+                    restored[id] = draft
+                    break
+                }
+            }
+        }
+        pendingRequestSnapshots = restored
+        scheduleDraftPersistence()
+    }
+
+    /// Re-applies environment drafts - same restore as requests.
+    private func applyEnvironmentDrafts(_ drafts: [String: EnvProfile]) {
+        guard !drafts.isEmpty else { return }
+        var restored: [UUID: EnvProfile] = [:]
+        for (key, draft) in drafts {
+            guard let id = UUID(uuidString: key) else { continue }
+            if let idx = vault.environments.firstIndex(where: { $0.id == id }) {
+                if persistedEnvironmentBaselines[id] == nil {
+                    persistedEnvironmentBaselines[id] = vault.environments[idx]
+                }
+                vault.environments[idx] = draft
+                restored[id] = draft
+            }
+        }
+        pendingEnvironmentSnapshots = restored
+        scheduleDraftPersistence()
+    }
+
+    /// Re-applies workspace variable drafts - same restore as requests.
+    private func applyWorkspaceVariableDrafts(_ drafts: [String: [Variable]]) {
+        guard !drafts.isEmpty else { return }
+        var restored: [UUID: [Variable]] = [:]
+        for (key, variables) in drafts {
+            guard let id = UUID(uuidString: key) else { continue }
+            if let idx = vault.workspaces.firstIndex(where: { $0.id == id }) {
+                if persistedWorkspaceVariableBaselines[id] == nil {
+                    persistedWorkspaceVariableBaselines[id] = vault.workspaces[idx].variables
+                }
+                vault.workspaces[idx].variables = variables
+                restored[id] = variables
+            }
+        }
+        pendingWorkspaceVariables = restored
+        scheduleDraftPersistence()
+    }
+
+    /// Re-applies collection variable drafts - same restore as requests.
+    private func applyCollectionVariableDrafts(_ drafts: [String: [Variable]]) {
+        guard !drafts.isEmpty else { return }
+        var restored: [UUID: [Variable]] = [:]
+        for (key, variables) in drafts {
+            guard let id = UUID(uuidString: key) else { continue }
+            if let idx = vault.collections.firstIndex(where: { $0.id == id }) {
+                if persistedCollectionVariableBaselines[id] == nil {
+                    persistedCollectionVariableBaselines[id] = vault.collections[idx].variables
+                }
+                vault.collections[idx].variables = variables
+                restored[id] = variables
+            }
+        }
+        pendingCollectionVariables = restored
+        scheduleDraftPersistence()
+    }
+
+    /// The draft mirror's current content, keyed for drafts.json.
+    private var currentDrafts: VaultDrafts {
+        VaultDrafts(
+            requests: Dictionary(
+                pendingRequestSnapshots.map { ($0.key.uuidString, $0.value) }, uniquingKeysWith: { first, _ in first }),
+            environments: Dictionary(
+                pendingEnvironmentSnapshots.map { ($0.key.uuidString, $0.value) }, uniquingKeysWith: { first, _ in first }),
+            workspaceVariables: Dictionary(
+                pendingWorkspaceVariables.map { ($0.key.uuidString, $0.value) }, uniquingKeysWith: { first, _ in first }),
+            collectionVariables: Dictionary(
+                pendingCollectionVariables.map { ($0.key.uuidString, $0.value) }, uniquingKeysWith: { first, _ in first })
+        )
+    }
+
+    /// Mirrors pending edits to drafts.json (debounced) so unsaved edits
+    /// survive a relaunch without being persisted as saved content.
+    private func scheduleDraftPersistence() {
+        draftSaveTask?.cancel()
+        draftSaveTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled, let self else { return }
+            await self.vault.saveDrafts(self.currentDrafts)
+        }
+    }
+
+    /// Writes the draft mirror immediately (quit path) and calls
+    /// `completion` once the write has landed.
+    func flushPendingDraftWrites(completion: (() -> Void)? = nil) {
+        draftSaveTask?.cancel()
+        draftSaveTask = nil
+        let drafts = currentDrafts
+        Task { [weak self] in
+            await self?.vault.saveDrafts(drafts)
+            completion?()
+        }
     }
 
     /// Whether the request has unsaved modifications (drives the Save button
-    /// and the tab's "*" marker).
+    /// and the tab's dirty dot).
     func hasPendingChanges(for requestID: UUID) -> Bool {
         guard let snapshot = pendingRequestSnapshots[requestID] else { return false }
         guard let baseline = persistedRequestBaselines[requestID] else { return true }
         return !snapshot.isContentEqual(to: baseline)
     }
 
-    /// Whether ANY request has unsaved modifications (drives the quit path).
-    var hasPendingRequestChanges: Bool { !pendingRequestSnapshots.isEmpty }
-
-    /// Persists every request with unsaved changes. Runs on Save (⌘S / Save
-    /// button), tab close, workspace switch, and app quit. `completion` (used
-    /// on quit) runs after all writes finish.
-    func flushPendingRequest(completion: (() -> Void)? = nil) {
-        let pending = pendingRequestSnapshots
+    /// Persists every request and environment with unsaved changes (Save
+    /// button / ⌘S) and drops their drafts. `completion` (used on quit) runs
+    /// after all writes finish.
+    func savePendingChanges(completion: (() -> Void)? = nil) {
+        let pendingRequests = pendingRequestSnapshots
+        let pendingEnvironments = pendingEnvironmentSnapshots
+        let pendingWorkspaceVariables = self.pendingWorkspaceVariables
+        let pendingCollectionVariables = self.pendingCollectionVariables
         pendingRequestSnapshots.removeAll()
-        guard !pending.isEmpty else {
+        pendingEnvironmentSnapshots.removeAll()
+        self.pendingWorkspaceVariables.removeAll()
+        self.pendingCollectionVariables.removeAll()
+        guard
+            !pendingRequests.isEmpty || !pendingEnvironments.isEmpty
+                || !pendingWorkspaceVariables.isEmpty || !pendingCollectionVariables.isEmpty
+        else {
             completion?()
             return
         }
         Task { [weak self] in
-            for snapshot in pending.values {
-                await self?.persistRequest(snapshot)
+            guard let self else {
+                completion?()
+                return
             }
+            for snapshot in pendingRequests.values {
+                await self.persistRequest(snapshot)
+            }
+            for snapshot in pendingEnvironments.values {
+                await self.persistEnvironment(snapshot)
+            }
+            for (id, variables) in pendingWorkspaceVariables {
+                await self.persistWorkspaceVariables(id, variables)
+            }
+            for (id, variables) in pendingCollectionVariables {
+                await self.persistCollectionVariables(id, variables)
+            }
+            await self.vault.saveDrafts(VaultDrafts())
             completion?()
         }
     }
@@ -736,6 +933,53 @@ final class AppStore {
         }
         // The request vanished (deleted while a save was in flight).
         persistedRequestBaselines[request.id] = nil
+    }
+
+    /// Writes an environment's unsaved edits to its vault file.
+    private func persistEnvironment(_ environment: EnvProfile) async {
+        guard vault.environments.contains(where: { $0.id == environment.id }) else {
+            persistedEnvironmentBaselines[environment.id] = nil
+            return
+        }
+        let baseline = persistedEnvironmentBaselines[environment.id] ?? environment
+        if environment == baseline {
+            persistedEnvironmentBaselines[environment.id] = environment
+            return
+        }
+        await vault.saveEnvironment(environment)
+        persistedEnvironmentBaselines[environment.id] = environment
+    }
+
+    /// Writes a workspace's unsaved variable edits into its vault file.
+    private func persistWorkspaceVariables(_ id: UUID, _ variables: [Variable]) async {
+        guard let idx = vault.workspaces.firstIndex(where: { $0.id == id }) else {
+            persistedWorkspaceVariableBaselines[id] = nil
+            return
+        }
+        let baseline = persistedWorkspaceVariableBaselines[id] ?? vault.workspaces[idx].variables
+        if variables == baseline {
+            persistedWorkspaceVariableBaselines[id] = variables
+            return
+        }
+        vault.workspaces[idx].variables = variables
+        await vault.saveWorkspace(vault.workspaces[idx])
+        persistedWorkspaceVariableBaselines[id] = variables
+    }
+
+    /// Writes a collection's unsaved variable edits into its vault file.
+    private func persistCollectionVariables(_ id: UUID, _ variables: [Variable]) async {
+        guard let idx = vault.collections.firstIndex(where: { $0.id == id }) else {
+            persistedCollectionVariableBaselines[id] = nil
+            return
+        }
+        let baseline = persistedCollectionVariableBaselines[id] ?? vault.collections[idx].variables
+        if variables == baseline {
+            persistedCollectionVariableBaselines[id] = variables
+            return
+        }
+        vault.collections[idx].variables = variables
+        await vault.saveCollection(vault.collections[idx])
+        persistedCollectionVariableBaselines[id] = variables
     }
 
     /// True when a key/value row carries no data at all (skipped at send
@@ -794,14 +1038,31 @@ final class AppStore {
     func deleteEnvironment(_ id: UUID) {
         closeTab(.environment(id))
         vault.environments.removeAll { $0.id == id }
+        pendingEnvironmentSnapshots[id] = nil
+        persistedEnvironmentBaselines[id] = nil
         Task { await vault.deleteEnvironment(id) }
     }
 
+    /// Applies the environment edit to the in-memory vault and marks it
+    /// dirty. Nothing is written to disk until Save (⌘S / Save button); the
+    /// edit is mirrored to drafts.json so it survives relaunches.
     func updateEnvironment(_ environment: EnvProfile) {
+        if persistedEnvironmentBaselines[environment.id] == nil {
+            persistedEnvironmentBaselines[environment.id] = vault.environments.first(where: { $0.id == environment.id })
+        }
         if let idx = vault.environments.firstIndex(where: { $0.id == environment.id }) {
             vault.environments[idx] = environment
         }
-        Task { await vault.saveEnvironment(environment) }
+        pendingEnvironmentSnapshots[environment.id] = environment
+        scheduleDraftPersistence()
+    }
+
+    /// Whether the environment has unsaved modifications (drives the Save
+    /// button and the tab's dirty dot).
+    func hasPendingEnvironmentChanges(for environmentID: UUID) -> Bool {
+        guard let snapshot = pendingEnvironmentSnapshots[environmentID] else { return false }
+        guard let baseline = persistedEnvironmentBaselines[environmentID] else { return true }
+        return snapshot != baseline
     }
 
     func setActiveEnvironment(_ id: UUID?) {

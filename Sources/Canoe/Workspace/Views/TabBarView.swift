@@ -228,7 +228,7 @@ private struct TabPill: View {
                 .controlSize(.mini)
                 .frame(width: 16, height: 16)
                 .padding(.trailing, AppSpacing.xSmall + 2)
-        } else if isSelected || isHovering {
+        } else if isHovering || (isSelected && !isDirty) {
             Button {
                 store.closeTab(tab)
             } label: {
@@ -247,6 +247,25 @@ private struct TabPill: View {
             .onHover { isHoveringClose = $0 }
             .help("Close Tab (⌘W)")
             .padding(.trailing, AppSpacing.xSmall + 2)
+        } else if isDirty {
+            // Postman-style dirty dot: unsaved tabs show a dot where the
+            // close button sits; hovering swaps it back to the × above.
+            Circle()
+                .fill(AppColor.warning)
+                .frame(width: 8, height: 8)
+                .padding(.trailing, AppSpacing.small + 2)
+        }
+    }
+
+    /// Whether the tab's request or environment has unsaved modifications.
+    private var isDirty: Bool {
+        switch tab {
+        case .request(let id):
+            return store.hasPendingChanges(for: id)
+        case .environment(let id):
+            return store.hasPendingEnvironmentChanges(for: id)
+        default:
+            return false
         }
     }
 
@@ -280,18 +299,11 @@ private struct TabPill: View {
         switch tab {
         case .request(let id):
             if let request = store.vault.collections.flatMap(\.requests).first(where: { $0.id == id }) {
-                HStack(spacing: 2) {
-                    Text(request.name)
-                        .font(.subheadline)
-                        .lineLimit(1)
-                    if store.hasPendingChanges(for: request.id) {
-                        Text("*")
-                            .font(.subheadline.weight(.bold))
-                            .foregroundStyle(AppColor.warning)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .help(request.urlString.isEmpty ? request.name : "\(request.name)\n\(request.urlString)")
+                Text(request.name)
+                    .font(.subheadline)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .help(request.urlString.isEmpty ? request.name : "\(request.name)\n\(request.urlString)")
             }
         case .environment(let id):
             if let env = store.vault.environments.first(where: { $0.id == id }) {

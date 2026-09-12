@@ -6,12 +6,16 @@ import SwiftUI
 struct EnvironmentDetailView: View {
     @Environment(AppStore.self) private var store
     @State private var draft: EnvProfile
-    @State private var saveTask: Task<Void, Never>?
 
     init(environment: EnvProfile) {
         var environment = environment
         environment.variables.sortByName()
         _draft = State(initialValue: environment)
+    }
+
+    /// Whether the environment has unsaved edits (Save button).
+    private var isDirty: Bool {
+        store.hasPendingEnvironmentChanges(for: draft.id)
     }
 
     var body: some View {
@@ -22,6 +26,8 @@ struct EnvironmentDetailView: View {
                     .foregroundStyle(.secondary)
                 TextField("Environment Name", text: $draft.name)
                     .textFieldStyle(.roundedBorder)
+                Spacer(minLength: AppSpacing.medium)
+                saveButton
             }
             .padding(.horizontal, AppSpacing.medium)
             .padding(.vertical, AppSpacing.small)
@@ -43,19 +49,38 @@ struct EnvironmentDetailView: View {
             draft.variables.sortByName()
         }
         .onChange(of: draft) { _, newValue in
-            // Debounced like request edits - every keystroke must not rewrite
-            // the environment file.
-            saveTask?.cancel()
-            saveTask = Task { [weak store] in
-                try? await Task.sleep(for: .milliseconds(500))
-                guard !Task.isCancelled else { return }
-                store?.updateEnvironment(newValue)
-            }
+            // Memory-only + dirty mark; the drafts mirror inside the store
+            // is debounced, so no per-keystroke disk write happens here.
+            store.updateEnvironment(newValue)
         }
         .onDisappear {
-            saveTask?.cancel()
-            let snapshot = draft
-            Task { [weak store] in store?.updateEnvironment(snapshot) }
+            // Keep the edits alive across tab close: they stay in memory and
+            // the drafts mirror, ready to be restored on the next open.
+            store.updateEnvironment(draft)
         }
+    }
+
+    /// Postman-style Save: a filled chip with icon + label, enabled while
+    /// the environment has unsaved changes.
+    private var saveButton: some View {
+        Button {
+            store.savePendingChanges()
+        } label: {
+            HStack(spacing: AppSpacing.xSmall) {
+                Image(systemName: "square.and.arrow.down")
+                Text("Save")
+            }
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(isDirty ? AppColor.accent : .secondary)
+            .padding(.horizontal, AppSpacing.small + 2)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                    .fill(isDirty ? AppColor.subtleBackground : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(!isDirty)
+        .help("Save Environment (⌘S)")
     }
 }

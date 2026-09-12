@@ -7,11 +7,13 @@ import SwiftUI
 enum VariableEditorFont {
     case monoSubheadline
     case monoBody
+    case monoURLBar
 
     var swiftUIFont: Font {
         switch self {
         case .monoSubheadline: AppFont.monoSubheadline
         case .monoBody: AppFont.monoBody
+        case .monoURLBar: AppFont.monoCaption
         }
     }
 
@@ -23,6 +25,7 @@ enum VariableEditorFont {
         switch self {
         case .monoSubheadline: 11
         case .monoBody: 13
+        case .monoURLBar: 12
         }
     }
 }
@@ -59,6 +62,13 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
     /// focus between cells (e.g. the key/value table's ghost row).
     var focus: FocusState<FocusValue?>.Binding?
     var focusValue: FocusValue?
+    /// Whether the AppKit field may grab first responder during SwiftUI
+    /// updates. The key/value table needs it (ghost-row focus moves); a
+    /// single-line display surface whose popup owns the keystrokes must opt
+    /// out: force-focusing an NSTextField mid-typing starts a fresh editing
+    /// session whose select-all replaces the whole text with the next
+    /// keystroke.
+    var autoFocusOnUpdate: Bool = true
     /// Called when the user presses Return with no completion popup open
     /// (multi-line editors insert a line break instead).
     var onCommit: (() -> Void)?
@@ -79,6 +89,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         placeholder: String? = nil,
         focus: FocusState<FocusValue?>.Binding? = nil,
         focusValue: FocusValue? = nil,
+        autoFocusOnUpdate: Bool = true,
         onCommit: (() -> Void)? = nil
     ) {
         self._text = text
@@ -90,6 +101,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         self.placeholder = placeholder
         if let focus { self.focus = focus }
         if let focusValue { self.focusValue = focusValue }
+        self.autoFocusOnUpdate = autoFocusOnUpdate
         self.onCommit = onCommit
     }
 
@@ -104,6 +116,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
                     placeholder: placeholder,
                     focus: focus,
                     focusValue: focusValue,
+                    autoFocusOnUpdate: autoFocusOnUpdate,
                     onCommit: onCommit
                 )
                 .frame(minHeight: 24, alignment: .center)
@@ -203,8 +216,8 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
     let placeholder: String?
     let focus: FocusState<FocusValue?>.Binding?
     let focusValue: FocusValue?
+    let autoFocusOnUpdate: Bool
     let onCommit: (() -> Void)?
-
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
@@ -253,7 +266,11 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
         }
 
         // Programmatic focus moves (the key/value table's ghost row).
-        guard let focus, let focusValue else { return }
+        // Editors that opt out (`autoFocusOnUpdate` false) never touch focus
+        // here: force-focusing an NSTextField starts a new editing session,
+        // and a fresh session selects all - so a field that regains focus
+        // between keystrokes replaces the whole text with the next character.
+        guard autoFocusOnUpdate, let focus, let focusValue else { return }
         if focus.wrappedValue == focusValue {
             if field.currentEditor() == nil {
                 field.window?.makeFirstResponder(field)
@@ -579,18 +596,22 @@ extension VariableHighlightEditor where FocusValue == Never {
 extension View {
     /// Wraps a borderless variable editor in the standard rounded-border
     /// field chrome (a match of `.textFieldStyle(.roundedBorder)`).
-    /// Focused fields use the stronger border so keyboard focus is visible.
-    func variableFieldBordered(isFocused: Bool = false) -> some View {
+    /// Focused fields swap the hairline for a thicker solid accent border so
+    /// the focused surface is unmistakable.
+    func variableFieldBordered(isFocused: Bool = false, verticalPadding: CGFloat = AppSpacing.xxSmall) -> some View {
         self
             .padding(.horizontal, AppSpacing.small - AppSpacing.xxSmall)
-            .padding(.vertical, AppSpacing.xxSmall)
+            .padding(.vertical, verticalPadding)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                     .fill(Color.primary.opacity(0.03))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                    .strokeBorder(isFocused ? AppColor.accent.opacity(0.55) : AppColor.borderStrong, lineWidth: 1)
+                    .strokeBorder(
+                        isFocused ? AppColor.accent : AppColor.borderStrong,
+                        lineWidth: isFocused ? 2 : 1
+                    )
             )
     }
 }
