@@ -14,6 +14,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # swift-tree-sitter 0.25.x caps tree-sitter at < 0.26, and 0.27+ ships
+      # no Package.swift. Revisit when swift-tree-sitter supports newer runtimes.
+      - dependency-name: github.com/tree-sitter/tree-sitter
     groups:
       swift:
         patterns:
