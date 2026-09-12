@@ -12,6 +12,7 @@ enum HTTPMethod: String, Codable, CaseIterable, Identifiable {
     case delete = "DELETE"
     case head = "HEAD"
     case options = "OPTIONS"
+    case query = "QUERY"
 
     var id: String { rawValue }
 }

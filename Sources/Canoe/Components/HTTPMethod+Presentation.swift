@@ -16,6 +16,7 @@ extension HTTPMethod {
         case .delete: AppColor.error
         case .head: AppColor.done
         case .options: AppColor.neutral
+        case .query: AppColor.success
         }
     }
 }
