@@ -2,12 +2,12 @@ import SwiftUI
 
 /// Postman-style top bar spanning the full window width at the very top:
 /// the window's traffic lights sit inline on it, the workspace switcher
-/// follows them, and the trailing edge is reserved for a future settings
-/// entry. The bar draws a solid, opaque background on purpose - it replaces
-/// the system title bar, and the macOS "liquid glass" chrome underneath it
-/// must never show through. It shares the sidebar's fill so the left chrome
-/// (bar + sidebar) reads as one continuous surface, separated from the
-/// content row by the hairline under the bar.
+/// follows them, and a settings shortcut sits at the trailing edge. The bar
+/// draws a solid, opaque background on purpose - it replaces the system
+/// title bar, and the macOS "liquid glass" chrome underneath it must never
+/// show through. It shares the sidebar's fill so the left chrome (bar +
+/// sidebar) reads as one continuous surface, separated from the content row
+/// by the hairline under the bar.
 struct TopBarView: View {
     /// macOS hides the traffic lights while fullscreen, so the gutter
     /// reserved for them would turn into dead blank space - track the
@@ -18,6 +18,7 @@ struct TopBarView: View {
         HStack(spacing: AppSpacing.small) {
             WorkspaceSwitcher()
             Spacer(minLength: 0)
+            settingsButton
         }
         .padding(.leading, isFullScreen ? AppSpacing.medium : AppSize.trafficLightInset)
         .padding(.trailing, AppSpacing.medium)
@@ -43,6 +44,18 @@ struct TopBarView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification)) { _ in
             isFullScreen = false
         }
+    }
+
+    /// Shortcut for `Canoe -> Settings…`: same window, focused if open.
+    private var settingsButton: some View {
+        Button {
+            (NSApp.delegate as? AppDelegate)?.openSettings()
+        } label: {
+            Image(systemName: "gearshape")
+        }
+        .buttonStyle(ToolbarButtonStyle())
+        .frame(width: AppSize.topBarControlHeight, height: AppSize.topBarControlHeight)
+        .help("Settings (⌘,)")
     }
 }
 
