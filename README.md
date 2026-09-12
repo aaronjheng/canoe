@@ -20,7 +20,6 @@ Native macOS API client built with Swift and SwiftUI.
 - macOS 26+
 - Xcode 26+
 - [Just](https://github.com/casey/just)
-- [uv](https://docs.astral.sh/uv/) (only for regenerating the Xcode project)
 
 ## Build & Run
 
@@ -45,9 +44,6 @@ just lint-fix
 # Format
 just format
 just format-check
-
-# Regenerate Xcode project after adding/removing files
-just generate
 
 # Clean build artifacts
 just clean

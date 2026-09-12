@@ -16,9 +16,6 @@ format:
 format-check:
     swift format lint --recursive Sources
 
-generate:
-    uv run Tools/generate_xcodeproj.py
-
 build:
     xcodebuild -project Canoe.xcodeproj \
         -scheme Canoe \
