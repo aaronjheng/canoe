@@ -1,14 +1,19 @@
 # Canoe
 
-Native macOS API client built with Swift and SwiftUI - a lightweight Postman alternative with a local file-based vault.
+Native macOS API client built with Swift and SwiftUI.
 
 ## Features
 
-- **Requests** - build and send HTTP requests with method, URL, headers, query params, and body
-- **Collections** - organize requests into named collections
-- **Environments** - define variables (`{{baseUrl}}`, `{{token}}`) and switch the active environment to substitute them across requests
-- **Variable Substitution** - `{{variable}}` syntax resolved in URL, headers, query params, and body
-- **Local Vault** - all data stored as plain JSON files on disk (Git-based sync is planned)
+- **Workspaces** — separate spaces for projects, each with its own collections and environments
+- **Collections & Folders** — organize requests into named collections with nested folders
+- **Request Editor** — method, URL, query params, auth (none/basic/bearer), headers, and bodies (raw, form-data, url-encoded, binary file)
+- **Variables** — `{{placeholder}}` substitution across URL, params, headers, auth, and body, with workspace → collection → environment precedence; the inspector shows in-scope variables and flags unresolved ones
+- **Environments** — named variable sets with an active-environment picker
+- **Response Viewer** — status, timing, headers, and syntax-highlighted JSON body with copy/save, kept per tab with history
+- **History** — per-device send history with one-click reopen
+- **Code Snippets** — export any request as HTTP, cURL, or HTTPie
+- **Tabs** — requests, environments, and variable editors in tabs with dirty tracking and save (⌘S)
+- **Local Vault** — all data stored as plain JSON files on disk (Git-based sync is planned)
 
 ## Requirements
 
@@ -24,7 +29,7 @@ Native macOS API client built with Swift and SwiftUI - a lightweight Postman alt
 just run
 
 # Build release only
-just build-release
+just build
 
 # Install to ~/Applications
 just install
@@ -47,22 +52,6 @@ just generate
 # Clean build artifacts
 just clean
 ```
-
-## Vault Location
-
-The vault lives at `~/Library/Application Support/Canoe/` and holds every
-workspace, collection, and environment as a plain JSON file:
-
-```
-Canoe/
-├── vault.json
-├── workspaces/<uuid>.json
-├── collections/<uuid>.json
-└── environments/<uuid>.json
-```
-
-Storage is local-only for now; Git-based sync is planned. Use **File ->
-Reveal Vault in Finder** to open the vault folder.
 
 ## License
 
