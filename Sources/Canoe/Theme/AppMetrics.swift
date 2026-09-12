@@ -34,6 +34,10 @@ enum AppSize {
     static let sidebarMaxWidth: CGFloat = 360
     /// Right-hand "Variables in Request" inspector (fixed width).
     static let inspectorWidth: CGFloat = 300
+    /// Settings window sidebar column.
+    static let settingsSidebarWidth: CGFloat = 215
+    /// Settings window detail pane minimum width.
+    static let settingsDetailMinimumWidth: CGFloat = 420
     /// Workspace tab strip: tabs share the available width equally (Postman-
     /// style shrink-when-crowded), capped between these bounds.
     static let tabMinWidth: CGFloat = 100

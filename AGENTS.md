@@ -29,7 +29,7 @@ Root files: `CanoeApp` (process entry), `AppDelegate` (window, menu bar), `AppLo
 
 Area folders:
 
-- Feature areas, each holding whichever of `Models/` / `Views/` it needs (`State/` only if the area gains tab-local state beyond `Session/`): `Workspace` (window chrome, sidebar, tabs, workspace screens), `Collection` (collections, folders), `Request` (request editor, auth/body editors, code snippets), `Response` (response viewer, history entries), `Environment` (environments), `Variables` (variables inspector, `{{...}}` resolution + scope models)
+- Feature areas, each holding whichever of `Models/` / `State/` / `Views/` / `Services/` it needs: `Workspace` (window chrome, sidebar, tabs, workspace screens), `Collection` (collections, folders), `Request` (request editor, auth/body editors, code snippets), `Response` (response viewer, history entries), `Environment` (environments), `Variables` (variables inspector, `{{...}}` resolution + scope models), `Settings` (Settings… window: sidebar, panes, appearance store)
 - Backends: `HTTP/` (URLSession client, multipart encoding), `Session/` (`AppStore` core state, `VaultStore` file persistence, `FileStore` atomic JSON primitive, `VaultConfig`)
 - Shared toolkit: `Components/` (reusable views like `KeyValueEditor` + the `HTTPMethod+Presentation` color mapping their badges use), `Editor/` (variable-highlighting text fields, completion popup, JSON syntax highlighting), `Theme/` (color/font/metrics tokens + light/dark switching)
 
@@ -49,7 +49,7 @@ Outer layers may use inner layers, never the reverse:
 - The vault is a fixed folder (`~/Library/Application Support/Canoe/`) containing `workspaces/*.json`, `collections/*.json`, `environments/*.json`, and `vault.json`
 - Storage is local-only; there is no iCloud integration. Git-based sync is planned for the future
 - Use **File -> Reveal Vault in Finder** to open the vault folder
-- Per-device appearance is stored in `UserDefaults` and intentionally not synced; the active workspace/environment live in `vault.json`
+- App-level configuration (appearance) lives in `settings.json` next to the vault, owned solely by `SettingsStore`; `UserDefaults` holds only AppKit-managed UI state
 
 ## Code Quality
 

@@ -6,12 +6,15 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let appStore = AppStore()
     private var window: NSWindow?
+    private var settingsWindow: NSWindow?
+    private var settingsToolbarController: SettingsToolbarController?
     private var variablesMenuItem: NSMenuItem?
+    private var appearanceMenuItems: [NSMenuItem] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate()
-        AppAppearance.current.apply()
+        (AppAppearance(rawValue: SettingsStore.shared.settings.appearance) ?? .system).apply()
         buildMenuBar()
 
         let contentView = ContentView()
@@ -37,9 +40,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainWindow.tabbingIdentifier = "Canoe"
         mainWindow.collectionBehavior.insert(.fullScreenPrimary)
         mainWindow.makeKeyAndOrderFront(nil)
-        AppAppearance.current.applyToWindow(mainWindow)
+        (AppAppearance(rawValue: SettingsStore.shared.settings.appearance) ?? .system)
+            .applyToWindow(mainWindow)
         window = mainWindow
         observeEnvironmentChanges()
+        observeSettingsChanges()
 
         Task {
             await appStore.vault.prepare()
@@ -96,6 +101,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appStore.vault.revealInFinder()
     }
 
+    @objc func openSettings() {
+        if let settingsWindow {
+            settingsWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+            return
+        }
+        let navigation = SettingsNavigationState()
+        let split = SettingsSplitViewController(
+            sidebar: SettingsSidebarView().environment(navigation),
+            detail: SettingsView().environment(navigation)
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 780, height: 520),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentViewController = split
+        window.tabbingMode = .disallowed
+        window.minSize = NSSize(width: 780, height: 520)
+        window.setContentSize(NSSize(width: 780, height: 520))
+        let toolbarController = SettingsToolbarController(navigation: navigation)
+        toolbarController.install(in: window)
+        settingsToolbarController = toolbarController
+        window.center()
+        (AppAppearance(rawValue: SettingsStore.shared.settings.appearance) ?? .system)
+            .applyToWindow(window)
+        settingsWindow = window
+        window.makeKeyAndOrderFront(nil)
+    }
+
     // MARK: - Inspectors
 
     @objc func toggleVariablesSidebar() {
@@ -119,13 +155,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func setAppearance(_ sender: NSMenuItem) {
         guard let appearance = AppAppearance(rawValue: sender.tag) else { return }
+        SettingsStore.shared.settings.appearance = appearance.rawValue
+        SettingsStore.shared.save()
         appearance.apply()
-        for window in NSApp.windows {
-            appearance.applyToWindow(window)
+        refreshAppearanceMenu()
+    }
+
+    /// Syncs the View-menu checkmarks with the store, however the appearance
+    /// was changed (menu or Settings panel).
+    private func refreshAppearanceMenu() {
+        let current = AppAppearance(rawValue: SettingsStore.shared.settings.appearance) ?? .system
+        for item in appearanceMenuItems {
+            item.state = item.tag == current.rawValue ? .on : .off
         }
-        if let menu = sender.menu {
-            for item in menu.items where item.action == #selector(setAppearance(_:)) {
-                item.state = item.tag == sender.tag ? .on : .off
+    }
+
+    /// Keeps the View-menu checkmarks in step when the appearance changes
+    /// from the Settings panel.
+    private func observeSettingsChanges() {
+        withObservationTracking {
+            _ = SettingsStore.shared.settings.appearance
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.refreshAppearanceMenu()
+                self?.observeSettingsChanges()
             }
         }
     }
@@ -140,6 +193,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             withTitle: "About Canoe",
             action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
             keyEquivalent: "")
+        appMenu.addItem(.separator())
+        let settingsItem = NSMenuItem(
+            title: "Settings…",
+            action: #selector(openSettings),
+            keyEquivalent: ",")
+        settingsItem.keyEquivalentModifierMask = [.command]
+        settingsItem.target = self
+        appMenu.addItem(settingsItem)
         appMenu.addItem(.separator())
         appMenu.addItem(
             withTitle: "Quit Canoe",
@@ -219,7 +280,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         variablesMenuItem = variablesItem
         viewMenu.addItem(variablesItem)
         viewMenu.addItem(.separator())
-        let currentAppearance = AppAppearance.current
+        let currentAppearance = AppAppearance(rawValue: SettingsStore.shared.settings.appearance) ?? .system
         for appearance in AppAppearance.allCases {
             let item = NSMenuItem(
                 title: appearance.name,
@@ -228,6 +289,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item.tag = appearance.rawValue
             item.target = self
             item.state = currentAppearance == appearance ? .on : .off
+            appearanceMenuItems.append(item)
             viewMenu.addItem(item)
         }
         viewMenuItem.submenu = viewMenu

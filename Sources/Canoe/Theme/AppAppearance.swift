@@ -5,8 +5,6 @@ enum AppAppearance: Int, CaseIterable {
     case light = 1
     case dark = 2
 
-    private static let userDefaultsKey = "app.canoe.appearance"
-
     var name: String {
         switch self {
         case .system: return "System"
@@ -15,14 +13,8 @@ enum AppAppearance: Int, CaseIterable {
         }
     }
 
-    static var current: AppAppearance {
-        let raw = UserDefaults.standard.integer(forKey: userDefaultsKey)
-        return AppAppearance(rawValue: raw) ?? .system
-    }
-
     @MainActor
     func apply() {
-        UserDefaults.standard.set(rawValue, forKey: Self.userDefaultsKey)
         NSApp.appearance = nsAppearance
     }
 

@@ -155,9 +155,14 @@ private struct TabPill: View {
             .frame(minHeight: AppSize.tabHeight)
             // nil = not measured yet; then the pill keeps its natural width.
             .frame(minWidth: width, maxWidth: width)
+            // The label's padding and gaps are empty space: without an
+            // explicit shape only the text/icon hit-test, so clicks on the
+            // pill body fall through instead of selecting the tab.
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .focusable()
+        // No .focusable(): a focused pill draws the system focus ring, which
+        // reads as a selection border. Tab switching is pointer-driven.
         .help(tabHelp)
         .background {
             // Selected > hovered > idle: hueless neutral grays one step apart,
