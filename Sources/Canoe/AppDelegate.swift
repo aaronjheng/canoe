@@ -47,7 +47,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         observeSettingsChanges()
 
         Task {
-            await appStore.prepare()
+            await appStore.prepare(
+                iCloudSyncEnabled: SettingsStore.shared.settings.iCloudSyncEnabled)
         }
     }
 
@@ -111,7 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let navigation = SettingsNavigationState()
         let split = SettingsSplitViewController(
             sidebar: SettingsSidebarView().environment(navigation),
-            detail: SettingsView().environment(navigation)
+            detail: SettingsView().environment(navigation).environment(appStore)
         )
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 780, height: 520),

@@ -734,13 +734,83 @@ final class AppStore {
     /// Loads the vault, then restores the unsaved edits persisted by the
     /// last session so requests and environments reopen in their edited
     /// state (dirty markers lit; nothing written to the saved files).
-    func prepare() async {
-        await vault.prepare()
+    func prepare(iCloudSyncEnabled: Bool) async {
+        vault.onExternalChange = { [weak self] in
+            Task { [weak self] in await self?.reloadFromExternalChange() }
+        }
+        await vault.prepare(location: iCloudSyncEnabled ? .iCloud : .local)
         let drafts = await vault.loadDrafts()
         applyRequestDrafts(drafts.requests)
         applyEnvironmentDrafts(drafts.environments)
         applyWorkspaceVariableDrafts(drafts.workspaceVariables)
         applyCollectionVariableDrafts(drafts.collectionVariables)
+    }
+
+    /// Switches the vault between local storage and iCloud Drive, keeping
+    /// every unsaved draft in memory and rebasing it onto the newly loaded
+    /// files. Returns an error message when the switch fails, so the
+    /// Settings toggle can revert and explain.
+    func setVaultLocation(_ location: VaultLocation) async -> String? {
+        do {
+            try await vault.setLocation(location)
+        } catch {
+            return error.localizedDescription
+        }
+        rebasePendingSnapshotsOntoLoadedVault()
+        return nil
+    }
+
+    /// Reloads saved files changed on disk (another device via iCloud Drive)
+    /// while keeping every unsaved draft visible: dirty entities stay as
+    /// edited in memory with their baseline moved to the fresh disk content,
+    /// clean entities are replaced outright, and drafts whose entity vanished
+    /// remotely are dropped.
+    private func reloadFromExternalChange() async {
+        await vault.loadAll()
+        rebasePendingSnapshotsOntoLoadedVault()
+    }
+
+    private func rebasePendingSnapshotsOntoLoadedVault() {
+        for (id, snapshot) in pendingRequestSnapshots {
+            guard
+                let ci = vault.collections.firstIndex(where: { $0.requests.contains { $0.id == id } }),
+                let ri = vault.collections[ci].requests.firstIndex(where: { $0.id == id })
+            else {
+                pendingRequestSnapshots[id] = nil
+                persistedRequestBaselines[id] = nil
+                continue
+            }
+            persistedRequestBaselines[id] = vault.collections[ci].requests[ri]
+            vault.collections[ci].requests[ri] = snapshot
+        }
+        for (id, snapshot) in pendingEnvironmentSnapshots {
+            guard let idx = vault.environments.firstIndex(where: { $0.id == id }) else {
+                pendingEnvironmentSnapshots[id] = nil
+                persistedEnvironmentBaselines[id] = nil
+                continue
+            }
+            persistedEnvironmentBaselines[id] = vault.environments[idx]
+            vault.environments[idx] = snapshot
+        }
+        for (id, variables) in pendingWorkspaceVariables {
+            guard let idx = vault.workspaces.firstIndex(where: { $0.id == id }) else {
+                pendingWorkspaceVariables[id] = nil
+                persistedWorkspaceVariableBaselines[id] = nil
+                continue
+            }
+            persistedWorkspaceVariableBaselines[id] = vault.workspaces[idx].variables
+            vault.workspaces[idx].variables = variables
+        }
+        for (id, variables) in pendingCollectionVariables {
+            guard let idx = vault.collections.firstIndex(where: { $0.id == id }) else {
+                pendingCollectionVariables[id] = nil
+                persistedCollectionVariableBaselines[id] = nil
+                continue
+            }
+            persistedCollectionVariableBaselines[id] = vault.collections[idx].variables
+            vault.collections[idx].variables = variables
+        }
+        scheduleDraftPersistence()
     }
 
     /// Re-applies request drafts on top of the loaded vault. Drafts whose

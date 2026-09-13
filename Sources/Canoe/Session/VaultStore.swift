@@ -17,6 +17,24 @@ struct VaultDrafts: Codable {
     }
 }
 
+/// Where the synced vault files live. Drafts (`drafts.json`) and
+/// `settings.json` are always machine-local regardless of this choice.
+enum VaultLocation: String, Sendable {
+    case local
+    case iCloud
+}
+
+/// Thrown when switching to a location that cannot be used right now.
+enum VaultLocationError: Error, LocalizedError {
+    case iCloudDriveUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .iCloudDriveUnavailable:
+            return "iCloud Drive is not available on this Mac. Turn it on in System Settings → Apple Account → iCloud → Drive."
+        }
+    }
+}
 /// Manages the on-disk vault: a fixed local folder in Application Support
 /// holding every workspace/collection/environment as a JSON file, plus
 /// loading and persisting changes. The vault layout is intentionally plain
@@ -33,6 +51,14 @@ final class VaultStore {
     var vaultURL: URL?
     var isReady = false
     var loadError: String?
+    /// Where the synced vault files currently live. Drafts stay local
+    /// regardless (see `draftsFileURL`).
+    var location: VaultLocation = .local
+    /// Fired (debounced) when the watcher sees the vault change on disk -
+    /// wired by `AppStore` to reload while preserving unsaved drafts.
+    var onExternalChange: (() -> Void)?
+    @ObservationIgnored private var watchSources: [DispatchSourceFileSystemObject] = []
+    @ObservationIgnored private var watchDebounceTask: Task<Void, Never>?
 
     // MARK: - Paths
 
@@ -41,8 +67,13 @@ final class VaultStore {
     private var environmentsDirectory: URL? { vaultURL?.appendingPathComponent("environments") }
     private var configFileURL: URL? { vaultURL?.appendingPathComponent("vault.json") }
     /// Unsaved request edits, mirrored so they survive relaunches without
-    /// being written into the saved request files.
-    private var draftsFileURL: URL? { vaultURL?.appendingPathComponent("drafts.json") }
+    /// being written into the saved request files. Always machine-local,
+    /// even when the synced vault lives on iCloud Drive: drafts are
+    /// per-device intent, and their debounced whole-file rewrites would
+    /// fight across devices.
+    private var draftsFileURL: URL? {
+        localRoot()?.appendingPathComponent("drafts.json")
+    }
 
     // MARK: - Derived
 
@@ -76,25 +107,85 @@ final class VaultStore {
 
     // MARK: - Preparation
 
-    /// Resolves the local vault location and loads everything. The vault is
-    /// a fixed folder inside Application Support - no folder picking, no
-    /// cloud providers.
-    func prepare() async {
-        vaultURL = defaultVaultURL()
+    /// Resolves the vault location and loads everything. In local mode the
+    /// vault is a fixed folder inside Application Support - no folder
+    /// picking, no cloud providers. In iCloud mode it lives in the
+    /// app's iCloud Drive folder; an unavailable iCloud Drive falls back
+    /// to local with `loadError` set.
+    func prepare(location: VaultLocation) async {
+        if location == .iCloud, Self.iCloudDriveRoot() == nil {
+            self.location = .local
+            vaultURL = localRoot()
+            loadError =
+                "iCloud Drive is not available on this Mac. Turn it on in System Settings → Apple Account."
+        } else {
+            self.location = location
+            vaultURL = root(for: location)
+        }
         guard vaultURL != nil else {
             loadError = "Could not locate the Application Support folder."
             isReady = true
             return
         }
         await loadAll()
+        startWatchingIfNeeded()
         isReady = true
+    }
+
+    /// Switches the vault root, merging both sides file-by-file
+    /// (newer-wins) first so neither side's files are lost. Disabling keeps
+    /// the iCloud files in place; re-enabling merges again.
+    func setLocation(_ newLocation: VaultLocation) async throws {
+        if newLocation == location { return }
+        stopWatching()
+        if newLocation == .iCloud {
+            guard let iCloudRoot = Self.iCloudDriveRoot() else {
+                startWatchingIfNeeded()
+                throw VaultLocationError.iCloudDriveUnavailable
+            }
+            try mergeVaults(local: localRoot(), iCloud: iCloudRoot)
+        } else if let iCloudRoot = Self.iCloudDriveRoot() {
+            try mergeVaults(local: localRoot(), iCloud: iCloudRoot)
+        }
+        location = newLocation
+        vaultURL = root(for: newLocation)
+        await loadAll()
+        startWatchingIfNeeded()
+    }
+
+    private func startWatchingIfNeeded() {
+        if location == .iCloud {
+            startWatching()
+        }
+    }
+
+    private func root(for location: VaultLocation) -> URL? {
+        switch location {
+        case .local: localRoot()
+        case .iCloud: Self.iCloudDriveRoot()
+        }
     }
 
     /// `~/Library/Application Support/Canoe`. The app is not sandboxed, so
     /// this is the user-level Application Support folder.
-    private func defaultVaultURL() -> URL? {
+    private func localRoot() -> URL? {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
             .appendingPathComponent("Canoe", isDirectory: true)
+    }
+
+    /// `~/Library/Mobile Documents/com~apple~CloudDocs/Canoe/`, synced by
+    /// the system. Needs no entitlements: the app is not sandboxed, so it
+    /// reads and writes the user's iCloud Drive folder like any files.
+    /// Nil when iCloud Drive is off (its container is absent) - callers must
+    /// then stay local rather than create an unsynced lookalike.
+    static func iCloudDriveRoot() -> URL? {
+        let cloudDocs = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs", isDirectory: true)
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: cloudDocs.path, isDirectory: &isDirectory),
+            isDirectory.boolValue
+        else { return nil }
+        return cloudDocs.appendingPathComponent("Canoe", isDirectory: true)
     }
 
     // MARK: - Loading
@@ -142,6 +233,9 @@ final class VaultStore {
             }
 
             loadError = nil
+            if location == .iCloud {
+                await resolveConflicts()
+            }
             AppLogger.info(
                 "Vault loaded",
                 category: "Vault",
@@ -271,7 +365,6 @@ final class VaultStore {
 
     func persistConfig() async {
         guard let configFileURL else { return }
-        config.lastOpenedAt = Date()
         try? await FileStore.write(config, to: configFileURL)
     }
 
@@ -307,6 +400,175 @@ final class VaultStore {
     func revealInFinder() {
         guard let vaultURL else { return }
         NSWorkspace.shared.activateFileViewerSelecting([vaultURL])
+    }
+
+    // MARK: - Location merge
+
+    /// Merges the local and iCloud vaults file-by-file, newer-wins, in both
+    /// directions, so switching locations never drops either side's files.
+    /// Runs synchronously on small JSON files; both roots may be absent on a
+    /// first run (nothing to merge).
+    private func mergeVaults(local: URL?, iCloud: URL) throws {
+        for subdir in ["workspaces", "collections", "environments"] {
+            if let local {
+                try mergeDirectory(
+                    local.appendingPathComponent(subdir, isDirectory: true),
+                    iCloud.appendingPathComponent(subdir, isDirectory: true))
+            } else {
+                try FileManager.default.createDirectory(
+                    at: iCloud.appendingPathComponent(subdir, isDirectory: true),
+                    withIntermediateDirectories: true)
+            }
+        }
+        if let local {
+            try mergeFile(
+                local.appendingPathComponent("vault.json"),
+                iCloud.appendingPathComponent("vault.json"))
+        }
+    }
+
+    private func mergeDirectory(_ first: URL, _ second: URL) throws {
+        let manager = FileManager.default
+        try manager.createDirectory(at: first, withIntermediateDirectories: true)
+        try manager.createDirectory(at: second, withIntermediateDirectories: true)
+        let firstNames = Set((try? manager.contentsOfDirectory(atPath: first.path)) ?? [])
+        let secondNames = Set((try? manager.contentsOfDirectory(atPath: second.path)) ?? [])
+        for name in firstNames.union(secondNames) where name.hasSuffix(".json") {
+            try mergeFile(first.appendingPathComponent(name), second.appendingPathComponent(name))
+        }
+    }
+
+    /// Copies the newer side over the older (or missing) side. Equal mtimes
+    /// keep both copies untouched.
+    private func mergeFile(_ first: URL, _ second: URL) throws {
+        let manager = FileManager.default
+        let firstDate = modificationDate(of: first)
+        let secondDate = modificationDate(of: second)
+        switch (firstDate, secondDate) {
+        case (nil, nil):
+            return
+        case (nil, _):
+            try manager.copyItem(at: second, to: first)
+        case (_, nil):
+            try manager.copyItem(at: first, to: second)
+        case let (firstDate?, secondDate?) where firstDate > secondDate:
+            try manager.removeItem(at: second)
+            try manager.copyItem(at: first, to: second)
+        case let (firstDate?, secondDate?) where secondDate > firstDate:
+            try manager.removeItem(at: first)
+            try manager.copyItem(at: second, to: first)
+        default:
+            return
+        }
+    }
+
+    private func modificationDate(of url: URL) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+    }
+
+    // MARK: - Conflicts
+
+    /// Resolves iCloud Drive file conflicts left by concurrent edits on
+    /// multiple devices. Collection files keep the losing side as a
+    /// duplicate collection (new id, "conflict" suffix) so no device's
+    /// requests silently vanish; every other file is last-writer-wins.
+    private func resolveConflicts() async {
+        var files: [URL] = []
+        for dir in [workspacesDirectory, collectionsDirectory, environmentsDirectory] {
+            guard let dir else { continue }
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+            files += names.filter { $0.hasSuffix(".json") }.map { dir.appendingPathComponent($0) }
+        }
+        if let configFileURL { files.append(configFileURL) }
+        for file in files {
+            let isCollection = collectionsDirectory.map { file.deletingLastPathComponent() == $0 } ?? false
+            await resolveConflicts(at: file, isCollection: isCollection)
+        }
+    }
+
+    private func resolveConflicts(at file: URL, isCollection: Bool) async {
+        guard let conflicts = NSFileVersion.unresolvedConflictVersionsOfItem(at: file),
+            !conflicts.isEmpty
+        else { return }
+        AppLogger.info(
+            "Resolving iCloud conflict",
+            category: "Vault",
+            fields: ["file": file.lastPathComponent, "versions": "\(conflicts.count)"])
+        if isCollection {
+            for version in conflicts {
+                await duplicateConflictVersion(version)
+            }
+        }
+        try? NSFileVersion.removeOtherVersionsOfItem(at: file)
+        for version in conflicts {
+            version.isResolved = true
+        }
+    }
+
+    /// Saves a conflicting collection version as its own collection file so
+    /// the losing side survives next to the winner instead of vanishing.
+    private func duplicateConflictVersion(_ version: NSFileVersion) async {
+        guard let data = try? Data(contentsOf: version.url),
+            var collection = try? JSONDecoder.iso.decode(Collection.self, from: data)
+        else { return }
+        collection.id = UUID()
+        let device = Host.current().localizedName ?? "another device"
+        collection.name += " (conflict, \(device))"
+        collection.orderIndex = (collections.map(\.orderIndex).max() ?? -1) + 1
+        guard let collectionsDirectory else { return }
+        let file = collectionsDirectory.appendingPathComponent("\(collection.id.uuidString).json")
+        do {
+            try await FileStore.write(collection, to: file)
+            upsert(collection, in: &collections)
+        } catch {
+            AppLogger.error("Failed to save conflict duplicate: \(error)", category: "Vault")
+        }
+    }
+
+    // MARK: - External change watching
+
+    /// Watches the vault directories for changes made elsewhere (another
+    /// device via iCloud Drive) and fires `onExternalChange` debounced.
+    /// Only active in iCloud mode; our own saves also trigger it, which is
+    /// harmless - reloads are idempotent and preserve unsaved drafts.
+    private func startWatching() {
+        stopWatching()
+        guard let vaultURL else { return }
+        var directories = [vaultURL]
+        for sub in ["workspaces", "collections", "environments"] {
+            directories.append(vaultURL.appendingPathComponent(sub, isDirectory: true))
+        }
+        for directory in directories {
+            let fd = open(directory.path, O_EVTONLY)
+            guard fd >= 0 else { continue }
+            let source = DispatchSource.makeFileSystemObjectSource(
+                fileDescriptor: fd,
+                eventMask: [.write, .extend, .delete, .rename],
+                queue: .main
+            )
+            source.setEventHandler { [weak self] in self?.externalChangeReceived() }
+            source.setCancelHandler { close(fd) }
+            source.resume()
+            watchSources.append(source)
+        }
+    }
+
+    private func stopWatching() {
+        watchDebounceTask?.cancel()
+        watchDebounceTask = nil
+        for source in watchSources {
+            source.cancel()
+        }
+        watchSources = []
+    }
+
+    private func externalChangeReceived() {
+        watchDebounceTask?.cancel()
+        watchDebounceTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            self?.onExternalChange?()
+        }
     }
 
     // MARK: - Helpers
