@@ -1,17 +1,19 @@
 import SwiftUI
 
-/// Tab-based editor for a collection's settings: the Authorization helper
-/// inherited by its requests (Postman-style), and the collection's
-/// variables. Opened from the collection row's context menu ("Edit
-/// Collection") or the "Variables in Request" inspector. Collection
-/// variables apply to every request in the collection and lose only to
-/// environment variables of the same name.
+/// Tab-based collection page: an Overview of what the collection holds
+/// (Postman-style, opened by clicking the collection's name in the sidebar)
+/// plus the Authorization helper inherited by its requests and the
+/// collection's variables. Opened from the sidebar, the collection row's
+/// context menu ("Edit Collection"), or the "Variables in Request"
+/// inspector. Collection variables apply to every request in the collection
+/// and lose only to environment variables of the same name.
 struct CollectionDetailView: View {
     @Environment(AppStore.self) private var store
     @State private var draft: Collection
-    @State private var section: Section = .variables
+    @State private var section: Section = .overview
 
     enum Section: String, CaseIterable, Identifiable {
+        case overview = "Overview"
         case authorization = "Authorization"
         case variables = "Variables"
 
@@ -48,6 +50,8 @@ struct CollectionDetailView: View {
             Divider()
 
             switch section {
+            case .overview:
+                overviewPane
             case .authorization:
                 AuthorizationForm(
                     type: $draft.authorization.type,
@@ -107,6 +111,46 @@ struct CollectionDetailView: View {
             Spacer()
         }
         .padding(.horizontal, AppSpacing.small)
+    }
+
+    // MARK: - Overview
+
+    /// The live collection: `draft` snapshots variables/authorization for
+    /// editing, but folders and requests change from the sidebar while this
+    /// page is open, so structure always reads the vault.
+    private var liveCollection: Collection {
+        store.vault.collections.first(where: { $0.id == draft.id }) ?? draft
+    }
+
+    /// Postman-style overview: totals describing what the collection holds.
+    private var overviewPane: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: AppSpacing.medium) {
+                overviewStats
+            }
+            .padding(AppSpacing.medium)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var overviewStats: some View {
+        let live = liveCollection
+        return HStack(spacing: AppSpacing.xLarge) {
+            overviewStat(value: "\(live.requests.count)", label: "Requests")
+            overviewStat(value: "\(live.folders.count)", label: "Folders")
+            overviewStat(value: "\(draft.variables.count)", label: "Variables")
+        }
+    }
+
+    private func overviewStat(value: String, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(.title2.weight(.semibold))
+                .monospacedDigit()
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 
     // MARK: - Variable scope for {{placeholder}} highlighting

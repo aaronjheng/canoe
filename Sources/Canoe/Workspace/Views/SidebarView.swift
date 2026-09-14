@@ -348,6 +348,9 @@ private struct CollectionTree: View {
         !store.sidebarFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// Highlighted when the collection's page is the selected tab.
+    private var isSelected: Bool { store.selectedTab == .collection(collection.id) }
+
     private var visibleFolders: [Folder] {
         let folders = store.childFolders(of: nil, in: collection)
         guard isFiltering else { return folders }
@@ -362,11 +365,24 @@ private struct CollectionTree: View {
 
     var body: some View {
         Group {
+            // Postman-style: the whole row opens the collection's page (an
+            // overview of its requests, auth, and variables); only the
+            // chevron toggles the tree. A tap on the chevron reaches the
+            // inner button alone, anywhere else opens the page.
             Button {
-                isExpanded.toggle()
+                store.openTab(.collection(collection.id))
+                isExpanded = true
             } label: {
                 HStack(spacing: AppSpacing.xSmall) {
-                    ExpanderChevron(isExpanded: isExpanded)
+                    Button {
+                        isExpanded.toggle()
+                    } label: {
+                        ExpanderChevron(isExpanded: isExpanded)
+                            .padding(.vertical, AppSpacing.xSmall)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(isExpanded ? "Collapse collection" : "Expand collection")
                     Text(collection.name)
                         .font(AppFont.sidebarRow.weight(.medium))
                         .lineLimit(1)
@@ -378,12 +394,13 @@ private struct CollectionTree: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
                     RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                        .fill(isHoveringHeader ? AppColor.subtleBackground : .clear)
+                        .fill(isSelected ? AppColor.selectionBackground : isHoveringHeader ? AppColor.subtleBackground : .clear)
                 )
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .onHover { isHoveringHeader = $0 }
+            .help("Open \(collection.name)")
             .contextMenu {
                 Button("Add Request", systemImage: "plus") {
                     store.addRequest(in: collection.id)
