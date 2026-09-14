@@ -60,6 +60,9 @@ struct BodyEditor: View {
                 .help("Raw body format (sets the Content-Type)")
             }
         }
+        // The Raw format picker is taller than the radio labels: without a
+        // floor the whole row grows when switching to Raw.
+        .frame(minHeight: 28)
         .padding(.horizontal, AppSpacing.medium)
         .padding(.vertical, AppSpacing.small)
     }
@@ -108,22 +111,6 @@ struct BodyEditor: View {
 
     private var rawEditor: some View {
         VStack(spacing: 0) {
-            HStack(spacing: AppSpacing.small) {
-                Text("Content-Type: \(request.bodyContentType.isEmpty ? "(none)" : request.bodyContentType)")
-                    .font(AppFont.monoCaption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Spacer()
-                Text("\(request.bodyText.count) chars")
-                    .font(AppFont.countBadge)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, AppSpacing.medium)
-            .padding(.vertical, AppSpacing.small)
-
-            Divider()
-
             VariableHighlightEditor(
                 text: $request.bodyText,
                 variables: resolvedVariables,
