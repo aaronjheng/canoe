@@ -208,7 +208,7 @@ private struct TabPill: View {
             }
         case .collection(let id):
             if let collection = store.vault.collections.first(where: { $0.id == id }) {
-                "\(collection.name) - collection variables"
+                "\(collection.name) - collection settings"
             } else {
                 "Collection"
             }
@@ -257,13 +257,16 @@ private struct TabPill: View {
         }
     }
 
-    /// Whether the tab's request or environment has unsaved modifications.
+    /// Whether the tab's request, environment, or collection has unsaved
+    /// modifications.
     private var isDirty: Bool {
         switch tab {
         case .request(let id):
             return store.hasPendingChanges(for: id)
         case .environment(let id):
             return store.hasPendingEnvironmentChanges(for: id)
+        case .collection(let id):
+            return store.hasPendingCollectionChanges(for: id)
         default:
             return false
         }
@@ -318,7 +321,7 @@ private struct TabPill: View {
                     .font(.subheadline)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .help("\(collection.name) - collection variables")
+                    .help("\(collection.name) - collection settings")
             }
         case .workspace(let id):
             if let workspace = store.vault.workspaces.first(where: { $0.id == id }) {

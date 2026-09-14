@@ -4,6 +4,8 @@ import Foundation
 /// collection (including its folders, requests, and variables) inside the
 /// vault. Collection variables apply to every request it contains, losing
 /// only to environment variables of the same name (Postman-style scoping).
+/// Its Authorization settings are inherited by every request set to the
+/// inherit type.
 struct Collection: Identifiable, Codable, Hashable, Sendable {
     var id: UUID = UUID()
     var workspaceID: UUID?
@@ -13,6 +15,9 @@ struct Collection: Identifiable, Codable, Hashable, Sendable {
     var folders: [Folder] = []
     var requests: [RequestItem] = []
     var variables: [Variable] = []
+    /// Postman-style Authorization helper inherited by requests set to the
+    /// inherit type. A manually set Authorization header always wins.
+    var authorization: RequestAuthorization = RequestAuthorization()
 
     init(
         id: UUID = UUID(),
@@ -35,6 +40,7 @@ struct Collection: Identifiable, Codable, Hashable, Sendable {
         case folders
         case requests
         case variables
+        case authorization
     }
 }
 
@@ -51,5 +57,6 @@ extension Collection {
         folders = try container.decodeIfPresent([Folder].self, forKey: .folders) ?? []
         requests = try container.decodeIfPresent([RequestItem].self, forKey: .requests) ?? []
         variables = try container.decodeIfPresent([Variable].self, forKey: .variables) ?? []
+        authorization = try container.decodeIfPresent(RequestAuthorization.self, forKey: .authorization) ?? RequestAuthorization()
     }
 }

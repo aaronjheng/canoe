@@ -153,6 +153,8 @@ final class AppStore {
     /// Unsaved workspace/collection variable edits - same draft model.
     private var pendingWorkspaceVariables: [UUID: [Variable]] = [:]
     private var pendingCollectionVariables: [UUID: [Variable]] = [:]
+    /// Unsaved collection Authorization edits - same draft model.
+    private var pendingCollectionAuthorizations: [UUID: RequestAuthorization] = [:]
     /// Last persisted content per request id. The dirty check compares
     /// against this (NOT the in-memory copy, which updateRequest has already
     /// mutated - that comparison always matched, so edits never reached disk).
@@ -163,6 +165,8 @@ final class AppStore {
     /// Last persisted variables per workspace/collection id.
     @ObservationIgnored private var persistedWorkspaceVariableBaselines: [UUID: [Variable]] = [:]
     @ObservationIgnored private var persistedCollectionVariableBaselines: [UUID: [Variable]] = [:]
+    /// Last persisted Authorization per collection id.
+    @ObservationIgnored private var persistedCollectionAuthorizationBaselines: [UUID: RequestAuthorization] = [:]
     /// Debounced writer for the drafts mirror; cancelled/rescheduled on
     /// every edit so typing does not rewrite drafts.json per keystroke.
     @ObservationIgnored private var draftSaveTask: Task<Void, Never>?
@@ -220,6 +224,62 @@ final class AppStore {
     /// Merged variables in scope for a request (Postman-style precedence:
     /// environment > collection > workspace). Used for placeholder resolution
     /// at send time and by the "Variables in Request" inspector.
+    /// The collection that owns `request` (every request lives in exactly
+    /// one collection; folders only organize the tree).
+    func collectionForRequest(_ request: RequestItem) -> Collection? {
+        vault.collections.first { $0.requests.contains { $0.id == request.id } }
+    }
+
+    /// Where an inheriting request's Authorization comes from: the nearest
+    /// ancestor along Request → Folder → Collection whose settings are not
+    /// themselves set to inherit. nil when the request does not inherit.
+    func authorizationInheritanceSource(for request: RequestItem) -> AuthorizationInheritanceSource? {
+        guard request.requestAuthType == .inherit else { return nil }
+        guard let collection = collectionForRequest(request) else { return nil }
+        var folderID = request.folderID
+        while let id = folderID, let folder = collection.folders.first(where: { $0.id == id }) {
+            if folder.authorization.type != .inherit {
+                return AuthorizationInheritanceSource(
+                    ownerID: folder.id, ownerName: folder.name, isFolder: true,
+                    authorization: folder.authorization)
+            }
+            folderID = folder.parentFolderID
+        }
+        // The collection is the top of the chain; an inherit setting there
+        // resolves to no Authorization.
+        return AuthorizationInheritanceSource(
+            ownerID: collection.id, ownerName: collection.name, isFolder: false,
+            authorization: collection.authorization)
+    }
+
+    /// The effective Authorization for a request: its own settings, or the
+    /// nearest ancestor's when the request inherits them. This is what the
+    /// sender and the code generator resolve the helper from.
+    func authorizationForRequest(_ request: RequestItem) -> RequestAuthorization {
+        guard request.requestAuthType == .inherit else {
+            return RequestAuthorization(from: request)
+        }
+        guard let source = authorizationInheritanceSource(for: request) else {
+            return RequestAuthorization(type: .none)
+        }
+        guard source.authorization.type != .inherit else {
+            return RequestAuthorization(type: .none)
+        }
+        return source.authorization
+    }
+
+    /// Applies a folder's Authorization edit and persists the collection
+    /// file immediately (folder settings are edited in a sheet; same
+    /// persistence model as rename/delete).
+    func updateFolderAuthorization(_ folderID: UUID, in collectionID: UUID, authorization: RequestAuthorization) {
+        guard let ci = vault.collections.firstIndex(where: { $0.id == collectionID }) else { return }
+        guard let fi = vault.collections[ci].folders.firstIndex(where: { $0.id == folderID }) else { return }
+        guard vault.collections[ci].folders[fi].authorization != authorization else { return }
+        vault.collections[ci].folders[fi].authorization = authorization
+        let updated = vault.collections[ci]
+        Task { await vault.saveCollection(updated) }
+    }
+
     func variablesForRequest(_ request: RequestItem) -> [String: String] {
         var merged: [String: String] = [:]
         for scope in variableScopesForRequest(request) {
@@ -234,7 +294,7 @@ final class AppStore {
     /// environment slot is always present; its `ownerID` is nil when no
     /// environment is active.
     func variableScopesForRequest(_ request: RequestItem) -> [RequestVariableScope] {
-        let collection = vault.collections.first { $0.requests.contains { $0.id == request.id } }
+        let collection = collectionForRequest(request)
         let workspace = collection?.workspaceID.flatMap { id in vault.workspaces.first { $0.id == id } }
         let environment = activeEnvironment
         return [
@@ -530,6 +590,8 @@ final class AppStore {
         )
         pendingCollectionVariables[id] = nil
         persistedCollectionVariableBaselines[id] = nil
+        pendingCollectionAuthorizations[id] = nil
+        persistedCollectionAuthorizationBaselines[id] = nil
         for tab in openTabs where tab.requestID.map(doomed.contains) == true {
             closeTab(tab)
         }
@@ -541,6 +603,20 @@ final class AppStore {
         vault.collections.removeAll { $0.id == id }
         clearSelectionIfMissing()
         Task { await vault.deleteCollection(id) }
+    }
+
+    /// Applies the collection edit to the in-memory vault and marks it
+    /// dirty. Nothing is written to disk until Save (⌘S / Save button); the
+    /// edit is mirrored to drafts.json so it survives relaunches.
+    func updateCollectionAuthorization(_ id: UUID, authorization: RequestAuthorization) {
+        if persistedCollectionAuthorizationBaselines[id] == nil {
+            persistedCollectionAuthorizationBaselines[id] = vault.collections.first(where: { $0.id == id })?.authorization
+        }
+        guard let idx = vault.collections.firstIndex(where: { $0.id == id }) else { return }
+        guard vault.collections[idx].authorization != authorization else { return }
+        vault.collections[idx].authorization = authorization
+        pendingCollectionAuthorizations[id] = authorization
+        scheduleDraftPersistence()
     }
 
     /// Replaces a collection's variables in memory and marks them dirty.
@@ -555,6 +631,19 @@ final class AppStore {
         vault.collections[idx].variables = variables
         pendingCollectionVariables[id] = variables
         scheduleDraftPersistence()
+    }
+
+    /// Whether the collection's variables or Authorization have unsaved
+    /// modifications.
+    func hasPendingCollectionChanges(for collectionID: UUID) -> Bool {
+        hasPendingCollectionVariables(for: collectionID) || hasPendingCollectionAuthorization(for: collectionID)
+    }
+
+    /// Whether the collection's Authorization has unsaved modifications.
+    func hasPendingCollectionAuthorization(for collectionID: UUID) -> Bool {
+        guard let pending = pendingCollectionAuthorizations[collectionID] else { return false }
+        guard let baseline = persistedCollectionAuthorizationBaselines[collectionID] else { return true }
+        return pending != baseline
     }
 
     /// Whether the collection's variables have unsaved modifications.
@@ -744,6 +833,47 @@ final class AppStore {
         applyEnvironmentDrafts(drafts.environments)
         applyWorkspaceVariableDrafts(drafts.workspaceVariables)
         applyCollectionVariableDrafts(drafts.collectionVariables)
+        applyCollectionAuthorizationDrafts(drafts.collectionAuthorizations)
+        await migrateRequestAuthInheritanceIfNeeded()
+    }
+
+    /// One-time migration: requests saved before the inherit Authorization
+    /// type existed carry authType "none" as their DEFAULT (the picker had no
+    /// inherit option then), not as an explicit opt-out - Postman semantics
+    /// treat "not configured" as inheriting. Upgrade those to inherit and
+    /// stamp the config so this runs once; "none" values chosen explicitly
+    /// after this migration are left alone. Runs after drafts are applied so
+    /// restored request drafts migrate too.
+    private func migrateRequestAuthInheritanceIfNeeded() async {
+        guard vault.config.migratedAuthInheritance != true else { return }
+        vault.config.migratedAuthInheritance = true
+
+        var touchedCollections: [Collection] = []
+        for ci in vault.collections.indices {
+            var changed = false
+            for ri in vault.collections[ci].requests.indices
+            where vault.collections[ci].requests[ri].authType == RequestAuthType.none.rawValue {
+                vault.collections[ci].requests[ri].authType = RequestAuthType.inherit.rawValue
+                changed = true
+                let requestID = vault.collections[ci].requests[ri].id
+                // Keep the draft mirror and its baseline in step so the
+                // migration neither reverts on save nor lights dirty markers.
+                if pendingRequestSnapshots[requestID] != nil {
+                    pendingRequestSnapshots[requestID]?.authType = RequestAuthType.inherit.rawValue
+                }
+                if persistedRequestBaselines[requestID] != nil {
+                    persistedRequestBaselines[requestID]?.authType = RequestAuthType.inherit.rawValue
+                }
+            }
+            if changed {
+                touchedCollections.append(vault.collections[ci])
+            }
+        }
+
+        for collection in touchedCollections {
+            await vault.saveCollection(collection)
+        }
+        await vault.persistConfig()
     }
 
     /// Switches the vault between local storage and iCloud Drive, keeping
@@ -810,6 +940,15 @@ final class AppStore {
             persistedCollectionVariableBaselines[id] = vault.collections[idx].variables
             vault.collections[idx].variables = variables
         }
+        for (id, authorization) in pendingCollectionAuthorizations {
+            guard let idx = vault.collections.firstIndex(where: { $0.id == id }) else {
+                pendingCollectionAuthorizations[id] = nil
+                persistedCollectionAuthorizationBaselines[id] = nil
+                continue
+            }
+            persistedCollectionAuthorizationBaselines[id] = vault.collections[idx].authorization
+            vault.collections[idx].authorization = authorization
+        }
         scheduleDraftPersistence()
     }
 
@@ -872,6 +1011,24 @@ final class AppStore {
         scheduleDraftPersistence()
     }
 
+    /// Re-applies collection Authorization drafts - same restore as requests.
+    private func applyCollectionAuthorizationDrafts(_ drafts: [String: RequestAuthorization]) {
+        guard !drafts.isEmpty else { return }
+        var restored: [UUID: RequestAuthorization] = [:]
+        for (key, authorization) in drafts {
+            guard let id = UUID(uuidString: key) else { continue }
+            if let idx = vault.collections.firstIndex(where: { $0.id == id }) {
+                if persistedCollectionAuthorizationBaselines[id] == nil {
+                    persistedCollectionAuthorizationBaselines[id] = vault.collections[idx].authorization
+                }
+                vault.collections[idx].authorization = authorization
+                restored[id] = authorization
+            }
+        }
+        pendingCollectionAuthorizations = restored
+        scheduleDraftPersistence()
+    }
+
     /// Re-applies collection variable drafts - same restore as requests.
     private func applyCollectionVariableDrafts(_ drafts: [String: [Variable]]) {
         guard !drafts.isEmpty else { return }
@@ -900,7 +1057,9 @@ final class AppStore {
             workspaceVariables: Dictionary(
                 pendingWorkspaceVariables.map { ($0.key.uuidString, $0.value) }, uniquingKeysWith: { first, _ in first }),
             collectionVariables: Dictionary(
-                pendingCollectionVariables.map { ($0.key.uuidString, $0.value) }, uniquingKeysWith: { first, _ in first })
+                pendingCollectionVariables.map { ($0.key.uuidString, $0.value) }, uniquingKeysWith: { first, _ in first }),
+            collectionAuthorizations: Dictionary(
+                pendingCollectionAuthorizations.map { ($0.key.uuidString, $0.value) }, uniquingKeysWith: { first, _ in first })
         )
     }
 
@@ -943,13 +1102,16 @@ final class AppStore {
         let pendingEnvironments = pendingEnvironmentSnapshots
         let pendingWorkspaceVariables = self.pendingWorkspaceVariables
         let pendingCollectionVariables = self.pendingCollectionVariables
+        let pendingCollectionAuthorizations = self.pendingCollectionAuthorizations
         pendingRequestSnapshots.removeAll()
         pendingEnvironmentSnapshots.removeAll()
         self.pendingWorkspaceVariables.removeAll()
         self.pendingCollectionVariables.removeAll()
+        self.pendingCollectionAuthorizations.removeAll()
         guard
             !pendingRequests.isEmpty || !pendingEnvironments.isEmpty
                 || !pendingWorkspaceVariables.isEmpty || !pendingCollectionVariables.isEmpty
+                || !pendingCollectionAuthorizations.isEmpty
         else {
             completion?()
             return
@@ -970,6 +1132,9 @@ final class AppStore {
             }
             for (id, variables) in pendingCollectionVariables {
                 await self.persistCollectionVariables(id, variables)
+            }
+            for (id, authorization) in pendingCollectionAuthorizations {
+                await self.persistCollectionAuthorization(id, authorization)
             }
             await self.vault.saveDrafts(VaultDrafts())
             completion?()
@@ -1034,6 +1199,22 @@ final class AppStore {
         vault.workspaces[idx].variables = variables
         await vault.saveWorkspace(vault.workspaces[idx])
         persistedWorkspaceVariableBaselines[id] = variables
+    }
+
+    /// Writes a collection's unsaved Authorization edit into its vault file.
+    private func persistCollectionAuthorization(_ id: UUID, _ authorization: RequestAuthorization) async {
+        guard let idx = vault.collections.firstIndex(where: { $0.id == id }) else {
+            persistedCollectionAuthorizationBaselines[id] = nil
+            return
+        }
+        let baseline = persistedCollectionAuthorizationBaselines[id] ?? vault.collections[idx].authorization
+        if authorization == baseline {
+            persistedCollectionAuthorizationBaselines[id] = authorization
+            return
+        }
+        vault.collections[idx].authorization = authorization
+        await vault.saveCollection(vault.collections[idx])
+        persistedCollectionAuthorizationBaselines[id] = authorization
     }
 
     /// Writes a collection's unsaved variable edits into its vault file.
@@ -1163,8 +1344,9 @@ final class AppStore {
             // Full scope chain (workspace > collection > environment),
             // matching what the "Variables in Request" inspector displays.
             let variables = variablesForRequest(request)
+            let authorization = authorizationForRequest(request)
             do {
-                let response = try await HTTPClient.send(request: request, variables: variables)
+                let response = try await HTTPClient.send(request: request, variables: variables, authorization: authorization)
                 guard sendTokens[tab] == token else { return }
                 guard !Task.isCancelled else { return }
                 responsesByTab[tab] = response

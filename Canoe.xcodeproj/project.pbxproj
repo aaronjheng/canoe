@@ -454,6 +454,17 @@
 			<key>path</key>
 			<string>Models</string>
 		</dict>
+		<key>A1B2C3D4E5F60718293A4B5C</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>FolderEditSheet.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>D544A6AD96EA82868F73DA77</key>
 		<dict>
 			<key>isa</key>
@@ -472,6 +483,7 @@
 			<key>children</key>
 			<array>
 				<string>D544A6AD96EA82868F73DA77</string>
+				<string>A1B2C3D4E5F60718293A4B5C</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -1017,6 +1029,13 @@
 			<key>fileRef</key>
 			<string>BEE9B35ED017F41C7177505D</string>
 		</dict>
+		<key>B2C3D4E5F6A708192A3B4C5D</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>A1B2C3D4E5F60718293A4B5C</string>
+		</dict>
 		<key>6869C6F1C6CF2BCD610E7ECF</key>
 		<dict>
 			<key>isa</key>
@@ -1459,6 +1478,7 @@
 				<string>ACD2D576759531F2D1D563BE</string>
 				<string>B4E2A3B8E270E9940881F55F</string>
 				<string>6869C6F1C6CF2BCD610E7ECF</string>
+				<string>B2C3D4E5F6A708192A3B4C5D</string>
 				<string>ACA88995122962F3252F2102</string>
 				<string>5303BE232F2C7F4F409D26DA</string>
 				<string>AE198CB799B8745AC4094882</string>

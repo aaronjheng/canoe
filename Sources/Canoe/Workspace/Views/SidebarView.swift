@@ -391,7 +391,7 @@ private struct CollectionTree: View {
                     isExpanded = true
                 }
                 Divider()
-                Button("Edit Variables", systemImage: "curlybraces.square") {
+                Button("Edit Collection", systemImage: "folder.badge.gearshape") {
                     store.openTab(.collection(collection.id))
                 }
                 Button("Rename Collection") {
@@ -447,6 +447,7 @@ private struct FolderTree: View {
     @State private var isRenaming = false
     @State private var renameDraft = ""
     @State private var showDeleteConfirm = false
+    @State private var showEditSheet = false
 
     private var isFiltering: Bool {
         !store.sidebarFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -510,6 +511,9 @@ private struct FolderTree: View {
                     isExpanded = true
                 }
                 Divider()
+                Button("Edit Folder", systemImage: "folder.badge.gearshape") {
+                    showEditSheet = true
+                }
                 Button("Rename Folder") {
                     renameDraft = folder.name
                     isRenaming = true
@@ -527,6 +531,9 @@ private struct FolderTree: View {
                     RequestRow(request: request, depth: depth + 1)
                 }
             }
+        }
+        .sheet(isPresented: $showEditSheet) {
+            FolderEditSheet(collection: collection, folder: folder)
         }
         .alert("Rename Folder", isPresented: $isRenaming) {
             TextField("Folder Name", text: $renameDraft)

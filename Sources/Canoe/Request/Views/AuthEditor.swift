@@ -1,12 +1,13 @@
 import SwiftUI
 
-/// Postman-style authorization editor: a narrow left column with the auth
-/// type picker and helper text, and a wide right column whose form rows read
+/// Postman-style authorization editor: a narrow left column with the type
+/// picker and helper text, and a wide right column whose form rows read
 /// label-left / field-right. Values support `{{variables}}` and are resolved
 /// on send; a manually set Authorization header always wins over this helper.
 struct AuthEditor: View {
     @Binding var request: RequestItem
     @Environment(AppStore.self) private var store
+    @State private var folderEditTarget: FolderEditTarget?
 
     /// Merged variable scope for `{{placeholder}}` highlighting.
     private var resolvedVariables: [String: String] {
@@ -17,6 +18,72 @@ struct AuthEditor: View {
     private var requestSuggestions: [VariableSuggestion] {
         VariableSuggestion.suggestions(from: store.variableScopesForRequest(request))
     }
+
+    /// The nearest ancestor (Request → Folder → Collection) whose settings
+    /// the request inherits, when its type is inherit.
+    private var inheritanceSource: AuthorizationInheritanceSource? {
+        store.authorizationInheritanceSource(for: request)
+    }
+
+    /// "Edit in Parent": the folder's sheet, or the collection editor tab.
+    private func editInParent() {
+        guard let source = inheritanceSource else { return }
+        if source.isFolder {
+            guard let collection = store.collectionForRequest(request),
+                let folder = collection.folders.first(where: { $0.id == source.ownerID })
+            else { return }
+            folderEditTarget = FolderEditTarget(collection: collection, folder: folder)
+        } else {
+            store.openTab(.collection(source.ownerID))
+        }
+    }
+
+    var body: some View {
+        AuthorizationForm(
+            type: $request.requestAuthType,
+            username: $request.authUsername,
+            password: $request.authPassword,
+            token: $request.authToken,
+            variables: resolvedVariables,
+            suggestions: requestSuggestions,
+            inheritedSource: inheritanceSource,
+            onEditInParent: editInParent
+        )
+        .sheet(item: $folderEditTarget) { target in
+            FolderEditSheet(collection: target.collection, folder: target.folder)
+        }
+    }
+}
+
+/// Sheet-navigation wrapper: presents a folder's editor from a request.
+struct FolderEditTarget: Identifiable {
+    let collection: Collection
+    let folder: Folder
+
+    var id: UUID { folder.id }
+}
+
+/// The shared authorization editing surface, used by the request editor (own
+/// settings), the folder editor, and the collection editor. One column picks
+/// the helper type; the other renders its fields - or, for the inherit type,
+/// a read-only echo of the settings the chain resolves to (Postman-style).
+struct AuthorizationForm: View {
+    @Binding var type: RequestAuthType
+    @Binding var username: String
+    @Binding var password: String
+    @Binding var token: String
+    /// Merged variable scope for `{{placeholder}}` highlighting.
+    let variables: [String: String]
+    /// Completion candidates with scope metadata for `{{` auto-completion.
+    let suggestions: [VariableSuggestion]
+    /// When the type is inherit: the nearest ancestor's settings, echoed
+    /// read-only with an "Inherited" badge (nil shows a generic note).
+    var inheritedSource: AuthorizationInheritanceSource?
+    /// Action for the echo's "Edit in Parent" shortcut.
+    var onEditInParent: (() -> Void)?
+    /// Types offered in the picker. The collection is the top of the
+    /// inheritance chain, so (Postman-style) it is not offered inherit there.
+    var availableTypes: [RequestAuthType] = RequestAuthType.allCases
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -36,17 +103,17 @@ struct AuthEditor: View {
 
     private var typeColumn: some View {
         VStack(alignment: .leading, spacing: AppSpacing.small) {
-            Text("Auth Type")
+            Text("Authorization Type")
                 .font(AppFont.sectionTitle)
-            Picker("Auth Type", selection: authBinding) {
-                ForEach(RequestAuthType.allCases) { type in
+            Picker("Authorization Type", selection: $type) {
+                ForEach(availableTypes) { type in
                     Text(type.label).tag(type)
                 }
             }
             .pickerStyle(.menu)
             .labelsHidden()
             .fixedSize()
-            Text("The authorization header will be automatically generated when you send the request.")
+            Text("The Authorization header will be automatically generated when you send the request.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text("Fields support {{variables}} from the active environment.")
@@ -61,37 +128,43 @@ struct AuthEditor: View {
     @ViewBuilder
     private var formColumn: some View {
         VStack(alignment: .leading, spacing: AppSpacing.medium) {
-            Text(request.requestAuthType.label)
-                .font(AppFont.panelTitle)
-            switch request.requestAuthType {
-            case .none:
-                Text("This request will not send an Authorization header.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            case .basic:
-                fieldRow("Username") {
-                    VariableHighlightEditor(
-                        text: $request.authUsername,
-                        variables: resolvedVariables,
-                        suggestions: requestSuggestions,
-                        placeholder: "Username"
-                    )
-                    .variableFieldBordered()
-                }
-                fieldRow("Password") {
-                    SecureField("Password", text: $request.authPassword)
-                        .textFieldStyle(.roundedBorder)
-                        .font(AppFont.monoSubheadline)
-                }
-            case .bearer:
-                fieldRow("Token") {
-                    VariableHighlightEditor(
-                        text: $request.authToken,
-                        variables: resolvedVariables,
-                        suggestions: requestSuggestions,
-                        placeholder: "Token"
-                    )
-                    .variableFieldBordered()
+            if type == .inherit {
+                inheritedEcho
+            } else {
+                Text(type.label)
+                    .font(AppFont.panelTitle)
+                switch type {
+                case .inherit:
+                    EmptyView()
+                case .none:
+                    Text("No Authorization header will be sent.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                case .basic:
+                    fieldRow("Username") {
+                        VariableHighlightEditor(
+                            text: $username,
+                            variables: variables,
+                            suggestions: suggestions,
+                            placeholder: "Username"
+                        )
+                        .variableFieldBordered()
+                    }
+                    fieldRow("Password") {
+                        SecureField("Password", text: $password)
+                            .textFieldStyle(.roundedBorder)
+                            .font(AppFont.monoSubheadline)
+                    }
+                case .bearer:
+                    fieldRow("Token") {
+                        VariableHighlightEditor(
+                            text: $token,
+                            variables: variables,
+                            suggestions: suggestions,
+                            placeholder: "Token"
+                        )
+                        .variableFieldBordered()
+                    }
                 }
             }
             Spacer(minLength: 0)
@@ -99,6 +172,79 @@ struct AuthEditor: View {
         // Postman caps the form width instead of stretching fields across a
         // wide window.
         .frame(maxWidth: 520, alignment: .leading)
+    }
+
+    // MARK: - Inherited echo (Postman-style read-only parent view)
+
+    /// The effective type's title with an "Inherited" badge, an "Edit in
+    /// Parent" shortcut, and the parent's fields rendered disabled with
+    /// dashed borders - mirroring the form the parent configures.
+    @ViewBuilder
+    private var inheritedEcho: some View {
+        if let source = inheritedSource {
+            VStack(alignment: .leading, spacing: AppSpacing.medium) {
+                HStack(spacing: AppSpacing.small) {
+                    Text(source.authorization.type.label)
+                        .font(AppFont.panelTitle)
+                    Text("Inherited")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, AppSpacing.xSmall + 2)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(AppColor.subtleBackground))
+                    Spacer(minLength: 0)
+                    if onEditInParent != nil {
+                        Button(
+                            action: { onEditInParent?() },
+                            label: {
+                                Label("Edit in Parent", systemImage: "pencil")
+                                    .labelStyle(.titleAndIcon)
+                                    .font(.subheadline)
+                            }
+                        )
+                        .buttonStyle(.plain)
+                        .foregroundStyle(AppColor.accent)
+                        .help(source.isFolder ? "Open this folder's settings" : "Open the collection editor")
+                    }
+                }
+                switch source.authorization.type {
+                case .basic:
+                    echoRow("Auth type") { echoField { Text(RequestAuthType.basic.label) } }
+                    echoRow("Username") {
+                        echoField {
+                            VariableHighlightEditor(
+                                text: .constant(source.authorization.username),
+                                variables: variables,
+                                placeholder: "Username",
+                                isEditable: false
+                            )
+                        }
+                    }
+                    echoRow("Password") { echoField { SecureField("Password", text: .constant(source.authorization.password)) } }
+                case .bearer:
+                    echoRow("Auth type") { echoField { Text(RequestAuthType.bearer.label) } }
+                    echoRow("Token") {
+                        echoField {
+                            VariableHighlightEditor(
+                                text: .constant(source.authorization.token),
+                                variables: variables,
+                                placeholder: "Token",
+                                isEditable: false
+                            )
+                        }
+                    }
+                case .none, .inherit:
+                    echoRow("Auth type") { echoField { Text(RequestAuthType.none.label) } }
+                    Text("\"\(source.ownerName)\" has no Authorization configured; requests under it send without one.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } else {
+            Text("This level takes its Authorization from its parent.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
     }
 
     /// Postman-style form row: fixed label on the left, field on the right.
@@ -111,10 +257,32 @@ struct AuthEditor: View {
         }
     }
 
-    private var authBinding: Binding<RequestAuthType> {
-        Binding(
-            get: { request.requestAuthType },
-            set: { request.requestAuthType = $0 }
-        )
+    /// Read-only echo of one parent field: dashed border marks the value as
+    /// inherited (not editable here).
+    private func echoRow(_ label: String, @ViewBuilder field: () -> some View) -> some View {
+        HStack(spacing: AppSpacing.medium) {
+            Text(label)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(width: 90, alignment: .leading)
+            field()
+        }
+    }
+
+    private func echoField(@ViewBuilder field: () -> some View) -> some View {
+        field()
+            .font(AppFont.monoSubheadline)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, AppSpacing.small)
+            .frame(maxWidth: .infinity, minHeight: 26, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                    .fill(Color.primary.opacity(0.02))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                    .strokeBorder(AppColor.borderStrong, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            )
+            .allowsHitTesting(false)
     }
 }

@@ -80,6 +80,9 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
     /// focus elsewhere (the key/value table uses it to settle the ghost row
     /// once the materialized row owns the content).
     var onEditingEnded: (() -> Void)?
+    /// Whether the AppKit field accepts typing. The inherited-authorization
+    /// echo renders fields read-only but selectable, so values still copy.
+    var isEditable: Bool = true
     /// Called when the user presses Return with no completion popup open
     /// (multi-line editors insert a line break instead).
     var onCommit: (() -> Void)?
@@ -101,6 +104,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         focus: Binding<FocusValue?>? = nil,
         focusValue: FocusValue? = nil,
         autoFocusOnUpdate: Bool = true,
+        isEditable: Bool = true,
         onEditingEnded: (() -> Void)? = nil,
         onCommit: (() -> Void)? = nil
     ) {
@@ -114,6 +118,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         self.focus = focus
         self.focusValue = focusValue
         self.autoFocusOnUpdate = autoFocusOnUpdate
+        self.isEditable = isEditable
         self.onEditingEnded = onEditingEnded
         self.onCommit = onCommit
     }
@@ -130,6 +135,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
                     focus: focus,
                     focusValue: focusValue,
                     autoFocusOnUpdate: autoFocusOnUpdate,
+                    isEditable: isEditable,
                     onEditingEnded: onEditingEnded,
                     onCommit: onCommit
                 )
@@ -225,6 +231,7 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
     let focus: Binding<FocusValue?>?
     let focusValue: FocusValue?
     let autoFocusOnUpdate: Bool
+    let isEditable: Bool
     let onEditingEnded: (() -> Void)?
     let onCommit: (() -> Void)?
     func makeCoordinator() -> Coordinator {
@@ -237,6 +244,10 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
         field.isBezeled = false
         field.drawsBackground = false
         field.focusRingType = .none
+        // The inherited-authorization echo reads its fields; keep them
+        // selectable so values still copy, just not editable.
+        field.isEditable = isEditable
+        field.isSelectable = true
         field.font = font.nsFont
         field.usesSingleLineMode = true
         field.lineBreakMode = .byClipping
@@ -621,6 +632,7 @@ extension VariableHighlightEditor where FocusValue == Never {
         fillsContainer: Bool = false,
         font: VariableEditorFont = .monoSubheadline,
         placeholder: String? = nil,
+        isEditable: Bool = true,
         onCommit: (() -> Void)? = nil
     ) {
         self.init(
@@ -633,6 +645,7 @@ extension VariableHighlightEditor where FocusValue == Never {
             placeholder: placeholder,
             focus: nil,
             focusValue: nil,
+            isEditable: isEditable,
             onCommit: onCommit
         )
     }

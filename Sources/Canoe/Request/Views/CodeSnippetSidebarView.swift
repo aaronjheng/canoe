@@ -80,6 +80,7 @@ struct CodeSnippetSidebarView: View {
         return CodeSnippetGenerator.generate(
             request: request,
             variables: store.variablesForRequest(request),
+            authorization: store.authorizationForRequest(request),
             language: CodeSnippetLanguage(rawValue: languageRaw) ?? .curl
         )
     }

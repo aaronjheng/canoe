@@ -49,8 +49,13 @@ enum CodeSnippetGenerator {
         }
     }
 
-    static func generate(request: RequestItem, variables: [String: String], language: CodeSnippetLanguage) -> String {
-        guard let prepared = prepare(request: request, variables: variables) else {
+    static func generate(
+        request: RequestItem,
+        variables: [String: String],
+        authorization: RequestAuthorization,
+        language: CodeSnippetLanguage
+    ) -> String {
+        guard let prepared = prepare(request: request, variables: variables, authorization: authorization) else {
             return "# Add a URL to generate a snippet"
         }
         switch language {
@@ -69,7 +74,11 @@ enum CodeSnippetGenerator {
 
     // MARK: - Resolution (mirrors HTTPClient.send)
 
-    private static func prepare(request: RequestItem, variables: [String: String]) -> Prepared? {
+    private static func prepare(
+        request: RequestItem,
+        variables: [String: String],
+        authorization: RequestAuthorization
+    ) -> Prepared? {
         let resolvedURLString = VariableResolver.resolve(request.urlString, variables: variables)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !resolvedURLString.isEmpty else { return nil }
@@ -115,20 +124,23 @@ enum CodeSnippetGenerator {
             if key.lowercased() == "authorization" { hasAuthorization = true }
         }
 
-        // Auth helper, same precedence as HTTPClient (manual header wins).
+        // Authorization helper, same precedence as HTTPClient (manual header
+        // wins).
         if !hasAuthorization {
-            switch request.requestAuthType {
-            case .none:
+            switch authorization.type {
+            case .none, .inherit:
+                // inherit is resolved by the caller; treat it defensively
+                // as none here.
                 break
             case .basic:
-                let username = VariableResolver.resolve(request.authUsername, variables: variables)
-                let password = VariableResolver.resolve(request.authPassword, variables: variables)
+                let username = VariableResolver.resolve(authorization.username, variables: variables)
+                let password = VariableResolver.resolve(authorization.password, variables: variables)
                 if !username.isEmpty || !password.isEmpty {
                     let credentials = Data("\(username):\(password)".utf8).base64EncodedString()
                     headers.append((key: "Authorization", value: "Basic \(credentials)"))
                 }
             case .bearer:
-                let token = VariableResolver.resolve(request.authToken, variables: variables)
+                let token = VariableResolver.resolve(authorization.token, variables: variables)
                 if !token.isEmpty {
                     headers.append((key: "Authorization", value: "Bearer \(token)"))
                 }

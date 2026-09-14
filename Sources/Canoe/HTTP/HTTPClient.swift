@@ -26,7 +26,15 @@ enum HTTPClient {
         return URLSession(configuration: config)
     }()
 
-    static func send(request: RequestItem, variables: [String: String]) async throws -> ResponseModel {
+    /// Sends the request. `authorization` is the already-resolved effective
+    /// settings (the request's own, or the parent collection's when it
+    /// inherits - see `AppStore.authorizationForRequest`); a manually set
+    /// Authorization header always wins over the helper.
+    static func send(
+        request: RequestItem,
+        variables: [String: String],
+        authorization: RequestAuthorization
+    ) async throws -> ResponseModel {
         let resolvedURLString = VariableResolver.resolve(request.urlString, variables: variables)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !resolvedURLString.isEmpty else {
@@ -76,20 +84,23 @@ enum HTTPClient {
             if key.lowercased() == "authorization" { hasAuthorization = true }
         }
 
-        // Auth helper (a manually set Authorization header always wins).
+        // Authorization helper (a manually set Authorization header always
+        // wins over it).
         if !hasAuthorization {
-            switch request.requestAuthType {
-            case .none:
+            switch authorization.type {
+            case .none, .inherit:
+                // inherit is resolved by the caller; treat it defensively
+                // as none here.
                 break
             case .basic:
-                let username = VariableResolver.resolve(request.authUsername, variables: variables)
-                let password = VariableResolver.resolve(request.authPassword, variables: variables)
+                let username = VariableResolver.resolve(authorization.username, variables: variables)
+                let password = VariableResolver.resolve(authorization.password, variables: variables)
                 if !username.isEmpty || !password.isEmpty {
                     let credentials = Data("\(username):\(password)".utf8).base64EncodedString()
                     urlRequest.setValue("Basic \(credentials)", forHTTPHeaderField: "Authorization")
                 }
             case .bearer:
-                let token = VariableResolver.resolve(request.authToken, variables: variables)
+                let token = VariableResolver.resolve(authorization.token, variables: variables)
                 if !token.isEmpty {
                     urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
                 }

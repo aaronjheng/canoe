@@ -16,7 +16,11 @@ struct RequestItem: Identifiable, Codable, Hashable, Sendable {
     var formFields: [FormField] = []
     var urlEncodedFields: [FormField] = []
     var binaryFilePath: String = ""
-    var authType: String = RequestAuthType.none.rawValue
+    /// Stored as a raw string so new cases never break old vault files.
+    /// Defaults to inheriting the parent collection's Authorization
+    /// (Postman behavior); files written before inheriting existed decode
+    /// as explicit no-auth, preserving their old behavior.
+    var authType: String = RequestAuthType.inherit.rawValue
     var authUsername: String = ""
     var authPassword: String = ""
     var authToken: String = ""
@@ -102,10 +106,12 @@ struct RequestItem: Identifiable, Codable, Hashable, Sendable {
         set { authType = newValue.rawValue }
     }
 
-    /// Whether auth is configured (used for the Auth tab badge).
+    /// Whether auth is configured (used for the Auth tab badge). Inheriting
+    /// requests depend on the parent collection's settings, which this
+    /// request-level flag cannot see, so it reports false.
     var hasAuthConfigured: Bool {
         switch requestAuthType {
-        case .none: false
+        case .inherit, .none: false
         case .basic: !authUsername.isEmpty || !authPassword.isEmpty
         case .bearer: !authToken.isEmpty
         }

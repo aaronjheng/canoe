@@ -1,12 +1,22 @@
 import SwiftUI
 
-/// Tab-based editor for a collection's variables, opened from the collection
-/// row's context menu ("Edit Variables") or the "Variables in Request"
-/// inspector. Collection variables apply to every request in the collection
-/// and lose only to environment variables of the same name.
+/// Tab-based editor for a collection's settings: the Authorization helper
+/// inherited by its requests (Postman-style), and the collection's
+/// variables. Opened from the collection row's context menu ("Edit
+/// Collection") or the "Variables in Request" inspector. Collection
+/// variables apply to every request in the collection and lose only to
+/// environment variables of the same name.
 struct CollectionDetailView: View {
     @Environment(AppStore.self) private var store
     @State private var draft: Collection
+    @State private var section: Section = .variables
+
+    enum Section: String, CaseIterable, Identifiable {
+        case authorization = "Authorization"
+        case variables = "Variables"
+
+        var id: String { rawValue }
+    }
 
     init(collection: Collection) {
         var collection = collection
@@ -14,9 +24,9 @@ struct CollectionDetailView: View {
         _draft = State(initialValue: collection)
     }
 
-    /// Whether the variables have unsaved edits (Save button).
+    /// Whether the collection has unsaved edits (Save button).
     private var isDirty: Bool {
-        store.hasPendingCollectionVariables(for: draft.id)
+        store.hasPendingCollectionChanges(for: draft.id)
     }
 
     var body: some View {
@@ -28,24 +38,39 @@ struct CollectionDetailView: View {
                     .font(AppFont.panelTitle)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Text("Collection Variables")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
                 saveButton
             }
             .padding(.horizontal, AppSpacing.medium)
             .padding(.vertical, AppSpacing.small)
 
+            sectionTabs
             Divider()
 
-            KeyValueEditor(
-                items: $draft.variables,
-                makeNew: Variable.init,
-                keyHeader: "Variable",
-                valueHeader: "Value",
-                secretKeyPath: \.isSecret
-            )
+            switch section {
+            case .authorization:
+                AuthorizationForm(
+                    type: $draft.authorization.type,
+                    username: $draft.authorization.username,
+                    password: $draft.authorization.password,
+                    token: $draft.authorization.token,
+                    variables: resolvedVariables,
+                    suggestions: suggestions,
+                    // The collection is the top of the inheritance chain;
+                    // there is no parent to inherit from (and no inherit
+                    // option in the picker, Postman-style).
+                    inheritedSource: nil,
+                    availableTypes: RequestAuthType.allCases.filter { $0 != .inherit }
+                )
+            case .variables:
+                KeyValueEditor(
+                    items: $draft.variables,
+                    makeNew: Variable.init,
+                    keyHeader: "Variable",
+                    valueHeader: "Value",
+                    secretKeyPath: \.isSecret
+                )
+            }
         }
         // Keep rows ordered by name (see EnvironmentDetailView).
         .onChange(of: draft.variables.map(\.key)) { _, _ in
@@ -54,17 +79,86 @@ struct CollectionDetailView: View {
         .onChange(of: draft) { _, newValue in
             // Memory-only + dirty mark; the drafts mirror inside the store
             // is debounced, so no per-keystroke disk write happens here.
+            // Each tracker diffs its own piece, so untouched parts stay out
+            // of the pending set.
             store.updateCollectionVariables(newValue.id, variables: newValue.variables)
+            store.updateCollectionAuthorization(newValue.id, authorization: newValue.authorization)
         }
         .onDisappear {
             // Keep the edits alive across tab close: they stay in memory and
             // the drafts mirror, ready to be restored on the next open.
             store.updateCollectionVariables(draft.id, variables: draft.variables)
+            store.updateCollectionAuthorization(draft.id, authorization: draft.authorization)
         }
     }
 
+    // MARK: - Section tabs
+
+    private var sectionTabs: some View {
+        HStack(spacing: 0) {
+            ForEach(Section.allCases) { tab in
+                UnderlineTab(
+                    title: tab.rawValue,
+                    count: tab == .variables ? draft.variables.count : nil,
+                    isSelected: section == tab,
+                    action: { section = tab }
+                )
+            }
+            Spacer()
+        }
+        .padding(.horizontal, AppSpacing.small)
+    }
+
+    // MARK: - Variable scope for {{placeholder}} highlighting
+
+    /// Workspace → collection → active environment, matching the resolution
+    /// order the sender uses for the collection's own variables.
+    private var resolvedVariables: [String: String] {
+        var merged: [String: String] = [:]
+        if let workspace = collectionWorkspace {
+            merged = workspace.variables.resolvingDictionary(into: merged)
+        }
+        merged = draft.variables.resolvingDictionary(into: merged)
+        if let environment = store.activeEnvironment {
+            merged = environment.variables.resolvingDictionary(into: merged)
+        }
+        return merged
+    }
+
+    /// Completion candidates with scope metadata for `{{` auto-completion.
+    private var suggestions: [VariableSuggestion] {
+        var scopes: [RequestVariableScope] = []
+        if let workspace = collectionWorkspace {
+            scopes.append(
+                RequestVariableScope(
+                    kind: .workspace, ownerID: workspace.id,
+                    ownerName: workspace.name, variables: workspace.variables
+                )
+            )
+        }
+        scopes.append(
+            RequestVariableScope(
+                kind: .collection, ownerID: draft.id,
+                ownerName: draft.name, variables: draft.variables
+            )
+        )
+        if let environment = store.activeEnvironment {
+            scopes.append(
+                RequestVariableScope(
+                    kind: .environment, ownerID: environment.id,
+                    ownerName: environment.name, variables: environment.variables
+                )
+            )
+        }
+        return VariableSuggestion.suggestions(from: scopes)
+    }
+
+    private var collectionWorkspace: Workspace? {
+        draft.workspaceID.flatMap { id in store.vault.workspaces.first(where: { $0.id == id }) }
+    }
+
     /// Postman-style Save: a filled chip with icon + label, enabled while
-    /// the variables have unsaved changes.
+    /// the collection has unsaved changes.
     private var saveButton: some View {
         Button {
             store.savePendingChanges()
@@ -84,6 +178,6 @@ struct CollectionDetailView: View {
         }
         .buttonStyle(.plain)
         .disabled(!isDirty)
-        .help("Save Variables (⌘S)")
+        .help("Save Collection (⌘S)")
     }
 }
