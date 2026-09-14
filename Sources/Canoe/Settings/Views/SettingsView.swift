@@ -91,7 +91,7 @@ struct SettingsView: View {
                     }
                 }
             }
-            if let message = locationError ?? appStore.vault.loadError {
+            if let message = locationError ?? appStore.vault.locationWarning ?? appStore.vault.loadError {
                 Section {
                     Text(message)
                         .foregroundStyle(.red)
@@ -103,7 +103,11 @@ struct SettingsView: View {
 
     private var syncStatus: String {
         if isSwitchingLocation { return "Switching…" }
-        return appStore.vault.location == .iCloud ? "Syncing via iCloud Drive" : "Local only"
+        // The effective location, not the toggle: with iCloud Drive
+        // unavailable the toggle stays on while the files stay local (with
+        // a warning above explaining why).
+        if appStore.vault.location == .iCloud { return "Syncing via iCloud Drive" }
+        return appStore.vault.locationWarning == nil ? "Local only" : "Local only (iCloud unavailable)"
     }
 
     /// Flips the persisted setting first so a relaunch honors the choice,

@@ -53,6 +53,12 @@ final class VaultStore {
     var vaultURL: URL?
     var isReady = false
     var loadError: String?
+    /// Set when the vault runs somewhere other than requested: iCloud Drive
+    /// unavailable at launch, or lost at runtime (signed out, disabled).
+    /// Unlike `loadError`, `loadAll` never clears this - it stays until sync
+    /// is actually usable again, so Settings cannot show "sync on" while the
+    /// files silently stay local.
+    var locationWarning: String?
     /// Where the synced vault files currently live. Drafts stay local
     /// regardless (see `draftsFileURL`).
     var location: VaultLocation = .local
@@ -113,13 +119,13 @@ final class VaultStore {
     /// vault is a fixed folder inside Application Support - no folder
     /// picking, no cloud providers. In iCloud mode it lives in the
     /// app's iCloud Drive folder; an unavailable iCloud Drive falls back
-    /// to local with `loadError` set.
+    /// to local with `locationWarning` set (kept, not cleared by loads).
     func prepare(location: VaultLocation) async {
         if location == .iCloud, Self.iCloudDriveRoot() == nil {
             self.location = .local
             vaultURL = localRoot()
-            loadError =
-                "iCloud Drive is not available on this Mac. Turn it on in System Settings → Apple Account."
+            locationWarning =
+                "iCloud Drive is not available. Using the local vault - turn on iCloud Drive to resume syncing."
         } else {
             self.location = location
             vaultURL = root(for: location)
@@ -151,6 +157,8 @@ final class VaultStore {
         }
         location = newLocation
         vaultURL = root(for: newLocation)
+        // A successful switch means the requested root is usable.
+        locationWarning = nil
         await loadAll()
         startWatchingIfNeeded()
     }
@@ -193,6 +201,16 @@ final class VaultStore {
     // MARK: - Loading
 
     func loadAll() async {
+        // iCloud Drive can vanish at runtime (signed out, disabled while
+        // running). Never create or write into the lookalike folder that
+        // would leave behind - fall back to local and say so instead.
+        if location == .iCloud, Self.iCloudDriveRoot() == nil {
+            location = .local
+            vaultURL = localRoot()
+            locationWarning =
+                "iCloud Drive became unavailable. Using the local vault instead - turn it back on and relaunch to resume syncing."
+            stopWatching()
+        }
         guard let vaultURL else { return }
         do {
             try await ensureDirectoryStructure(at: vaultURL)
@@ -367,7 +385,11 @@ final class VaultStore {
 
     func persistConfig() async {
         guard let configFileURL else { return }
-        try? await FileStore.write(config, to: configFileURL)
+        do {
+            try await FileStore.write(config, to: configFileURL)
+        } catch {
+            AppLogger.error("Failed to save vault config: \(error)", category: "Vault")
+        }
     }
 
     // MARK: - Draft persistence
@@ -408,14 +430,19 @@ final class VaultStore {
 
     /// Merges the local and iCloud vaults file-by-file, newer-wins, in both
     /// directions, so switching locations never drops either side's files.
-    /// Runs synchronously on small JSON files; both roots may be absent on a
-    /// first run (nothing to merge).
+    /// `preferLocalOnTie` names the side the user currently sees (the old
+    /// location): equal-mtime files with genuinely different content resolve
+    /// toward it instead of diverging forever. Runs synchronously on small
+    /// JSON files; both roots may be absent on a first run (nothing to merge).
     private func mergeVaults(local: URL?, iCloud: URL) throws {
+        // Ties resolve toward what is on screen: the current location.
+        let preferLocalOnTie = location == .local
         for subdir in ["workspaces", "collections", "environments"] {
             if let local {
                 try mergeDirectory(
                     local.appendingPathComponent(subdir, isDirectory: true),
-                    iCloud.appendingPathComponent(subdir, isDirectory: true))
+                    iCloud.appendingPathComponent(subdir, isDirectory: true),
+                    preferFirstOnTie: preferLocalOnTie)
             } else {
                 try FileManager.default.createDirectory(
                     at: iCloud.appendingPathComponent(subdir, isDirectory: true),
@@ -425,24 +452,29 @@ final class VaultStore {
         if let local {
             try mergeFile(
                 local.appendingPathComponent("vault.json"),
-                iCloud.appendingPathComponent("vault.json"))
+                iCloud.appendingPathComponent("vault.json"),
+                preferFirstOnTie: preferLocalOnTie)
         }
     }
 
-    private func mergeDirectory(_ first: URL, _ second: URL) throws {
+    private func mergeDirectory(_ first: URL, _ second: URL, preferFirstOnTie: Bool) throws {
         let manager = FileManager.default
         try manager.createDirectory(at: first, withIntermediateDirectories: true)
         try manager.createDirectory(at: second, withIntermediateDirectories: true)
         let firstNames = Set((try? manager.contentsOfDirectory(atPath: first.path)) ?? [])
         let secondNames = Set((try? manager.contentsOfDirectory(atPath: second.path)) ?? [])
         for name in firstNames.union(secondNames) where name.hasSuffix(".json") {
-            try mergeFile(first.appendingPathComponent(name), second.appendingPathComponent(name))
+            try mergeFile(
+                first.appendingPathComponent(name), second.appendingPathComponent(name),
+                preferFirstOnTie: preferFirstOnTie)
         }
     }
 
     /// Copies the newer side over the older (or missing) side. Equal mtimes
-    /// keep both copies untouched.
-    private func mergeFile(_ first: URL, _ second: URL) throws {
+    /// compare bytes first: identical content is a no-op, and only a genuine
+    /// difference (clock skew, same-second copies) takes the deterministic
+    /// tiebreak - so the two roots can never diverge silently forever.
+    private func mergeFile(_ first: URL, _ second: URL, preferFirstOnTie: Bool) throws {
         let manager = FileManager.default
         let firstDate = modificationDate(of: first)
         let secondDate = modificationDate(of: second)
@@ -450,17 +482,46 @@ final class VaultStore {
         case (nil, nil):
             return
         case (nil, _):
-            try manager.copyItem(at: second, to: first)
+            try copyFileAtomically(from: second, to: first)
         case (_, nil):
-            try manager.copyItem(at: first, to: second)
+            try copyFileAtomically(from: first, to: second)
         case let (firstDate?, secondDate?) where firstDate > secondDate:
-            try manager.removeItem(at: second)
-            try manager.copyItem(at: first, to: second)
+            try copyFileAtomically(from: first, to: second)
         case let (firstDate?, secondDate?) where secondDate > firstDate:
-            try manager.removeItem(at: first)
-            try manager.copyItem(at: second, to: first)
+            try copyFileAtomically(from: second, to: first)
         default:
-            return
+            let firstData = try? Data(contentsOf: first)
+            let secondData = try? Data(contentsOf: second)
+            guard firstData == nil || firstData != secondData else { return }
+            AppLogger.warn(
+                "iCloud merge tie with differing content",
+                category: "Vault",
+                fields: ["file": first.lastPathComponent, "kept": preferFirstOnTie ? "local" : "iCloud"])
+            if preferFirstOnTie {
+                try copyFileAtomically(from: first, to: second)
+            } else {
+                try copyFileAtomically(from: second, to: first)
+            }
+        }
+    }
+
+    /// Crash-safe file copy: the destination is never left half-written. A
+    /// crash can only orphan a `*.tmp` file next to it, which merges ignore
+    /// (only `*.json` participates) and a later merge overwrites.
+    private func copyFileAtomically(from: URL, to: URL) throws {
+        let manager = FileManager.default
+        let tmp = to.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".tmp")
+        try manager.copyItem(at: from, to: tmp)
+        do {
+            if manager.fileExists(atPath: to.path) {
+                _ = try manager.replaceItemAt(to, withItemAt: tmp)
+            } else {
+                // Same-directory rename: atomic.
+                try manager.moveItem(at: tmp, to: to)
+            }
+        } catch {
+            try? manager.removeItem(at: tmp)
+            throw error
         }
     }
 
@@ -470,25 +531,38 @@ final class VaultStore {
 
     // MARK: - Conflicts
 
-    /// Resolves iCloud Drive file conflicts left by concurrent edits on
-    /// multiple devices. Collection files keep the losing side as a
-    /// duplicate collection (new id, "conflict" suffix) so no device's
-    /// requests silently vanish; every other file is last-writer-wins.
-    private func resolveConflicts() async {
-        var files: [URL] = []
-        for dir in [workspacesDirectory, collectionsDirectory, environmentsDirectory] {
-            guard let dir else { continue }
-            let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
-            files += names.filter { $0.hasSuffix(".json") }.map { dir.appendingPathComponent($0) }
-        }
-        if let configFileURL { files.append(configFileURL) }
-        for file in files {
-            let isCollection = collectionsDirectory.map { file.deletingLastPathComponent() == $0 } ?? false
-            await resolveConflicts(at: file, isCollection: isCollection)
-        }
+    private enum ConflictKind {
+        case workspace, collection, environment, config
     }
 
-    private func resolveConflicts(at file: URL, isCollection: Bool) async {
+    /// Resolves iCloud Drive file conflicts left by concurrent edits on
+    /// multiple devices. Losing collection/environment/workspace versions are
+    /// kept as duplicates (new id, "conflict" suffix) so no device's data
+    /// silently vanishes; only vault.json (active ids, migration stamp) is
+    /// last-writer-wins.
+    private func resolveConflicts() async {
+        var files: [(URL, ConflictKind)] = []
+        let dirs: [(URL?, ConflictKind)] = [
+            (workspacesDirectory, .workspace),
+            (collectionsDirectory, .collection),
+            (environmentsDirectory, .environment),
+        ]
+        for (dir, kind) in dirs {
+            guard let dir else { continue }
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+            files += names.filter { $0.hasSuffix(".json") }.map { (dir.appendingPathComponent($0), kind) }
+        }
+        if let configFileURL { files.append((configFileURL, .config)) }
+        for (file, kind) in files {
+            await resolveConflicts(at: file, kind: kind)
+        }
+        // Duplicates are appended out of order - restore it.
+        workspaces.sort { $0.orderIndex < $1.orderIndex }
+        collections.sort { $0.orderIndex < $1.orderIndex }
+        environments.sort { $0.orderIndex < $1.orderIndex }
+    }
+
+    private func resolveConflicts(at file: URL, kind: ConflictKind) async {
         guard let conflicts = NSFileVersion.unresolvedConflictVersionsOfItem(at: file),
             !conflicts.isEmpty
         else { return }
@@ -496,10 +570,21 @@ final class VaultStore {
             "Resolving iCloud conflict",
             category: "Vault",
             fields: ["file": file.lastPathComponent, "versions": "\(conflicts.count)"])
-        if isCollection {
+        switch kind {
+        case .collection:
             for version in conflicts {
                 await duplicateConflictVersion(version)
             }
+        case .environment:
+            for version in conflicts {
+                await duplicateEnvironmentConflictVersion(version)
+            }
+        case .workspace:
+            for version in conflicts {
+                await duplicateWorkspaceConflictVersion(version)
+            }
+        case .config:
+            break
         }
         try? NSFileVersion.removeOtherVersionsOfItem(at: file)
         for version in conflicts {
@@ -510,9 +595,18 @@ final class VaultStore {
     /// Saves a conflicting collection version as its own collection file so
     /// the losing side survives next to the winner instead of vanishing.
     private func duplicateConflictVersion(_ version: NSFileVersion) async {
-        guard let data = try? Data(contentsOf: version.url),
-            var collection = try? JSONDecoder.iso.decode(Collection.self, from: data)
-        else { return }
+        guard let data = try? Data(contentsOf: version.url) else {
+            AppLogger.error(
+                "Could not read iCloud conflict version", category: "Vault",
+                fields: ["version": version.localizedName ?? "unknown"])
+            return
+        }
+        guard var collection = try? JSONDecoder.iso.decode(Collection.self, from: data) else {
+            AppLogger.error(
+                "Could not decode iCloud conflict version", category: "Vault",
+                fields: ["version": version.localizedName ?? "unknown"])
+            return
+        }
         collection.id = UUID()
         let device = Host.current().localizedName ?? "another device"
         collection.name += " (conflict, \(device))"
@@ -525,6 +619,51 @@ final class VaultStore {
         } catch {
             AppLogger.error("Failed to save conflict duplicate: \(error)", category: "Vault")
         }
+    }
+
+    /// Saves a conflicting environment version as its own environment so the
+    /// losing side's variables survive next to the winner.
+    private func duplicateEnvironmentConflictVersion(_ version: NSFileVersion) async {
+        guard let data = try? Data(contentsOf: version.url) else {
+            AppLogger.error(
+                "Could not read iCloud conflict version", category: "Vault",
+                fields: ["version": version.localizedName ?? "unknown"])
+            return
+        }
+        guard var environment = try? JSONDecoder.iso.decode(EnvProfile.self, from: data) else {
+            AppLogger.error(
+                "Could not decode iCloud conflict version", category: "Vault",
+                fields: ["version": version.localizedName ?? "unknown"])
+            return
+        }
+        environment.id = UUID()
+        let device = Host.current().localizedName ?? "another device"
+        environment.name += " (conflict, \(device))"
+        environment.orderIndex = (environments.map(\.orderIndex).max() ?? -1) + 1
+        await saveEnvironment(environment)
+    }
+
+    /// Saves a conflicting workspace version as its own workspace file so the
+    /// losing side's variables survive; the user reconciles and deletes the
+    /// extra workspace by hand.
+    private func duplicateWorkspaceConflictVersion(_ version: NSFileVersion) async {
+        guard let data = try? Data(contentsOf: version.url) else {
+            AppLogger.error(
+                "Could not read iCloud conflict version", category: "Vault",
+                fields: ["version": version.localizedName ?? "unknown"])
+            return
+        }
+        guard var workspace = try? JSONDecoder.iso.decode(Workspace.self, from: data) else {
+            AppLogger.error(
+                "Could not decode iCloud conflict version", category: "Vault",
+                fields: ["version": version.localizedName ?? "unknown"])
+            return
+        }
+        workspace.id = UUID()
+        let device = Host.current().localizedName ?? "another device"
+        workspace.name += " (conflict, \(device))"
+        workspace.orderIndex = (workspaces.map(\.orderIndex).max() ?? -1) + 1
+        await saveWorkspace(workspace)
     }
 
     // MARK: - External change watching

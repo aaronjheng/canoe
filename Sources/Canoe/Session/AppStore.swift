@@ -170,6 +170,15 @@ final class AppStore {
     /// Debounced writer for the drafts mirror; cancelled/rescheduled on
     /// every edit so typing does not rewrite drafts.json per keystroke.
     @ObservationIgnored private var draftSaveTask: Task<Void, Never>?
+    /// In-flight Save-all (⌘S) task, if any. Tracked so the quit path can
+    /// wait for the vault writes to land before the process exits: the
+    /// pending snapshots are cleared up front, so quitting mid-save would
+    /// otherwise strand the edits in neither the vault nor the drafts.
+    @ObservationIgnored private var saveAllTask: Task<Void, Never>?
+    /// Latest external-change reload, if any. Reloads chain on it so two
+    /// overlapping reloads cannot interleave and leave stale files in
+    /// memory (the later reload always wins).
+    @ObservationIgnored private var externalReloadTask: Task<Void, Never>?
     private let historyLimit = 100
     private static let responseHistoryLimit = 20
     /// Console (network log) entries, newest last; session-scoped and capped.
@@ -247,7 +256,9 @@ final class AppStore {
         guard request.requestAuthType == .inherit else { return nil }
         guard let collection = collectionForRequest(request) else { return nil }
         var folderID = request.folderID
+        var visited: Set<UUID> = []
         while let id = folderID, let folder = collection.folders.first(where: { $0.id == id }) {
+            guard visited.insert(id).inserted else { break }
             if folder.authorization.type != .inherit {
                 return AuthorizationInheritanceSource(
                     ownerID: folder.id, ownerName: folder.name, isFolder: true,
@@ -349,21 +360,40 @@ final class AppStore {
     }
 
     /// `{{placeholder}}` keys the request references anywhere variables are
-    /// resolved at send time (URL, params, headers, auth, body). The
-    /// inspector marks matching variables as used and flags missing ones.
+    /// resolved at send time (URL, params, headers, effective auth, active
+    /// body slot). The inspector marks matching variables as used and flags
+    /// missing ones. Slots that are not sent (inactive auth helper, inactive
+    /// body type, disabled rows) are not scanned, so the inspector never
+    /// warns about a placeholder the wire will never carry.
     func placeholdersUsedByRequest(_ request: RequestItem) -> [String] {
-        var sources = [
-            request.urlString,
-            request.authUsername,
-            request.authPassword,
-            request.authToken,
-            request.binaryFilePath,
-            request.bodyText,
-        ]
+        var sources = [request.urlString]
+        // Effective auth: what HTTPClient actually resolves (inherited or
+        // own), gated on the helper type so stale fields on an inactive
+        // helper are ignored.
+        let effectiveAuth = authorizationForRequest(request)
+        switch effectiveAuth.type {
+        case .basic:
+            sources += [effectiveAuth.username, effectiveAuth.password]
+        case .bearer:
+            sources.append(effectiveAuth.token)
+        case .none, .inherit:
+            break
+        }
+        // Active body slot only - matches HTTPClient.buildBody.
+        switch request.requestBodyType {
+        case .none:
+            break
+        case .raw:
+            sources += [request.bodyText, request.bodyContentType]
+        case .urlEncoded:
+            sources += request.urlEncodedFields.filter { $0.isEnabled }.flatMap { [$0.key, $0.value] }
+        case .formData:
+            sources += request.formFields.filter { $0.isEnabled }.flatMap { [$0.key, $0.value] }
+        case .binary:
+            sources.append(request.binaryFilePath)
+        }
         sources += request.params.filter { $0.isEnabled }.flatMap { [$0.key, $0.value] }
         sources += request.headers.filter { $0.isEnabled }.flatMap { [$0.key, $0.value] }
-        sources += request.formFields.filter { $0.isEnabled }.flatMap { [$0.key, $0.value] }
-        sources += request.urlEncodedFields.filter { $0.isEnabled }.flatMap { [$0.key, $0.value] }
 
         var seen = Set<String>()
         var keys: [String] = []
@@ -491,9 +521,13 @@ final class AppStore {
     /// Creates a workspace with the given name and activates it.
     func createWorkspace(name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Max + 1, not count: deleted workspaces leave orderIndex gaps, and
+        // count would collide with an existing value on the first add after
+        // a deletion.
+        let orderIndex = (vault.workspaces.map(\.orderIndex).max() ?? -1) + 1
         let workspace = Workspace(
             name: trimmed.isEmpty ? "New Workspace" : trimmed,
-            orderIndex: vault.workspaces.count
+            orderIndex: orderIndex
         )
         vault.workspaces.append(workspace)
         Task { await vault.saveWorkspace(workspace) }
@@ -585,10 +619,11 @@ final class AppStore {
 
     func addCollection() {
         let workspaceID = activeWorkspace?.id ?? vault.workspaces.first?.id
+        // Max + 1, not count (see addEnvironment): deletions leave gaps.
         let collection = Collection(
             workspaceID: workspaceID,
             name: "New Collection",
-            orderIndex: visibleCollections.count
+            orderIndex: (visibleCollections.map(\.orderIndex).max() ?? -1) + 1
         )
         vault.collections.append(collection)
         Task { await vault.saveCollection(collection) }
@@ -680,9 +715,12 @@ final class AppStore {
     func addFolder(in collectionID: UUID, parentFolderID: UUID? = nil) {
         guard let idx = vault.collections.firstIndex(where: { $0.id == collectionID }) else { return }
         var collection = vault.collections[idx]
+        // Max + 1 within the parent, not count (see addEnvironment):
+        // deletions leave orderIndex gaps that count would collide with.
+        let siblingMax = collection.folders.filter { $0.parentFolderID == parentFolderID }.map(\.orderIndex).max()
         let folder = Folder(
             name: "New Folder",
-            orderIndex: collection.folders.filter { $0.parentFolderID == parentFolderID }.count,
+            orderIndex: (siblingMax ?? -1) + 1,
             parentFolderID: parentFolderID
         )
         collection.folders.append(folder)
@@ -757,7 +795,8 @@ final class AppStore {
             folderID.flatMap { fid in collection.folders.contains(where: { $0.id == fid }) ? fid : nil }
 
         var request = RequestItem(name: "New Request", method: .get, urlString: "", folderID: resolvedFolderID)
-        request.orderIndex = collection.requests.filter { $0.folderID == resolvedFolderID }.count
+        // Max + 1 among siblings, not count (see addEnvironment).
+        request.orderIndex = (collection.requests.filter { $0.folderID == resolvedFolderID }.map(\.orderIndex).max() ?? -1) + 1
         collection.requests.append(request)
 
         if let idx = vault.collections.firstIndex(where: { $0.id == collection.id }) {
@@ -780,7 +819,8 @@ final class AppStore {
             copy.name = "\(source.name) copy"
             copy.createdAt = Date()
             copy.updatedAt = Date()
-            copy.orderIndex = collection.requests.filter { $0.folderID == source.folderID }.count
+            // Max + 1 among siblings, not count (see addEnvironment).
+            copy.orderIndex = (collection.requests.filter { $0.folderID == source.folderID }.map(\.orderIndex).max() ?? -1) + 1
             updated.requests.append(copy)
             if let idx = vault.collections.firstIndex(where: { $0.id == collection.id }) {
                 vault.collections[idx] = updated
@@ -897,6 +937,7 @@ final class AppStore {
             return error.localizedDescription
         }
         rebasePendingSnapshotsOntoLoadedVault()
+        pruneDanglingTabs()
         return nil
     }
 
@@ -904,10 +945,19 @@ final class AppStore {
     /// while keeping every unsaved draft visible: dirty entities stay as
     /// edited in memory with their baseline moved to the fresh disk content,
     /// clean entities are replaced outright, and drafts whose entity vanished
-    /// remotely are dropped.
+    /// remotely are dropped. Tabs left pointing at remotely deleted entities
+    /// are pruned so the selection never dangles.
     private func reloadFromExternalChange() async {
-        await vault.loadAll()
-        rebasePendingSnapshotsOntoLoadedVault()
+        let previous = externalReloadTask
+        let task = Task { [weak self] in
+            await previous?.value
+            guard let self else { return }
+            await self.vault.loadAll()
+            self.rebasePendingSnapshotsOntoLoadedVault()
+            self.pruneDanglingTabs()
+        }
+        externalReloadTask = task
+        await task.value
     }
 
     private func rebasePendingSnapshotsOntoLoadedVault() {
@@ -1096,6 +1146,24 @@ final class AppStore {
         }
     }
 
+    /// Quit path: waits for an in-flight Save-all to land, then flushes the
+    /// draft mirror and calls `completion`. Drafts are flushed last so the
+    /// mirror reflects the post-save state (empty when everything saved).
+    func flushAllWritesForQuit(completion: @escaping () -> Void) {
+        draftSaveTask?.cancel()
+        draftSaveTask = nil
+        let save = saveAllTask
+        Task { [weak self] in
+            await save?.value
+            guard let self else {
+                completion()
+                return
+            }
+            await self.vault.saveDrafts(self.currentDrafts)
+            completion()
+        }
+    }
+
     /// Whether the request has unsaved modifications (drives the Save button
     /// and the tab's dirty dot).
     func hasPendingChanges(for requestID: UUID) -> Bool {
@@ -1126,7 +1194,11 @@ final class AppStore {
             completion?()
             return
         }
-        Task { [weak self] in
+        let previousSave = saveAllTask
+        saveAllTask = Task { [weak self] in
+            // Serialize overlapping saves: a second ⌘S (or quit) never
+            // persists older snapshots after newer ones.
+            await previousSave?.value
             guard let self else {
                 completion?()
                 return

@@ -43,6 +43,8 @@ struct BodyEditor: View {
                     }
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Send body as \(type.label)")
+                .accessibilityAddTraits(request.requestBodyType == type ? .isSelected : [])
                 .help("Send body as \(type.label)")
             }
             Spacer(minLength: 0)

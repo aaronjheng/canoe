@@ -8,6 +8,10 @@ struct ConsoleView: View {
     @State private var errorsOnly = false
     @State private var expandedIDs: Set<UUID> = []
     @State private var copiedEntryID: UUID?
+    /// Whether the log is currently scrolled to the bottom. New entries only
+    /// autoscroll when this holds, so sending never yanks the user away from
+    /// history they are reading.
+    @State private var isAtBottom = true
 
     private var visibleEntries: [ConsoleEntry] {
         errorsOnly ? store.consoleEntries.filter(\.isError) : store.consoleEntries
@@ -89,10 +93,15 @@ struct ConsoleView: View {
                         )
                         Divider()
                     }
-                    Color.clear.frame(height: 1).id("console-bottom")
+                    Color.clear
+                        .frame(height: 1)
+                        .id("console-bottom")
+                        .onAppear { isAtBottom = true }
+                        .onDisappear { isAtBottom = false }
                 }
             }
             .onChange(of: store.consoleEntries.count) { _, _ in
+                guard isAtBottom else { return }
                 proxy.scrollTo("console-bottom", anchor: .bottom)
             }
         }
@@ -131,13 +140,13 @@ private struct ConsoleEntryRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             summaryRow
+                .contentShape(Rectangle())
+                .onTapGesture { onToggle() }
             if isExpanded {
                 ConsoleEntryDetail(entry: entry, copied: copied, onCopyRaw: onCopyRaw)
             }
         }
         .background(entry.isError ? AppColor.error.opacity(0.07) : Color.clear)
-        .contentShape(Rectangle())
-        .onTapGesture { onToggle() }
     }
 
     private var summaryRow: some View {
@@ -151,6 +160,7 @@ private struct ConsoleEntryRow: View {
                 .foregroundStyle(entry.isError ? AppColor.error : AppColor.success)
             Text(entry.method)
                 .font(AppFont.cellText.weight(.semibold))
+                .foregroundStyle(HTTPMethod(rawValue: entry.method)?.color ?? .primary)
             Text(entry.url)
                 .font(AppFont.monoSubheadline)
                 .lineLimit(1)

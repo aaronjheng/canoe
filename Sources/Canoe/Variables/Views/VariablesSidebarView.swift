@@ -32,6 +32,14 @@ struct VariablesSidebarView: View {
         // height and centers inside the pane, leaving a void above the header.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(AppColor.sidebarBackground)
+        // The inspector outlives request switches (it sits outside the
+        // detail pane), so reset per-request state explicitly: otherwise a
+        // filter typed for one request yields a bogus "No Results" on the
+        // next, and revealed secrets linger across requests.
+        .onChange(of: store.selectedRequest?.id) { _, _ in
+            filter = ""
+            revealedSecrets = []
+        }
     }
 
     // MARK: - Header
@@ -52,9 +60,14 @@ struct VariablesSidebarView: View {
         let scopes = store.variableScopesForRequest(request)
         let displayScopes = Array(scopes.reversed())
         let usedKeys = Set(store.placeholdersUsedByRequest(request))
-        let resolvedKeys = Set(store.variablesForRequest(request).keys)
+        let resolvedVars = store.variablesForRequest(request)
+        let resolvedKeys = Set(resolvedVars.keys)
         let unresolvedAll = usedKeys.subtracting(resolvedKeys).sorted()
         let unresolved = query.isEmpty ? unresolvedAll : unresolvedAll.filter { $0.localizedCaseInsensitiveContains(query) }
+        // Placeholders that resolve toward a reference cycle: defined, so
+        // not "unresolved", but the wire still carries literal `{{...}}`.
+        let blockedAll = VariableResolver.keysBlockedByCycle(used: usedKeys, variables: resolvedVars).sorted()
+        let blocked = query.isEmpty ? blockedAll : blockedAll.filter { $0.localizedCaseInsensitiveContains(query) }
         return VStack(spacing: 0) {
             filterField
             Divider()
@@ -70,13 +83,13 @@ struct VariablesSidebarView: View {
                             onEdit: { openEditor(for: scope) }
                         )
                     }
-                    if !unresolved.isEmpty {
-                        UnresolvedSection(keys: unresolved)
+                    if !unresolved.isEmpty || !blocked.isEmpty {
+                        UnresolvedSection(keys: unresolved, cyclicKeys: Set(blocked))
                     }
                 }
             }
             .overlay {
-                if !query.isEmpty && totalVisibleRows(in: scopes) == 0 && unresolved.isEmpty {
+                if !query.isEmpty && totalVisibleRows(in: scopes) == 0 && unresolved.isEmpty && blocked.isEmpty {
                     ContentUnavailableView(
                         "No Results",
                         systemImage: "magnifyingglass",
@@ -123,17 +136,17 @@ struct VariablesSidebarView: View {
 
     // MARK: - Helpers
 
-    /// For each key, the nearest higher-precedence scope that defines it (the
-    /// scope whose value actually wins). Scopes arrive lowest-first, so the
-    /// first writer for a key while walking upward is the effective one.
+    /// For each key, the highest-precedence scope that defines it (the scope
+    /// whose value actually wins). Scopes arrive lowest-first, so walking
+    /// upward lets a higher scope overwrite a lower one.
     private func overrideLabels(for scope: RequestVariableScope, in scopes: [RequestVariableScope]) -> [String: String] {
         guard let index = scopes.firstIndex(where: { $0.id == scope.id }) else { return [:] }
         var labels: [String: String] = [:]
-        for higher in scopes[(index + 1)...] {
+        for higher in scopes.dropFirst(index + 1) {
             for variable in higher.variables where variable.isEnabled {
                 let key = variable.key.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !key.isEmpty else { continue }
-                if labels[key] == nil { labels[key] = higher.kind.rawValue }
+                labels[key] = higher.kind.rawValue
             }
         }
         return labels
@@ -255,7 +268,7 @@ private struct ScopeSection: View {
                 .foregroundStyle(.secondary)
                 .help("Edit \(scope.kind.rawValue) variables in a tab")
             }
-            Text("\(scope.variables.count)")
+            Text("\(isFiltering ? visibleVariables.count : scope.variables.count)")
                 .font(AppFont.countBadge)
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
@@ -270,7 +283,9 @@ private struct ScopeSection: View {
         ForEach(Array(visibleVariables.enumerated()), id: \.element.id) { index, variable in
             VariableRow(
                 variable: variable,
-                isUsed: usedKeys.contains(variable.key.trimmingCharacters(in: .whitespacesAndNewlines)),
+                // Disabled rows are excluded from resolution, so they never
+                // earn the referenced-in-request marker.
+                isUsed: variable.isEnabled && usedKeys.contains(variable.key.trimmingCharacters(in: .whitespacesAndNewlines)),
                 overriddenBy: overrideLabels[variable.key.trimmingCharacters(in: .whitespacesAndNewlines)],
                 revealedSecrets: $revealedSecrets
             )
@@ -360,7 +375,15 @@ private struct VariableRow: View {
     let overriddenBy: String?
     @Binding var revealedSecrets: Set<UUID>
     @State private var isHovering = false
-    @FocusState private var actionsFocused: Bool
+    /// Which hover action owns keyboard focus, if any. The actions stay
+    /// visually hidden until hovered or focused - but unlike `disabled`,
+    /// focus can always land on them, so keyboard and VoiceOver users can
+    /// reveal and copy too.
+    @FocusState private var focusedAction: ActionFocus?
+
+    private enum ActionFocus: Hashable {
+        case reveal, copy
+    }
 
     private var trimmedKey: String {
         variable.key.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -394,9 +417,8 @@ private struct VariableRow: View {
                 }
                 valueText
                 if let overriddenBy {
-                    Text("Overridden by \(overriddenBy)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                    Badge(text: "Overridden by \(overriddenBy)")
+                        .help("A higher-precedence scope defines this key, so this value is never used.")
                 }
             }
 
@@ -415,6 +437,8 @@ private struct VariableRow: View {
                     }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
+                    .focused($focusedAction, equals: .reveal)
+                    .accessibilityLabel(isRevealed ? "Hide value" : "Reveal value")
                     .help(isRevealed ? "Hide value" : "Reveal value")
                 }
                 Button {
@@ -426,12 +450,12 @@ private struct VariableRow: View {
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(.secondary)
+                .focused($focusedAction, equals: .copy)
+                .accessibilityLabel("Copy value")
                 .help("Copy Value")
             }
             .font(.caption)
-            .focused($actionsFocused)
-            .opacity(isHovering || actionsFocused ? 1 : 0)
-            .disabled(!(isHovering || actionsFocused))
+            .opacity(isHovering || focusedAction != nil ? 1 : 0)
         }
         .padding(.leading, AppSpacing.large)
         .padding(.trailing, AppSpacing.medium)
@@ -462,16 +486,26 @@ private struct VariableRow: View {
 // MARK: - Unresolved placeholders
 
 /// Placeholders the request references but no enabled variable in any scope
-/// defines - they will be sent literally instead of substituted.
+/// defines - they will be sent literally instead of substituted - plus
+/// placeholders stuck in a variable reference cycle, which also arrive on
+/// the wire unsubstituted.
 private struct UnresolvedSection: View {
     let keys: [String]
+    var cyclicKeys: Set<String> = []
+
+    private var orderedKeys: [String] {
+        // Cyclic entries sort with the rest; the per-row label tells them
+        // apart. `keys` and `cyclicKeys` are disjoint by construction, but
+        // union defensively so a key never renders twice.
+        Array(Set(keys).union(cyclicKeys)).sorted()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
             Label("Unresolved Placeholders", systemImage: "exclamationmark.triangle.fill")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(AppColor.warning)
-            ForEach(keys, id: \.self) { key in
+            ForEach(orderedKeys, id: \.self) { key in
                 HStack(spacing: AppSpacing.xSmall) {
                     Text("{{\(key)}}")
                         .font(AppFont.monoCaption)
@@ -480,14 +514,20 @@ private struct UnresolvedSection: View {
                         .truncationMode(.middle)
                         .textSelection(.enabled)
                     Spacer(minLength: 0)
-                    Text("Not defined")
-                        .font(.caption2)
-                        .foregroundStyle(AppColor.warning)
+                    if cyclicKeys.contains(key) {
+                        Text("Cyclic reference")
+                            .font(.caption2)
+                            .foregroundStyle(AppColor.warning)
+                    } else {
+                        Text("Not defined")
+                            .font(.caption2)
+                            .foregroundStyle(AppColor.warning)
+                    }
                 }
             }
         }
         .padding(.horizontal, AppSpacing.medium)
         .padding(.vertical, AppSpacing.small)
-        .help("These placeholders have no enabled variable in any scope and will be sent literally.")
+        .help("These placeholders are undefined or resolve toward a variable cycle, and will be sent literally.")
     }
 }

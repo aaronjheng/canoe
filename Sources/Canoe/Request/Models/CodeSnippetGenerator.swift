@@ -90,9 +90,11 @@ enum CodeSnippetGenerator {
         if !enabledParams.isEmpty {
             var queryItems = components.queryItems ?? []
             for param in enabledParams {
+                let name = VariableResolver.resolve(param.key, variables: variables)
+                guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
                 queryItems.append(
                     URLQueryItem(
-                        name: VariableResolver.resolve(param.key, variables: variables),
+                        name: name,
                         value: VariableResolver.resolve(param.value, variables: variables)
                     ))
             }
@@ -157,16 +159,22 @@ enum CodeSnippetGenerator {
                 body = .none
             } else {
                 body = .raw(content: content)
-                if !hasContentType, !request.bodyContentType.isEmpty {
-                    headers.append((key: "Content-Type", value: request.bodyContentType))
+                if !hasContentType {
+                    let contentType = VariableResolver.resolve(request.bodyContentType, variables: variables)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !contentType.isEmpty {
+                        headers.append((key: "Content-Type", value: contentType))
+                    }
                 }
             }
         case .urlEncoded:
             let pairs = request.urlEncodedFields
                 .filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespaces).isEmpty }
-                .map { field in
-                    (
-                        key: VariableResolver.resolve(field.key, variables: variables),
+                .compactMap { field -> (key: String, value: String)? in
+                    let key = VariableResolver.resolve(field.key, variables: variables)
+                    guard !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+                    return (
+                        key: key,
                         value: VariableResolver.resolve(field.value, variables: variables)
                     )
                 }
@@ -174,8 +182,9 @@ enum CodeSnippetGenerator {
         case .formData:
             let fields = request.formFields
                 .filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespaces).isEmpty }
-                .map { field -> Prepared.Body.Field in
+                .compactMap { field -> Prepared.Body.Field? in
                     let name = VariableResolver.resolve(field.key, variables: variables)
+                    guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
                     if field.fieldKind == .file {
                         let path = VariableResolver.resolve(field.value, variables: variables)
                         return Prepared.Body.Field(

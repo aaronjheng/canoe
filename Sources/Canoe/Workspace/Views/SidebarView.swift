@@ -63,7 +63,9 @@ private struct ItemsView: View {
                 LazyVStack(spacing: 0) {
                     GroupHeader(
                         title: "Collections",
-                        count: store.visibleCollections.count,
+                        // Matches the rows below, which render the filtered
+                        // list (identical to the total when no filter is set).
+                        count: store.filteredCollections.count,
                         isExpanded: collectionsExpanded,
                         onToggle: { collectionsExpanded.toggle() },
                         actions: {
@@ -88,7 +90,8 @@ private struct ItemsView: View {
                     }
                     GroupHeader(
                         title: "Environments",
-                        count: store.activeWorkspaceEnvironments.count,
+                        // Matches the rows below (see Collections above).
+                        count: filteredEnvironments.count,
                         isExpanded: environmentsExpanded,
                         onToggle: { environmentsExpanded.toggle() },
                         actions: {

@@ -35,6 +35,17 @@ struct RequestEditorView: View {
         draft.headers.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespaces).isEmpty }.count
     }
 
+    /// Shown on the Authorization tab. Unlike `RequestItem.hasAuthConfigured`
+    /// this sees inherited settings (what HTTPClient actually sends) and a
+    /// manually set Authorization header, which always wins over the helper.
+    private var isAuthConfigured: Bool {
+        if store.authorizationForRequest(draft).isConfigured { return true }
+        return draft.headers.contains {
+            $0.isEnabled
+                && $0.key.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "authorization"
+        }
+    }
+
     /// Enabled row count for form bodies (shown on the Body tab like Postman).
     private var bodyRowCount: Int? {
         switch draft.requestBodyType {
@@ -78,6 +89,9 @@ struct RequestEditorView: View {
     @State private var isMethodMenuVisible = false
     /// Method under the pointer in the dropdown (hover highlight).
     @State private var hoveredMethod: HTTPMethod?
+    /// Method moved to with ↑/↓ in the dropdown filter. Return picks this
+    /// (falling back to the first match); nil until the user arrows.
+    @State private var keyboardMethod: HTTPMethod?
     /// The dropdown's type-to-filter query.
     @State private var methodFilter = ""
     @FocusState private var methodFilterFieldFocused: Bool
@@ -87,6 +101,17 @@ struct RequestEditorView: View {
         guard !methodFilter.isEmpty else { return HTTPMethod.allCases }
         return HTTPMethod.allCases.filter { $0.rawValue.localizedCaseInsensitiveContains(methodFilter) }
     }
+
+    /// Moves the keyboard selection in the method dropdown, clamped to the
+    /// current matches. Starts from the current method so the first arrow
+    /// lands on a neighbor, not the list edge.
+    private func moveKeyboardMethod(by delta: Int) {
+        guard !filteredMethods.isEmpty else { return }
+        let base = keyboardMethod ?? draft.httpMethod
+        let idx = filteredMethods.firstIndex(of: base) ?? (delta > 0 ? -1 : filteredMethods.count)
+        keyboardMethod = filteredMethods[min(max(idx + delta, 0), filteredMethods.count - 1)]
+        hoveredMethod = nil
+    }
     /// Measured height of the URL bar row - anchors the popup right below it.
     @State private var urlBarHeight: CGFloat = 0
     /// The raw text currently shown in the URL bar.
@@ -94,40 +119,91 @@ struct RequestEditorView: View {
 
     /// The URL bar text: the stored base URL plus the query rendered from the
     /// params table (the table is the source of truth for the query; the
-    /// base lives in `urlString`).
+    /// base lives in `urlString`). Only enabled rows with a non-empty key
+    /// are shown - exactly what HTTPClient sends - so copying the bar never
+    /// leaks a disabled value.
     private func composedURLText(base: String, params: [QueryParam]) -> String {
         let query =
             params
-            .filter { !$0.key.trimmingCharacters(in: .whitespaces).isEmpty || !$0.value.trimmingCharacters(in: .whitespaces).isEmpty }
+            .filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespaces).isEmpty }
             .map { "\($0.key)=\($0.value)" }
             .joined(separator: "&")
         guard !query.isEmpty else { return base }
+        // A #fragment stays at the very end: the query goes before it.
+        if let hash = base.firstIndex(of: "#") {
+            let before = String(base[..<hash])
+            let fragment = String(base[hash...])
+            return before + (before.contains("?") ? "&" : "?") + query + fragment
+        }
         return base.contains("?") ? base + "&" + query : base + "?" + query
     }
 
     /// URL bar edits drive the params table: the query part is parsed into
     /// rows and the stored URL keeps only its base (no query), so the two
-    /// never double up at send time.
+    /// never double up at send time. Row identity and `isEnabled` are
+    /// preserved by key match, so editing a value never silently enables a
+    /// disabled row; rows the bar does not show (disabled, blank-key) are
+    /// kept untouched in the table.
     private func syncParamsFromURLText(_ text: String) {
-        let parts = text.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
-        draft.urlString = String(parts[0])
+        // A #fragment is not a query: keep it with the base URL.
+        let (withoutFragment, fragment): (String, String) = {
+            if let hash = text.firstIndex(of: "#") {
+                return (String(text[..<hash]), String(text[hash...]))
+            }
+            return (text, "")
+        }()
+        let parts = withoutFragment.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        let newBase = String(parts[0]) + fragment
         guard parts.count > 1 else {
+            if draft.urlString != newBase { draft.urlString = newBase }
             if !draft.params.isEmpty { draft.params = [] }
             return
         }
-        let pairs = parts[1]
+        let pairs: [(key: String, value: String)] = parts[1]
             .split(separator: "&", omittingEmptySubsequences: true)
-            .map { raw -> QueryParam in
+            .map { raw in
                 let kv = raw.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
-                return QueryParam(
-                    key: kv.isEmpty ? "" : String(kv[0]),
-                    value: kv.count > 1 ? String(kv[1]) : ""
+                let rawKey = kv.isEmpty ? "" : String(kv[0])
+                let rawValue = kv.count > 1 ? String(kv[1]) : ""
+                // Percent-decode so `?q=a%26b` round-trips to the value
+                // `a&b` instead of splitting into two rows on the next edit.
+                return (
+                    key: rawKey.removingPercentEncoding ?? rawKey,
+                    value: rawValue.removingPercentEncoding ?? rawValue
                 )
             }
+        // Reuse identity for rows the bar shows: prefer an enabled row with
+        // the same key so value edits never touch `isEnabled`. If only a
+        // disabled row matches, the key was explicitly typed on the
+        // enabled-rows surface, so reuse it as enabled rather than
+        // duplicating the key.
+        var remaining = draft.params
+        var merged: [QueryParam] = []
+        merged.reserveCapacity(pairs.count)
+        for pair in pairs {
+            if let idx = remaining.firstIndex(where: { $0.key == pair.key && $0.isEnabled }) {
+                var row = remaining.remove(at: idx)
+                row.value = pair.value
+                merged.append(row)
+            } else if let idx = remaining.firstIndex(where: { $0.key == pair.key }) {
+                var row = remaining.remove(at: idx)
+                row.value = pair.value
+                row.isEnabled = true
+                merged.append(row)
+            } else {
+                merged.append(QueryParam(key: pair.key, value: pair.value))
+            }
+        }
+        // Rows the bar never shows survive bar edits untouched.
+        merged += remaining.filter { !$0.isEnabled || $0.key.trimmingCharacters(in: .whitespaces).isEmpty }
+        // Enabled non-blank rows absent from the bar text were deleted there.
         let changed =
-            pairs.count != draft.params.count
-            || zip(pairs, draft.params).contains { $0.key != $1.key || $0.value != $1.value }
-        if changed { draft.params = pairs }
+            merged.count != draft.params.count
+            || zip(merged, draft.params).contains {
+                $0.id != $1.id || $0.key != $1.key || $0.value != $1.value || $0.isEnabled != $1.isEnabled
+            }
+        if draft.urlString != newBase { draft.urlString = newBase }
+        if changed { draft.params = merged }
     }
 
     private var urlBinding: Binding<String> {
@@ -162,6 +238,10 @@ struct RequestEditorView: View {
         }
         .onChange(of: request.id) { _, _ in
             draft = request
+            // A section tab chosen for one request (e.g. Body) can be
+            // meaningless for the next (e.g. a GET with no body) - restart
+            // at Params like the draft does.
+            section = .params
             isURLPopupVisible = false
         }
         // The bar field stays a single line; gaining focus opens the
@@ -181,10 +261,18 @@ struct RequestEditorView: View {
             DispatchQueue.main.async { urlPopupField = .url }
         }
         .onChange(of: isMethodMenuVisible) { _, visible in
-            guard visible else { return }
+            guard visible else {
+                // Dismissing must release the filter's focus claim and drop
+                // the arrowed position; otherwise a stranded focus keeps
+                // swallowing keystrokes invisibly.
+                methodFilterFieldFocused = false
+                keyboardMethod = nil
+                return
+            }
             // The two floating surfaces are mutually exclusive.
             isURLPopupVisible = false
             hoveredMethod = nil
+            keyboardMethod = nil
             methodFilter = ""
             // Postman drops you into the filter so typing narrows the list.
             DispatchQueue.main.async { methodFilterFieldFocused = true }
@@ -424,11 +512,23 @@ struct RequestEditorView: View {
                     .font(.subheadline)
                     .focused($methodFilterFieldFocused)
                     .onSubmit {
-                        guard let first = filteredMethods.first else { return }
-                        draft.httpMethod = first
+                        guard let pick = keyboardMethod ?? filteredMethods.first else { return }
+                        draft.httpMethod = pick
                         isMethodMenuVisible = false
                     }
                     .onExitCommand { isMethodMenuVisible = false }
+                    .onKeyPress(.upArrow) {
+                        moveKeyboardMethod(by: -1)
+                        return .handled
+                    }
+                    .onKeyPress(.downArrow) {
+                        moveKeyboardMethod(by: 1)
+                        return .handled
+                    }
+                    .onChange(of: methodFilter) { _, _ in
+                        // A new filter invalidates the arrowed position.
+                        keyboardMethod = nil
+                    }
             }
             .padding(.horizontal, AppSpacing.small)
             .frame(minHeight: 30)
@@ -456,6 +556,7 @@ struct RequestEditorView: View {
                                     RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
                                         .fill(
                                             method == draft.httpMethod || method == hoveredMethod
+                                                || method == keyboardMethod
                                                 ? AppColor.subtleBackground
                                                 : Color.clear
                                         )
@@ -465,6 +566,9 @@ struct RequestEditorView: View {
                         .buttonStyle(.plain)
                         .onHover { hovering in
                             hoveredMethod = hovering ? method : nil
+                            // A single highlight: the pointer takes over from
+                            // the keyboard position.
+                            if hovering { keyboardMethod = nil }
                         }
                     }
                 }
@@ -547,7 +651,7 @@ struct RequestEditorView: View {
             )
             UnderlineTab(
                 title: RequestSection.auth.rawValue,
-                count: draft.hasAuthConfigured ? 1 : nil,
+                count: isAuthConfigured ? 1 : nil,
                 isSelected: section == .auth,
                 action: { section = .auth }
             )

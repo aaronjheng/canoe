@@ -200,22 +200,12 @@ private enum VariablePlaceholderStyling {
     }
 
     /// UTF-16 ranges of every `{{name}}` run with the trimmed name.
+    /// Delegates to `VariableResolver` - the same parser resolution uses -
+    /// so tinting never disagrees with what send/highlight counts as a
+    /// placeholder (the old manual `{{`-to-`}}` scan tinted inputs like
+    /// `{{a}b}}` that resolution ignores).
     static func variableRanges(in source: String) -> [(NSRange, String)] {
-        let ns = source as NSString
-        var ranges: [(NSRange, String)] = []
-        var searchStart = 0
-        while searchStart < ns.length {
-            let open = ns.range(of: "{{", options: [], range: NSRange(location: searchStart, length: ns.length - searchStart))
-            guard open.location != NSNotFound else { break }
-            let close = ns.range(of: "}}", options: [], range: NSRange(location: open.location + 2, length: ns.length - open.location - 2))
-            guard close.location != NSNotFound else { break }
-            let range = NSRange(location: open.location, length: close.location + close.length - open.location)
-            let name = ns.substring(with: NSRange(location: open.location + 2, length: close.location - open.location - 2))
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            ranges.append((range, name))
-            searchStart = close.location + close.length
-        }
-        return ranges
+        VariableResolver.ranges(in: source).map { ($0.range, $0.key) }
     }
 }
 

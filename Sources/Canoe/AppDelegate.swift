@@ -58,10 +58,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         // Unsaved edits live in memory and are mirrored to drafts.json
-        // (debounced) - flush the mirror before quitting so the next launch
-        // restores the edited state. Nothing is prompted and nothing is
-        // persisted as saved content.
-        appStore.flushPendingDraftWrites {
+        // (debounced) - wait for an in-flight Save-all to land, then flush
+        // the mirror, before quitting so the next launch restores the
+        // edited state. Nothing is prompted and nothing is persisted as
+        // saved content beyond what ⌘S already requested.
+        appStore.flushAllWritesForQuit {
             NSApp.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater

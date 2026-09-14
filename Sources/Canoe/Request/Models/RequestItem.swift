@@ -106,17 +106,6 @@ struct RequestItem: Identifiable, Codable, Hashable, Sendable {
         set { authType = newValue.rawValue }
     }
 
-    /// Whether auth is configured (used for the Auth tab badge). Inheriting
-    /// requests depend on the parent collection's settings, which this
-    /// request-level flag cannot see, so it reports false.
-    var hasAuthConfigured: Bool {
-        switch requestAuthType {
-        case .inherit, .none: false
-        case .basic: !authUsername.isEmpty || !authPassword.isEmpty
-        case .bearer: !authToken.isEmpty
-        }
-    }
-
     /// Compares everything except `updatedAt`, so the store can skip writes
     /// when the user did not actually change anything.
     func isContentEqual(to other: RequestItem) -> Bool {

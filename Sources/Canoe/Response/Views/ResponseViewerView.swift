@@ -46,7 +46,7 @@ struct ResponseViewerView: View {
         } else if let error = store.sendError {
             ErrorBanner(message: error) { store.sendError = nil }
                 .padding(AppSpacing.medium)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         } else if let response = store.displayedResponse {
             responseDetail(response)
         } else {
@@ -150,12 +150,14 @@ struct ResponseViewerView: View {
                 action: { responseSection = .body }
             )
             Spacer()
-            statusDot
-            StatusCapsule(statusCode: response.statusCode, statusText: response.statusText)
-            statusDot
-            statusMetric(response.formattedDuration, systemImage: "clock")
-            statusDot
-            statusMetric(response.formattedSize, systemImage: "doc")
+            HStack(spacing: AppSpacing.small) {
+                statusDot
+                StatusCapsule(statusCode: response.statusCode, statusText: response.statusText)
+                statusDot
+                statusMetric(response.formattedDuration, systemImage: "clock")
+                statusDot
+                statusMetric(response.formattedSize, systemImage: "doc")
+            }
         }
         .padding(.horizontal, AppSpacing.small)
     }
@@ -315,6 +317,7 @@ struct ResponseViewerView: View {
             Text(header.key)
                 .font(AppFont.monoSubheadline)
                 .foregroundStyle(.secondary)
+                .textSelection(.enabled)
                 .frame(minWidth: 160, alignment: .leading)
             Text(header.value)
                 .font(AppFont.monoSubheadline)
@@ -342,7 +345,11 @@ struct ResponseViewerView: View {
         panel.nameFieldStringValue =
             "response-\(response.statusCode)-\(Int(response.timestamp.timeIntervalSince1970)).\(fileExtension(for: response))"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        try? response.body.write(to: url)
+        do {
+            try response.body.write(to: url)
+        } catch {
+            AppLogger.error("Failed to save response body: \(error)", category: "Response")
+        }
     }
 
     private func fileExtension(for response: ResponseModel) -> String {

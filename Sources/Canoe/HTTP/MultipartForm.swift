@@ -45,8 +45,15 @@ enum MultipartForm {
         return mime
     }
 
+    /// Escapes a `Content-Disposition` parameter value. CR/LF are dropped
+    /// outright: a field name or filename containing them would inject forged
+    /// headers into the multipart body.
     private static func escape(_ value: String) -> String {
-        value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        value
+            .replacingOccurrences(of: "\r", with: "")
+            .replacingOccurrences(of: "\n", with: "")
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
     }
 }
 

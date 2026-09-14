@@ -3,12 +3,14 @@ import Foundation
 enum HTTPClientError: Error, LocalizedError {
     case invalidURL(String)
     case fileNotFound(String)
+    case fileTooLarge(String)
     case noResponse
 
     var errorDescription: String? {
         switch self {
         case .invalidURL(let url): return "Invalid URL: \(url)"
         case .fileNotFound(let path): return "File not found: \(path)"
+        case .fileTooLarge(let path): return "File is too large to send (>100 MB): \(path)"
         case .noResponse: return "No response received from the server."
         }
     }
@@ -17,13 +19,41 @@ enum HTTPClientError: Error, LocalizedError {
 /// Executes a `RequestItem` (with variables resolved) using URLSession async
 /// and returns a transient `ResponseModel`.
 enum HTTPClient {
+    /// Strips credentials when a redirect leaves the original host (or
+    /// downgrades https to http), so an Authorization helper value is never
+    /// leaked to a third party through a redirect. Same-host redirects pass
+    /// through untouched. Stateless, so sharing it across sends is safe.
+    private final class RedirectPolicy: NSObject, URLSessionTaskDelegate {
+        func urlSession(
+            _ session: URLSession,
+            task: URLSessionTask,
+            willPerformHTTPRedirection response: HTTPURLResponse,
+            newRequest request: URLRequest,
+            completionHandler: @escaping (URLRequest?) -> Void
+        ) {
+            var redirected = request
+            let from = task.originalRequest?.url
+            let to = request.url
+            let crossHost = from?.host?.lowercased() != to?.host?.lowercased()
+            let downgraded = from?.scheme?.lowercased() == "https" && to?.scheme?.lowercased() == "http"
+            if crossHost || downgraded {
+                redirected.setValue(nil, forHTTPHeaderField: "Authorization")
+            }
+            completionHandler(redirected)
+        }
+    }
+
+    private static let redirectPolicy = RedirectPolicy()
+
     private static let session: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 120
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
-        return URLSession(configuration: config)
+        // An API client must never serve a cached response as a fresh send.
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return URLSession(configuration: config, delegate: redirectPolicy, delegateQueue: nil)
     }()
 
     /// Sends the request. `authorization` is the already-resolved effective
@@ -55,9 +85,14 @@ enum HTTPClient {
         if !enabledParams.isEmpty {
             var queryItems = components.queryItems ?? []
             for param in enabledParams {
+                let name = VariableResolver.resolve(param.key, variables: variables)
+                // A key that resolves to empty (e.g. key="{{empty}}" with
+                // empty="") must be skipped like headers are - otherwise the
+                // wire carries junk like "?=1".
+                guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
                 queryItems.append(
                     URLQueryItem(
-                        name: VariableResolver.resolve(param.key, variables: variables),
+                        name: name,
                         value: VariableResolver.resolve(param.value, variables: variables)
                     ))
             }
@@ -151,6 +186,25 @@ enum HTTPClient {
         let contentType: String?
     }
 
+    /// Bodies above this are refused with a clear error instead of attempting
+    /// an allocation that aborts the read.
+    private static let maxFileBodySize: Int64 = 100 * 1024 * 1024
+
+    /// Reads a body file: `~` expands like a shell, and oversized files fail
+    /// with `fileTooLarge` (naming the path the user typed) rather than a
+    /// misleading "file not found".
+    private static func fileData(atPath path: String) throws -> Data {
+        let expanded = (path as NSString).expandingTildeInPath
+        let size = (try? FileManager.default.attributesOfItem(atPath: expanded))?[.size] as? Int64
+        if let size, size > maxFileBodySize {
+            throw HTTPClientError.fileTooLarge(path)
+        }
+        guard let data = FileManager.default.contents(atPath: expanded) else {
+            throw HTTPClientError.fileNotFound(path)
+        }
+        return data
+    }
+
     private static func buildBody(for request: RequestItem, variables: [String: String]) throws -> BuiltBody? {
         switch request.requestBodyType {
         case .none:
@@ -158,16 +212,21 @@ enum HTTPClient {
         case .raw:
             let resolved = VariableResolver.resolve(request.bodyText, variables: variables)
             guard !resolved.isEmpty, let data = resolved.data(using: .utf8) else { return nil }
-            let contentType = request.bodyContentType.isEmpty ? nil : request.bodyContentType
-            return BuiltBody(data: data, contentType: contentType)
+            let contentType = VariableResolver.resolve(request.bodyContentType, variables: variables)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return BuiltBody(data: data, contentType: contentType.isEmpty ? nil : contentType)
         case .urlEncoded:
             let pairs = request.urlEncodedFields.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespaces).isEmpty }
             guard !pairs.isEmpty else { return nil }
-            let encoded = pairs.map { field in
+            var encodedPairs: [String] = []
+            for field in pairs {
                 let key = VariableResolver.resolve(field.key, variables: variables)
+                guard !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
                 let value = VariableResolver.resolve(field.value, variables: variables)
-                return "\(percentEncode(key))=\(percentEncode(value))"
-            }.joined(separator: "&")
+                encodedPairs.append("\(percentEncode(key))=\(percentEncode(value))")
+            }
+            guard !encodedPairs.isEmpty else { return nil }
+            let encoded = encodedPairs.joined(separator: "&")
             guard let data = encoded.data(using: .utf8) else { return nil }
             return BuiltBody(data: data, contentType: "application/x-www-form-urlencoded")
         case .formData:
@@ -176,16 +235,19 @@ enum HTTPClient {
             var parts: [MultipartForm.Part] = []
             for field in fields {
                 let key = VariableResolver.resolve(field.key, variables: variables)
+                guard !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
                 if field.fieldKind == .file {
                     let path = VariableResolver.resolve(field.value, variables: variables)
-                    guard !path.isEmpty, let data = FileManager.default.contents(atPath: path) else {
-                        throw HTTPClientError.fileNotFound(path.isEmpty ? field.key : path)
+                    guard !path.isEmpty else {
+                        throw HTTPClientError.fileNotFound(field.key)
                     }
+                    let data = try fileData(atPath: path)
+                    let expanded = (path as NSString).expandingTildeInPath
                     parts.append(
                         MultipartForm.Part(
                             name: key,
-                            filename: (path as NSString).lastPathComponent,
-                            mimeType: MultipartForm.mimeType(forPath: path),
+                            filename: (expanded as NSString).lastPathComponent,
+                            mimeType: MultipartForm.mimeType(forPath: expanded),
                             data: data
                         ))
                 } else {
@@ -194,6 +256,7 @@ enum HTTPClient {
                         MultipartForm.Part(name: key, filename: nil, mimeType: nil, data: Data(value.utf8)))
                 }
             }
+            guard !parts.isEmpty else { return nil }
             let boundary = MultipartForm.makeBoundary()
             return BuiltBody(
                 data: MultipartForm.encode(parts: parts, boundary: boundary),
@@ -201,10 +264,11 @@ enum HTTPClient {
             )
         case .binary:
             let path = VariableResolver.resolve(request.binaryFilePath, variables: variables)
-            guard !path.isEmpty, let data = FileManager.default.contents(atPath: path) else {
-                throw HTTPClientError.fileNotFound(path.isEmpty ? "(no file selected)" : path)
+            guard !path.isEmpty else {
+                throw HTTPClientError.fileNotFound("(no file selected)")
             }
-            return BuiltBody(data: data, contentType: MultipartForm.mimeType(forPath: path))
+            let data = try fileData(atPath: path)
+            return BuiltBody(data: data, contentType: MultipartForm.mimeType(forPath: (path as NSString).expandingTildeInPath))
         }
     }
 
