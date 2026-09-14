@@ -35,7 +35,7 @@ struct ConsoleEntry: Identifiable, Sendable {
 
     var statusText: String {
         guard let statusCode else { return "Error" }
-        return "\(statusCode) \(HTTPURLResponse.localizedString(forStatusCode: statusCode))"
+        return "\(statusCode) \(httpReasonPhrase(for: statusCode))"
     }
 
     /// URLSession negotiates the version; the log reports what the console

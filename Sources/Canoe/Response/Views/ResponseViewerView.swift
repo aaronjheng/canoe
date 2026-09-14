@@ -7,6 +7,8 @@ struct ResponseViewerView: View {
     @State private var wordWrap = true
     @State private var headerFilter = ""
     @State private var responseSection: ResponseSection = .body
+    @State private var headerSort: [KeyPathComparator<HTTPHeaderField>] = []
+    @State private var headerSelection: HTTPHeaderField.ID?
 
     /// Max characters rendered in the body pane. Beyond this a single SwiftUI
     /// `Text` becomes sluggish, so the view shows a prefix plus a notice.
@@ -304,29 +306,25 @@ struct ResponseViewerView: View {
                         description: Text("No headers match the current search.")
                     )
                 } else {
-                    List(matches) { header in
-                        headerRow(header)
+                    Table(matches.sorted(using: headerSort), selection: $headerSelection, sortOrder: $headerSort) {
+                        TableColumn("Key", value: \.key) { header in
+                            Text(header.key)
+                                .textSelection(.enabled)
+                        }
+                        .width(min: 120, ideal: 200)
+                        TableColumn("Value", value: \.value) { header in
+                            Text(header.value)
+                                .textSelection(.enabled)
+                        }
+                    }
+                    .contextMenu {
+                        if let selected = matches.first(where: { $0.id == headerSelection }) {
+                            Button("Copy Value") { copyToPasteboard(selected.value) }
+                            Button("Copy Header") { copyToPasteboard("\(selected.key): \(selected.value)") }
+                        }
                     }
                 }
             }
-        }
-    }
-
-    private func headerRow(_ header: HTTPHeaderField) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: AppSpacing.medium) {
-            Text(header.key)
-                .font(AppFont.monoSubheadline)
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-                .frame(minWidth: 160, alignment: .leading)
-            Text(header.value)
-                .font(AppFont.monoSubheadline)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .contextMenu {
-            Button("Copy Value") { copyToPasteboard(header.value) }
-            Button("Copy Header") { copyToPasteboard("\(header.key): \(header.value)") }
         }
     }
 
