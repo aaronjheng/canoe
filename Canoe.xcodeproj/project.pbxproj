@@ -1488,6 +1488,36 @@
 			<key>productRef</key>
 			<string>FF15BF062530894B0C95CAFD</string>
 		</dict>
+		<key>F00DCAFE1234567890ABC01</key>
+		<dict>
+			<key>isa</key>
+			<string>XCRemoteSwiftPackageReference</string>
+			<key>repositoryURL</key>
+			<string>https://github.com/tree-sitter-grammars/tree-sitter-xml</string>
+			<key>requirement</key>
+			<dict>
+				<key>kind</key>
+				<string>upToNextMajorVersion</string>
+				<key>minimumVersion</key>
+				<string>0.7.0</string>
+			</dict>
+		</dict>
+		<key>F00DCAFE1234567890ABC02</key>
+		<dict>
+			<key>isa</key>
+			<string>XCSwiftPackageProductDependency</string>
+			<key>package</key>
+			<string>F00DCAFE1234567890ABC01</string>
+			<key>productName</key>
+			<string>TreeSitterXML</string>
+		</dict>
+		<key>F00DCAFE1234567890ABC03</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>productRef</key>
+			<string>F00DCAFE1234567890ABC02</string>
+		</dict>
 		<key>C0A5E1000000000000000002</key>
 		<dict>
 			<key>isa</key>
@@ -1590,6 +1620,7 @@
 			<array>
 				<string>30957945FDFCD55B2FC34445</string>
 				<string>1EA71611D075CC5970B3CD82</string>
+				<string>F00DCAFE1234567890ABC03</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>
@@ -1995,6 +2026,7 @@
 			<array>
 				<string>74E72CF42B8634395F0FDCC3</string>
 				<string>FF15BF062530894B0C95CAFD</string>
+				<string>F00DCAFE1234567890ABC02</string>
 			</array>
 			<key>productName</key>
 			<string>Canoe</string>
@@ -2031,6 +2063,7 @@
 			<array>
 				<string>869AB0784AA493E4F37F03A3</string>
 				<string>BE1F2D6A76591C58F007DDBF</string>
+				<string>F00DCAFE1234567890ABC01</string>
 			</array>
 			<key>productRefGroup</key>
 			<string>DB1220D8A260A6C1FF20221A</string>

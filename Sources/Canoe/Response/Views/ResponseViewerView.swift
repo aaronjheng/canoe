@@ -242,7 +242,7 @@ struct ResponseViewerView: View {
             ScrollView(wordWrap ? .vertical : [.vertical, .horizontal]) {
                 Group {
                     if display.isJSON {
-                        JSONSyntaxHighlight.highlightedText(display.text)
+                        SyntaxHighlight.highlightedText(display.text)
                     } else {
                         Text(display.text)
                     }

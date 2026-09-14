@@ -83,6 +83,10 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
     /// Whether the AppKit field accepts typing. The inherited-authorization
     /// echo renders fields read-only but selectable, so values still copy.
     var isEditable: Bool = true
+    /// Syntax foreground colors for the multi-line editor (the raw request
+    /// body): JSON/XML token colors under the `{{variable}}` background
+    /// tints. Single-line editors always stay plain.
+    var syntax: BodySyntax = .plain
     /// Called when the user presses Return with no completion popup open
     /// (multi-line editors insert a line break instead).
     var onCommit: (() -> Void)?
@@ -106,7 +110,8 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         autoFocusOnUpdate: Bool = true,
         isEditable: Bool = true,
         onEditingEnded: (() -> Void)? = nil,
-        onCommit: (() -> Void)? = nil
+        onCommit: (() -> Void)? = nil,
+        syntax: BodySyntax = .plain
     ) {
         self._text = text
         self.variables = variables
@@ -121,6 +126,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         self.isEditable = isEditable
         self.onEditingEnded = onEditingEnded
         self.onCommit = onCommit
+        self.syntax = syntax
     }
 
     var body: some View {
@@ -172,7 +178,8 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
             focusValue: focusValue,
             onEditingEnded: onEditingEnded,
             onCommit: onCommit,
-            onContentHeightChange: fillsContainer ? nil : { contentHeight = $0 }
+            onContentHeightChange: fillsContainer ? nil : { contentHeight = $0 },
+            syntax: syntax
         )
     }
 
@@ -185,10 +192,20 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
 
 /// Shared `{{variable}}` tinting for the AppKit-backed editors.
 private enum VariablePlaceholderStyling {
-    /// The full attributed value for `text`: mono font plus tinted
-    /// `{{variable}}` runs.
-    static func attributed(_ plain: String, font: VariableEditorFont, variables: [String: String]) -> NSAttributedString {
+    /// The full attributed value for `text`: mono font, optional syntax
+    /// foreground colors, plus tinted `{{variable}}` runs.
+    static func attributed(
+        _ plain: String,
+        font: VariableEditorFont,
+        variables: [String: String],
+        syntax: BodySyntax = .plain
+    ) -> NSAttributedString {
         let out = NSMutableAttributedString(string: plain, attributes: [.font: font.nsFont])
+        if let runs = SyntaxHighlight.foregroundRuns(in: plain, syntax: syntax) {
+            for (range, color) in runs {
+                out.addAttribute(.foregroundColor, value: color, range: range)
+            }
+        }
         for (range, name) in variableRanges(in: plain) {
             out.addAttribute(.backgroundColor, value: tint(name, in: variables), range: range)
         }
@@ -416,6 +433,7 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
     let onEditingEnded: (() -> Void)?
     let onCommit: (() -> Void)?
     let onContentHeightChange: ((CGFloat) -> Void)?
+    var syntax: BodySyntax = .plain
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -425,6 +443,7 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
         let coordinator = context.coordinator
         coordinator.completion.setCandidates(suggestions)
         coordinator.lastVariables = variables
+        coordinator.lastSyntax = syntax
 
         let textView = NSTextView()
         textView.isRichText = false
@@ -452,7 +471,7 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
         textView.textContainer?.containerSize = NSSize(width: CGFloat(0), height: CGFloat.greatestFiniteMagnitude)
         textView.typingAttributes = [.font: font.nsFont, .foregroundColor: NSColor.labelColor]
         textView.textStorage?.setAttributedString(
-            VariablePlaceholderStyling.attributed(text, font: font, variables: variables)
+            VariablePlaceholderStyling.attributed(text, font: font, variables: variables, syntax: syntax)
         )
         textView.delegate = coordinator
 
@@ -479,19 +498,21 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
             coordinator.completion.hide()
             let selection = textView.selectedRange()
             textView.textStorage?.setAttributedString(
-                VariablePlaceholderStyling.attributed(text, font: font, variables: variables)
+                VariablePlaceholderStyling.attributed(text, font: font, variables: variables, syntax: syntax)
             )
             textView.setSelectedRange(NSRange(location: min(selection.location, (text as NSString).length), length: 0))
             coordinator.lastVariables = variables
             coordinator.reportContentHeight(textView)
-        } else if coordinator.lastVariables != variables {
-            // Variable scope changed (environment switch): re-tint.
+        } else if coordinator.lastVariables != variables || coordinator.lastSyntax != syntax {
+            // Variable scope changed (environment switch) or the raw body
+            // kind changed (JSON/XML/Text): re-tint.
             coordinator.lastVariables = variables
+            coordinator.lastSyntax = syntax
             if textView.window?.firstResponder === textView {
                 coordinator.restyle(textView)
             } else {
                 textView.textStorage?.setAttributedString(
-                    VariablePlaceholderStyling.attributed(text, font: font, variables: variables)
+                    VariablePlaceholderStyling.attributed(text, font: font, variables: variables, syntax: syntax)
                 )
             }
         }
@@ -518,6 +539,7 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         fileprivate var parent: MultiLineField
         fileprivate var lastVariables: [String: String] = [:]
+        fileprivate var lastSyntax: BodySyntax = .plain
         fileprivate let completion = VariableCompletionController()
         private var lastReportedHeight: CGFloat = 0
 
@@ -571,11 +593,19 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
         }
 
         /// Re-tint the `{{variable}}` runs in place - rebuilding the storage
-        /// mid-edit would reset the caret and the undo stack.
+        /// mid-edit would reset the caret and the undo stack. Syntax
+        /// foreground colors refresh with the same pass.
         func restyle(_ textView: NSTextView) {
             guard let storage = textView.textStorage else { return }
             let length = (storage.string as NSString).length
-            storage.removeAttribute(.backgroundColor, range: NSRange(location: 0, length: length))
+            let fullRange = NSRange(location: 0, length: length)
+            storage.removeAttribute(.backgroundColor, range: fullRange)
+            storage.removeAttribute(.foregroundColor, range: fullRange)
+            if let runs = SyntaxHighlight.foregroundRuns(in: storage.string, syntax: parent.syntax) {
+                for (range, color) in runs {
+                    storage.addAttribute(.foregroundColor, value: color, range: range)
+                }
+            }
             for (range, name) in VariablePlaceholderStyling.variableRanges(in: storage.string) {
                 storage.addAttribute(
                     .backgroundColor,

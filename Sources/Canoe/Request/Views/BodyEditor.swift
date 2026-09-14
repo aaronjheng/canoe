@@ -78,6 +78,15 @@ struct BodyEditor: View {
         )
     }
 
+    /// Syntax colors for the raw editor, following the format picker.
+    private var rawSyntax: BodySyntax {
+        switch request.rawBodyKind {
+        case .json: .json
+        case .xml: .xml
+        case .text: .plain
+        }
+    }
+
     // MARK: - Content
 
     @ViewBuilder
@@ -111,13 +120,16 @@ struct BodyEditor: View {
 
     private var rawEditor: some View {
         VStack(spacing: 0) {
-            VariableHighlightEditor(
+            // Explicit specialization: this editor never wires programmatic
+            // focus, so FocusValue would otherwise be uninferable.
+            VariableHighlightEditor<Bool>(
                 text: $request.bodyText,
                 variables: resolvedVariables,
                 suggestions: requestSuggestions,
                 isSingleLine: false,
                 fillsContainer: true,
-                font: .monoBody
+                font: .monoBody,
+                syntax: rawSyntax
             )
             .background(AppColor.codeBackground)
             .padding(.horizontal, AppSpacing.small)
