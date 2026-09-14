@@ -143,6 +143,13 @@ final class AppStore {
 
     @ObservationIgnored private var sendTasks: [OpenTab: Task<Void, Never>] = [:]
     @ObservationIgnored private var sendTokens: [OpenTab: UUID] = [:]
+    /// When each tab last cancelled a send. A Send landing within
+    /// `sendAfterCancelQuiescence` of it is a misfire (the morphing button
+    /// swapped under the click, or a double-click's second half) and is
+    /// dropped - otherwise it would fire a brand-new request whose response
+    /// then "appears despite cancelling".
+    @ObservationIgnored private var lastCancelAt: [OpenTab: Date] = [:]
+    private static let sendAfterCancelQuiescence: TimeInterval = 0.5
     /// Unsaved request edits (Postman-style dirty state): the latest draft is
     /// held here until an explicit save (Save button / ⌘S) persists it, and
     /// mirrored to drafts.json so it survives relaunches. Tracked by the
@@ -446,6 +453,18 @@ final class AppStore {
         selectedTab = tab
     }
 
+    /// Cancels the selected tab's in-flight send, if any. Responses,
+    /// errors, and history are untouched: a cancelled send records nothing,
+    /// like closing the tab mid-send minus closing the tab.
+    func cancelSend() {
+        guard let tab = selectedTab else { return }
+        sendTasks[tab]?.cancel()
+        sendTasks[tab] = nil
+        sendTokens[tab] = nil
+        sendingTabs.remove(tab)
+        lastCancelAt[tab] = Date()
+    }
+
     /// Closes a tab, cancelling its in-flight send and dropping its cached
     /// response. Activates the left neighbor (or the new first tab). Edits
     /// are untouched: they live in memory and the drafts mirror, so closing
@@ -455,6 +474,7 @@ final class AppStore {
         sendTasks[tab] = nil
         sendTokens[tab] = nil
         sendingTabs.remove(tab)
+        lastCancelAt[tab] = nil
         responsesByTab[tab] = nil
         errorsByTab[tab] = nil
         responseHistoryByTab[tab] = nil
@@ -1408,13 +1428,26 @@ final class AppStore {
     /// given tab so other tabs keep their own spinners and responses.
     func send(_ request: RequestItem) {
         let tab = selectedTab ?? .request(request.id)
+        // Drop misfires: a Send within the quiescence window after a cancel
+        // is the morphing button swapping under the click, not intent.
+        if let at = lastCancelAt[tab], Date().timeIntervalSince(at) < Self.sendAfterCancelQuiescence {
+            return
+        }
         let token = UUID()
         sendTokens[tab] = token
         sendTasks[tab]?.cancel()
+        // Mark sending synchronously with the click: the Task below may not
+        // start for a while (busy main thread), and nothing after this point
+        // may re-mark it - so Cancel can never be followed by a stale insert
+        // flipping the button back.
+        sendingTabs.insert(tab)
+        errorsByTab[tab] = nil
+        viewingHistoryIndexByTab[tab] = nil
         sendTasks[tab] = Task {
-            sendingTabs.insert(tab)
-            errorsByTab[tab] = nil
-            viewingHistoryIndexByTab[tab] = nil
+            // A task cancelled before it first ran still executes its body;
+            // without this guard it would write state for a send that no
+            // longer owns the tab.
+            guard !Task.isCancelled else { return }
             // Only the latest send for this tab may write state - a cancelled
             // predecessor must not touch its successor's spinner or response.
             defer {
@@ -1463,6 +1496,11 @@ final class AppStore {
                     )
                 )
             } catch is CancellationError {
+                return
+            } catch let error as URLError where error.code == .cancelled {
+                // What URLSession actually throws when the Swift task is
+                // cancelled (verified: NSURLError -999, not
+                // CancellationError). A cancelled send records nothing.
                 return
             } catch {
                 guard sendTokens[tab] == token else { return }

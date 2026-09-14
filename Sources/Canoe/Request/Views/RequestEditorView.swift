@@ -416,9 +416,21 @@ struct RequestEditorView: View {
                 }
                 .variableFieldBordered(isFocused: urlFieldFocused == .url, verticalPadding: 3)
 
+                // One morphing slot: Send becomes Cancel while a response is
+                // pending. A click meant for Cancel can land on the freshly
+                // swapped-in Send (same position, double-click habit) - the
+                // store drops Sends that immediately follow a cancel, so the
+                // misfire never fires a brand-new request.
                 if store.isSending {
-                    ProgressView().controlSize(.small)
-                        .frame(width: AppSize.methodPickerWidth)
+                    Button {
+                        store.cancelSend()
+                    } label: {
+                        Text("Cancel")
+                            .frame(minHeight: 22)
+                    }
+                    .buttonStyle(.bordered)
+                    .keyboardShortcut(.cancelAction)
+                    .help("Cancel Request (⎋)")
                 } else {
                     Button {
                         store.send(draft)
