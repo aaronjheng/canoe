@@ -4,8 +4,8 @@ import SwiftUI
 /// The "Variables in Request" inspector on the right edge of the detail area.
 ///
 /// With a request selected it lists every variable in scope, grouped by scope
-/// from lowest to highest precedence (workspace → collection → environment),
-/// so `{{placeholder}}` resolution is easy to trace: disabled rows are
+/// from highest to lowest precedence (environment → collection → workspace),
+/// so higher-precedence variables appear at the top. Disabled rows are
 /// excluded from resolution, overridden rows are annotated with the scope
 /// that wins, secrets are masked, and placeholders the request references but
 /// no scope defines are flagged as unresolved.
@@ -50,6 +50,7 @@ struct VariablesSidebarView: View {
 
     private func requestContent(for request: RequestItem) -> some View {
         let scopes = store.variableScopesForRequest(request)
+        let displayScopes = Array(scopes.reversed())
         let usedKeys = Set(store.placeholdersUsedByRequest(request))
         let resolvedKeys = Set(store.variablesForRequest(request).keys)
         let unresolvedAll = usedKeys.subtracting(resolvedKeys).sorted()
@@ -59,7 +60,7 @@ struct VariablesSidebarView: View {
             Divider()
             ScrollView {
                 VStack(spacing: 0) {
-                    ForEach(scopes) { scope in
+                    ForEach(displayScopes) { scope in
                         ScopeSection(
                             scope: scope,
                             query: query,
@@ -94,10 +95,11 @@ struct VariablesSidebarView: View {
 
     private var workspaceContent: some View {
         let scopes = store.workspaceVariableScopes()
+        let displayScopes = Array(scopes.reversed())
         return VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 0) {
-                    ForEach(scopes) { scope in
+                    ForEach(displayScopes) { scope in
                         ScopeSection(
                             scope: scope,
                             query: "",
