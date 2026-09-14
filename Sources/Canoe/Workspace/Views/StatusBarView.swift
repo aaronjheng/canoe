@@ -17,6 +17,16 @@ struct StatusBarView: View {
             ) {
                 store.showSidebar.toggle()
             }
+            // Console entry sits with the left-edge toggles, right of the
+            // sidebar switch (Postman keeps its console toggle in the
+            // bottom bar too): docks the network log below the Response pane.
+            StatusToggleButton(
+                systemImage: "terminal",
+                isOn: store.showConsole,
+                help: store.showConsole ? "Hide Console" : "Show Console"
+            ) {
+                store.toggleConsole()
+            }
             Spacer(minLength: 0)
             // Symmetric counterpart on the trailing edge: shows/hides the
             // right-edge inspector (Variables or Code Snippet).
@@ -26,15 +36,6 @@ struct StatusBarView: View {
                 help: store.isRightSidebarVisible ? "Hide Right Sidebar" : "Show Right Sidebar"
             ) {
                 store.toggleRightSidebar()
-            }
-            // Console entry (Postman keeps its console toggle in the bottom
-            // bar too): docks the network log below the Response pane.
-            StatusToggleButton(
-                systemImage: "terminal",
-                isOn: store.showConsole,
-                help: store.showConsole ? "Hide Console" : "Show Console"
-            ) {
-                store.toggleConsole()
             }
         }
         .padding(.horizontal, AppSpacing.medium)
