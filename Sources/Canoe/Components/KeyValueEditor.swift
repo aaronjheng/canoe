@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// A protocol for editable key/value rows (query params and headers share the
 /// same UI).
@@ -50,6 +51,10 @@ struct KeyValueEditor<T: KVItem>: View {
     /// Optional per-row secret column: when set to the item's flag, each row
     /// shows an eye button toggling it (environment variables' `isSecret`).
     var secretKeyPath: WritableKeyPath<T, Bool>?
+    /// Drag-to-reorder rows via a grip handle (environment variables).
+    /// Off by default: params/headers send in row order and the other
+    /// variables tables keep alphabetical order, so their rows stay fixed.
+    var allowsReorder: Bool = false
 
     /// The in-progress trailing row. Display-only until the user types into
     /// it; then it materializes into `items` and focus follows the materialized
@@ -62,6 +67,10 @@ struct KeyValueEditor<T: KVItem>: View {
     /// overwrote the whole text).
     @State private var ghost: T?
     @State private var focusedCell: CellFocus?
+    /// Row being dragged for reorder, and the row currently under it.
+    @State private var draggingID: UUID?
+    @State private var dropTargetID: UUID?
+    @State private var dropTargetEnd = false
 
     /// Candidates shown by every cell's `{{` completion popup.
     private var rowSuggestions: [VariableSuggestion] {
@@ -72,6 +81,7 @@ struct KeyValueEditor<T: KVItem>: View {
     /// remaining width equally, matching the header labels above.
     private let toggleColumnWidth: CGFloat = 32
     private let deleteColumnWidth: CGFloat = 26
+    private let gripColumnWidth: CGFloat = 22
     private var secretColumnWidth: CGFloat { secretKeyPath == nil ? 0 : 26 }
 
     var body: some View {
@@ -127,16 +137,27 @@ struct KeyValueEditor<T: KVItem>: View {
                     valueFocus: .value(item.id),
                     toggleColumnWidth: toggleColumnWidth,
                     deleteColumnWidth: deleteColumnWidth,
+                    gripColumnWidth: gripColumnWidth,
                     onDelete: { [id = item.id] in
                         items.removeAll { $0.id == id }
                         if ghost?.id == id { ghost = nil }
-                    }
+                    },
+                    onGripDrag: allowsReorder ? { dragProvider(for: item.id) } : nil,
+                    onMoveUp: allowsReorder ? { moveRow(id: item.id, by: -1) } : nil,
+                    onMoveDown: allowsReorder ? { moveRow(id: item.id, by: 1) } : nil,
+                    isDragging: draggingID == item.id,
+                    isDropTargeted: dropTargetID == item.id,
+                    allowsReorder: allowsReorder
                 )
+                .onDrop(of: [.text], isTargeted: dropTargeted(for: item.id)) { _ in
+                    moveDraggedRow(to: item.id)
+                }
                 Divider()
             }
             // The permanently present empty row (Postman-style). Its cells
             // report when their editing session ends: the ghost then resets
             // to an empty buffer - the real row owns the content from there.
+            // It is also a drop target: dropping here moves the row to the end.
             KVRow(
                 isEnabled: ghostEnabledBinding,
                 key: ghostBinding(\.key, focusOn: { .key($0) }),
@@ -152,8 +173,20 @@ struct KeyValueEditor<T: KVItem>: View {
                 valueFocus: .ghostValue,
                 toggleColumnWidth: toggleColumnWidth,
                 deleteColumnWidth: deleteColumnWidth,
-                onEditingEnded: { ghost = nil }
+                gripColumnWidth: gripColumnWidth,
+                onEditingEnded: { ghost = nil },
+                allowsReorder: allowsReorder
             )
+            .onDrop(of: [.text], isTargeted: $dropTargetEnd) { _ in
+                moveDraggedRowToEnd()
+            }
+            .overlay(alignment: .bottom) {
+                if allowsReorder && dropTargetEnd {
+                    Rectangle()
+                        .fill(AppColor.accent)
+                        .frame(height: 2)
+                }
+            }
         }
         .background(.background)
         .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
@@ -164,20 +197,22 @@ struct KeyValueEditor<T: KVItem>: View {
     }
 
     private var headerRow: some View {
+        // Icon columns (grip, checkbox, secret, delete) get no header
+        // cells: empty ruled boxes read as missing labels. A single indent
+        // keeps the text labels over their columns instead.
         HStack(spacing: 0) {
-            Color.clear.frame(width: toggleColumnWidth)
-            verticalRule
+            Color.clear.frame(width: leadingIconWidth)
             headerLabel(keyHeader)
             verticalRule
             headerLabel(valueHeader)
-            verticalRule
-            if secretColumnWidth > 0 {
-                Color.clear.frame(width: secretColumnWidth)
-                verticalRule
-            }
-            Color.clear.frame(width: deleteColumnWidth)
         }
         .frame(height: 28)
+    }
+
+    /// Indent matching the body rows' leading icon columns (including their
+    /// 1pt hairlines) so the text labels land exactly over the cells.
+    private var leadingIconWidth: CGFloat {
+        (allowsReorder ? gripColumnWidth + 1 : 0) + toggleColumnWidth + 1
     }
 
     private func headerLabel(_ text: String) -> some View {
@@ -236,6 +271,72 @@ struct KeyValueEditor<T: KVItem>: View {
         ghost = nil
     }
 
+    // MARK: - Reorder
+
+    /// Drag payload for a row: the row id as text. Drops are accepted only
+    /// from our own grips (see `draggingID`), so foreign text cannot
+    /// re-sort the table.
+    private func dragProvider(for id: UUID) -> NSItemProvider {
+        draggingID = id
+        return NSItemProvider(object: id.uuidString as NSString)
+    }
+
+    private func dropTargeted(for id: UUID) -> Binding<Bool> {
+        Binding(
+            get: { dropTargetID == id },
+            set: {
+                if $0 { dropTargetID = id } else if dropTargetID == id { dropTargetID = nil }
+            }
+        )
+    }
+
+    /// Moves the dragged row to `id`'s position.
+    private func moveDraggedRow(to id: UUID) -> Bool {
+        defer {
+            draggingID = nil
+            dropTargetID = nil
+            dropTargetEnd = false
+        }
+        guard allowsReorder,
+            let fromID = draggingID,
+            let fromIndex = items.firstIndex(where: { $0.id == fromID }),
+            let toIndex = items.firstIndex(where: { $0.id == id }),
+            fromIndex != toIndex
+        else { return false }
+        withAnimation {
+            items.move(fromOffsets: [fromIndex], toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
+        }
+        return true
+    }
+
+    /// Moves the dragged row to the end (dropped on the trailing empty row).
+    private func moveDraggedRowToEnd() -> Bool {
+        defer {
+            draggingID = nil
+            dropTargetID = nil
+            dropTargetEnd = false
+        }
+        guard allowsReorder,
+            let fromID = draggingID,
+            let fromIndex = items.firstIndex(where: { $0.id == fromID }),
+            fromIndex != items.count - 1
+        else { return false }
+        withAnimation {
+            items.move(fromOffsets: [fromIndex], toOffset: items.count)
+        }
+        return true
+    }
+
+    /// Keyboard/context-menu reorder step (the grip is pointer-only).
+    private func moveRow(id: UUID, by delta: Int) {
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        let target = index + delta
+        guard items.indices.contains(target) else { return }
+        withAnimation {
+            items.move(fromOffsets: [index], toOffset: delta > 0 ? target + 1 : target)
+        }
+    }
+
     /// Postman-style hygiene: a row left completely blank is removed once the
     /// user moves focus elsewhere, so emptied rows never pile up in the model.
     private func pruneAbandonedEmptyRows(_ newValue: CellFocus?) {
@@ -279,11 +380,22 @@ private struct KVRow: View {
     let valueFocus: CellFocus
     let toggleColumnWidth: CGFloat
     let deleteColumnWidth: CGFloat
+    var gripColumnWidth: CGFloat = 0
     /// nil for real rows; the trailing ghost row reports its editing session's
     /// end through this so the table can reset the ghost buffer.
     var onEditingEnded: (() -> Void)?
     /// nil for the trailing ghost row (nothing to delete yet).
     var onDelete: (() -> Void)?
+    /// Drag-to-reorder: nil unless `allowsReorder`. The grip is pointer-only;
+    /// keyboard users get Move Up/Down instead.
+    var onGripDrag: (() -> NSItemProvider)?
+    /// Keyboard/context-menu reorder steps; nil unless `allowsReorder`.
+    var onMoveUp: (() -> Void)?
+    var onMoveDown: (() -> Void)?
+    /// Dimmed while dragged; shows the insertion line while targeted.
+    var isDragging: Bool = false
+    var isDropTargeted: Bool = false
+    var allowsReorder: Bool = false
 
     @State private var isHovering = false
 
@@ -299,6 +411,22 @@ private struct KVRow: View {
 
     var body: some View {
         HStack(spacing: 0) {
+            if allowsReorder {
+                // Grip-only dragging: dragging the whole row would fight
+                // text selection inside the cells.
+                Image(systemName: "line.3.horizontal")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: gripColumnWidth, alignment: .center)
+                    .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .opacity(isHovering || isDragging ? 1 : 0)
+                    .onDrag {
+                        guard let onGripDrag else { return NSItemProvider() }
+                        return onGripDrag()
+                    }
+                verticalRule
+            }
             // The trailing ghost row shows an unchecked, inert checkbox: it
             // only becomes a real (checked) row once the user types into it.
             Toggle("", isOn: isGhostRow ? .constant(false) : $isEnabled)
@@ -341,6 +469,22 @@ private struct KVRow: View {
         .frame(height: 32)
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
+        .opacity(isDragging ? 0.5 : 1)
+        .overlay(alignment: .top) {
+            if allowsReorder && isDropTargeted {
+                Rectangle()
+                    .fill(AppColor.accent)
+                    .frame(height: 2)
+            }
+        }
+        .contextMenu {
+            if let onMoveUp {
+                Button("Move Up") { onMoveUp() }
+            }
+            if let onMoveDown {
+                Button("Move Down") { onMoveDown() }
+            }
+        }
     }
 
     /// A borderless spreadsheet-like cell; disabled rows dim, like Postman.

@@ -35,7 +35,8 @@ extension Variable {
 extension Array where Element == Variable {
     /// Sorts in place by key ascending - Finder-style (case-insensitive,
     /// numeric-aware) - with the id as a tiebreaker so equal keys keep a
-    /// stable order. The variables tables keep their rows in this order.
+    /// stable order. The workspace/collection variables tables keep their
+    /// rows in this order; environments are manually ordered instead.
     mutating func sortByName() {
         sort { lhs, rhs in
             let order = lhs.key.localizedStandardCompare(rhs.key)

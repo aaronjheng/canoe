@@ -8,8 +8,6 @@ struct EnvironmentDetailView: View {
     @State private var draft: EnvProfile
 
     init(environment: EnvProfile) {
-        var environment = environment
-        environment.variables.sortByName()
         _draft = State(initialValue: environment)
     }
 
@@ -39,14 +37,11 @@ struct EnvironmentDetailView: View {
                 makeNew: Variable.init,
                 keyHeader: "Variable",
                 valueHeader: "Value",
-                secretKeyPath: \.isSecret
+                secretKeyPath: \.isSecret,
+                // Manual order (Postman-style): rows resolve and display in
+                // this order, so no auto-sort may rewrite it.
+                allowsReorder: true
             )
-        }
-        // Keep rows ordered by name: sorting again whenever a key changes
-        // (the id tiebreaker keeps equal keys stable, and focus follows the
-        // row id, so typing a name slides the row into place mid-edit).
-        .onChange(of: draft.variables.map(\.key)) { _, _ in
-            draft.variables.sortByName()
         }
         .onChange(of: draft) { _, newValue in
             // Memory-only + dirty mark; the drafts mirror inside the store
