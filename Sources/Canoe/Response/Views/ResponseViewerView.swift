@@ -9,6 +9,10 @@ struct ResponseViewerView: View {
     @State private var responseSection: ResponseSection = .body
     @State private var headerSort: [KeyPathComparator<HTTPHeaderField>] = []
     @State private var headerSelection: HTTPHeaderField.ID?
+    /// Render cache keyed by response + body mode (see refreshBodyRender).
+    @State private var bodyRenderKey = ""
+    @State private var bodyRenderDisplay = BodyDisplay(text: "", totalCount: nil, isJSON: false)
+    @State private var bodyRenderText = Text("")
 
     /// Max characters rendered in the body pane. Beyond this a single SwiftUI
     /// `Text` becomes sluggish, so the view shows a prefix plus a notice.
@@ -122,7 +126,8 @@ struct ResponseViewerView: View {
     // MARK: - Response detail (Headers | Body tab bar)
 
     private func responseDetail(_ response: ResponseModel) -> some View {
-        let display = bodyDisplay(response)
+        refreshBodyRender(response)
+        let display = bodyRenderDisplay
         return VStack(spacing: 0) {
             sectionBar(response)
             Divider()
@@ -132,6 +137,21 @@ struct ResponseViewerView: View {
                 headersPane(response)
             }
         }
+    }
+
+    /// Pretty-printing and tree-sitter highlighting a large body costs
+    /// hundreds of ms (measured ~80ms + ~90ms at 2MB, plus layout of the
+    /// resulting Text). Redoing it on every render - header-filter
+    /// keystrokes, switching tabs back and forth - is the visible lag, so
+    /// each response+mode renders once and reuses the result. The key check
+    /// converges: a miss computes and stores, the scheduled re-render hits.
+    private func refreshBodyRender(_ response: ResponseModel) {
+        let key = "\(response.id)-\(bodyMode)"
+        guard key != bodyRenderKey else { return }
+        let display = bodyDisplay(response)
+        bodyRenderDisplay = display
+        bodyRenderText = display.isJSON ? SyntaxHighlight.highlightedText(display.text) : Text(display.text)
+        bodyRenderKey = key
     }
 
     /// Response tab bar - and the panel's top row while a response exists:
@@ -240,18 +260,14 @@ struct ResponseViewerView: View {
                 Divider()
             }
             ScrollView(wordWrap ? .vertical : [.vertical, .horizontal]) {
-                Group {
-                    if display.isJSON {
-                        SyntaxHighlight.highlightedText(display.text)
-                    } else {
-                        Text(display.text)
-                    }
-                }
-                .font(AppFont.monoBody)
-                .textSelection(.enabled)
-                .frame(maxWidth: wordWrap ? .infinity : nil, alignment: .leading)
-                .fixedSize(horizontal: !wordWrap, vertical: false)
-                .padding(AppSpacing.medium)
+                // Cached render (see refreshBodyRender) - never rebuild the
+                // highlighted Text here.
+                bodyRenderText
+                    .font(AppFont.monoBody)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: wordWrap ? .infinity : nil, alignment: .leading)
+                    .fixedSize(horizontal: !wordWrap, vertical: false)
+                    .padding(AppSpacing.medium)
             }
             .background(AppColor.codeBackground)
         }
