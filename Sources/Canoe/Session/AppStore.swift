@@ -172,6 +172,16 @@ final class AppStore {
     @ObservationIgnored private var draftSaveTask: Task<Void, Never>?
     private let historyLimit = 100
     private static let responseHistoryLimit = 20
+    /// Console (network log) entries, newest last; session-scoped and capped.
+    private(set) var consoleEntries: [ConsoleEntry] = []
+    private static let consoleEntryLimit = 200
+    /// Whether the console panel is docked below the Response pane.
+    private(set) var showConsole = false
+
+    /// Shows/hides the docked console panel.
+    func toggleConsole() {
+        showConsole.toggle()
+    }
 
     // MARK: - Derived
 
@@ -1345,13 +1355,41 @@ final class AppStore {
             // matching what the "Variables in Request" inspector displays.
             let variables = variablesForRequest(request)
             let authorization = authorizationForRequest(request)
+            let sendStart = Date()
+            // The HTTP client runs off the main actor; the callback hands the
+            // assembled request back through this box. It is written once
+            // before the network call and read after the await returns, so
+            // the unchecked Sendable is race-free in practice.
+            let sentRequest = SentRequestCapture()
             do {
-                let response = try await HTTPClient.send(request: request, variables: variables, authorization: authorization)
+                let response = try await HTTPClient.send(
+                    request: request,
+                    variables: variables,
+                    authorization: authorization,
+                    onRequest: { sentRequest.urlRequest = $0 }
+                )
                 guard sendTokens[tab] == token else { return }
                 guard !Task.isCancelled else { return }
                 responsesByTab[tab] = response
                 recordResponseHistory(response, for: tab)
                 recordHistory(request: request, response: response)
+                recordConsoleEntry(
+                    ConsoleEntry(
+                        date: response.timestamp,
+                        requestName: request.name,
+                        method: request.httpMethod.rawValue,
+                        url: sentRequest.urlRequest?.url?.absoluteString ?? request.urlString,
+                        requestHeaders: sentRequest.urlRequest.map(ConsoleEntry.maskedRequestHeaders(from:)) ?? [],
+                        requestBody: ConsoleEntry.capped(sentRequest.urlRequest?.httpBody).data,
+                        requestBodyTruncated: ConsoleEntry.capped(sentRequest.urlRequest?.httpBody).truncated,
+                        statusCode: response.statusCode,
+                        responseHeaders: response.headers,
+                        responseBody: ConsoleEntry.capped(response.body).data,
+                        responseBodyTruncated: ConsoleEntry.capped(response.body).truncated,
+                        duration: response.duration,
+                        error: nil
+                    )
+                )
             } catch is CancellationError {
                 return
             } catch {
@@ -1361,6 +1399,23 @@ final class AppStore {
                 responsesByTab[tab] = nil
                 viewingHistoryIndexByTab[tab] = nil
                 recordHistory(request: request, error: true)
+                recordConsoleEntry(
+                    ConsoleEntry(
+                        date: Date(),
+                        requestName: request.name,
+                        method: request.httpMethod.rawValue,
+                        url: sentRequest.urlRequest?.url?.absoluteString ?? request.urlString,
+                        requestHeaders: sentRequest.urlRequest.map(ConsoleEntry.maskedRequestHeaders(from:)) ?? [],
+                        requestBody: ConsoleEntry.capped(sentRequest.urlRequest?.httpBody).data,
+                        requestBodyTruncated: ConsoleEntry.capped(sentRequest.urlRequest?.httpBody).truncated,
+                        statusCode: nil,
+                        responseHeaders: [],
+                        responseBody: nil,
+                        responseBodyTruncated: false,
+                        duration: Date().timeIntervalSince(sendStart),
+                        error: error.localizedDescription
+                    )
+                )
             }
         }
     }
@@ -1400,6 +1455,20 @@ final class AppStore {
         )
         history.insert(entry, at: 0)
         if history.count > historyLimit { history.removeLast() }
+    }
+
+    /// Appends a network activity entry to the console log, trimming the
+    /// oldest entries past the cap.
+    private func recordConsoleEntry(_ entry: ConsoleEntry) {
+        consoleEntries.append(entry)
+        if consoleEntries.count > Self.consoleEntryLimit {
+            consoleEntries.removeFirst(consoleEntries.count - Self.consoleEntryLimit)
+        }
+    }
+
+    /// Clears the console log (the Clear button in the Console window).
+    func clearConsole() {
+        consoleEntries.removeAll()
     }
 
     func clearHistory() {
@@ -1498,4 +1567,11 @@ final class AppStore {
         let exists = vault.collections.contains { $0.requests.contains { $0.id == selected } }
         if !exists { selectedRequestID = nil }
     }
+}
+
+/// Single-slot holder for the exact URLRequest the HTTP client assembled.
+/// `@unchecked Sendable` is safe here: written once inside the network task
+/// before the await, read on the main actor after it returns.
+private final class SentRequestCapture: @unchecked Sendable {
+    var urlRequest: URLRequest?
 }

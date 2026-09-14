@@ -106,6 +106,11 @@ struct RequestWorkspaceView: View {
                 .frame(minHeight: 240)
             ResponseViewerView()
                 .frame(minHeight: 200)
+            // Postman-style docked console: opens below the Response pane.
+            if store.showConsole {
+                ConsoleView()
+                    .frame(minHeight: 150, idealHeight: 220)
+            }
         }
         // VSplitView otherwise collapses to its panes' ideal heights, and a
         // section switch to fixed-height content (e.g. the GET "No Body"

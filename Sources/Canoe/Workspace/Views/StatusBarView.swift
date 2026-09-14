@@ -27,11 +27,21 @@ struct StatusBarView: View {
             ) {
                 store.toggleRightSidebar()
             }
+            // Console entry (Postman keeps its console toggle in the bottom
+            // bar too): docks the network log below the Response pane.
+            StatusToggleButton(
+                systemImage: "terminal",
+                isOn: store.showConsole,
+                help: store.showConsole ? "Hide Console" : "Show Console"
+            ) {
+                store.toggleConsole()
+            }
         }
         .padding(.horizontal, AppSpacing.medium)
         .frame(height: AppSize.statusBarHeight)
         .background(AppColor.controlBackground)
     }
+
 }
 
 /// Small panel toggle button: dimmed when the panel is hidden, highlighted

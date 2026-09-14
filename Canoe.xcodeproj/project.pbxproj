@@ -728,6 +728,28 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>C0A5E1000000000000000001</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>ConsoleEntry.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>C0A5E1000000000000000003</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>ConsoleView.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>22F523512FAD7E240EDED527</key>
 		<dict>
 			<key>isa</key>
@@ -748,6 +770,7 @@
 				<string>F4BEF6636C67F2A814C0EBBF</string>
 				<string>CB2E3C53C369E096512DBAFE</string>
 				<string>22F523512FAD7E240EDED527</string>
+				<string>C0A5E1000000000000000001</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -772,6 +795,7 @@
 			<key>children</key>
 			<array>
 				<string>6CFF6F847D795AFB6A01B50A</string>
+				<string>C0A5E1000000000000000003</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -1464,6 +1488,20 @@
 			<key>productRef</key>
 			<string>FF15BF062530894B0C95CAFD</string>
 		</dict>
+		<key>C0A5E1000000000000000002</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>C0A5E1000000000000000001</string>
+		</dict>
+		<key>C0A5E1000000000000000004</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>C0A5E1000000000000000003</string>
+		</dict>
 		<key>7266E2F86B0B73E70D721086</key>
 		<dict>
 			<key>isa</key>
@@ -1473,6 +1511,8 @@
 			<key>files</key>
 			<array>
 				<string>6BB5E974A027D3604BA3EECD</string>
+				<string>C0A5E1000000000000000002</string>
+				<string>C0A5E1000000000000000004</string>
 				<string>C09F6D117F370F10E8291BE5</string>
 				<string>586949E699B5E1209FF5BDB7</string>
 				<string>ACD2D576759531F2D1D563BE</string>

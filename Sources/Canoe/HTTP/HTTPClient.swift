@@ -33,7 +33,8 @@ enum HTTPClient {
     static func send(
         request: RequestItem,
         variables: [String: String],
-        authorization: RequestAuthorization
+        authorization: RequestAuthorization,
+        onRequest: (@Sendable (URLRequest) -> Void)? = nil
     ) async throws -> ResponseModel {
         let resolvedURLString = VariableResolver.resolve(request.urlString, variables: variables)
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -116,6 +117,10 @@ enum HTTPClient {
                 urlRequest.setValue(contentType, forHTTPHeaderField: "Content-Type")
             }
         }
+
+        // Hand the assembled request to the caller (the console log) before
+        // it goes out - this is the exact bytes-on-the-wire shape.
+        onRequest?(urlRequest)
 
         let start = Date()
         let (data, response) = try await session.data(for: urlRequest)

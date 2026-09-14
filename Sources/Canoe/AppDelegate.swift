@@ -103,6 +103,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appStore.vault.revealInFinder()
     }
 
+    /// Shows/hides the console panel docked below the Response pane.
+    @objc func toggleConsole() {
+        appStore.toggleConsole()
+    }
+
     @objc func openSettings() {
         if let settingsWindow {
             settingsWindow.makeKeyAndOrderFront(nil)
@@ -281,6 +286,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         variablesItem.state = appStore.showVariablesSidebar ? .on : .off
         variablesMenuItem = variablesItem
         viewMenu.addItem(variablesItem)
+        viewMenu.addItem(.separator())
+        let consoleItem = NSMenuItem(
+            title: "Console",
+            action: #selector(toggleConsole),
+            keyEquivalent: "c")
+        consoleItem.keyEquivalentModifierMask = [.command, .option]
+        consoleItem.target = self
+        viewMenu.addItem(consoleItem)
         viewMenu.addItem(.separator())
         let currentAppearance = AppAppearance(rawValue: SettingsStore.shared.settings.appearance) ?? .system
         for appearance in AppAppearance.allCases {
