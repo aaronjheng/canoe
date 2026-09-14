@@ -126,10 +126,7 @@ struct EmptyStateView: View {
 
     var body: some View {
         VStack(spacing: AppSpacing.large) {
-            Image("CanoeMark")
-                .resizable()
-                .frame(width: 56, height: 56)
-                .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+            CanoeMarkView(size: 56)
 
             VStack(spacing: AppSpacing.small) {
                 Text("No Request Selected")
@@ -156,10 +153,7 @@ struct EmptyStateView: View {
 private struct VaultLoadingView: View {
     var body: some View {
         VStack(spacing: AppSpacing.medium) {
-            Image("CanoeMark")
-                .resizable()
-                .frame(width: 64, height: 64)
-                .clipShape(RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous))
+            CanoeMarkView(size: 64)
             LoadingState(message: "Loading vault…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }

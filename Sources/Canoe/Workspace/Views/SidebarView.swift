@@ -105,7 +105,7 @@ private struct ItemsView: View {
                         }
                     )
                     .padding(.leading, AppSpacing.medium)
-                    .padding(.top, AppSpacing.small)
+                    .padding(.top, AppSpacing.xSmall)
                     .padding(.bottom, AppSpacing.xxSmall)
                     if environmentsExpanded {
                         ForEach(filteredEnvironments) { env in
@@ -273,19 +273,25 @@ private struct HistoryView: View {
             .padding(.vertical, AppSpacing.xSmall)
             Divider()
             if store.history.isEmpty {
-                Text("Send a request and it will show up here.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ContentUnavailableView(
+                    "No History",
+                    systemImage: "clock",
+                    description: Text("Send a request and it will show up here.")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                List {
-                    ForEach(store.history) { entry in
-                        HistoryRow(entry: entry)
-                            .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0))
+                // Same ScrollView + LazyVStack as the Items tab (not List):
+                // one row language for hover, padding, and selection.
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(store.history) { entry in
+                            HistoryRow(entry: entry)
+                        }
                     }
+                    .padding(.horizontal, AppSpacing.xSmall)
+                    .padding(.bottom, AppSpacing.small)
+                    .frame(maxWidth: .infinity)
                 }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
             }
         }
     }
@@ -650,6 +656,7 @@ private struct RequestRow: View {
 private struct HistoryRow: View {
     @Environment(AppStore.self) private var store
     let entry: HistoryEntry
+    @State private var isHovering = false
 
     private var requestExists: Bool {
         guard let id = entry.requestID else { return false }
@@ -662,9 +669,9 @@ private struct HistoryRow: View {
         } label: {
             HStack(spacing: AppSpacing.xSmall) {
                 MethodTag(method: entry.method)
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: AppSpacing.xxSmall) {
                     Text(entry.name)
-                        .font(.caption)
+                        .font(AppFont.sidebarRow)
                         .lineLimit(1)
                     Text(entry.urlString)
                         .font(.caption2)
@@ -679,12 +686,19 @@ private struct HistoryRow: View {
                         .foregroundStyle(AppColor.statusColor(entry.statusCode))
                 }
             }
-            .padding(.horizontal, AppSpacing.medium)
-            .padding(.vertical, AppSpacing.xxSmall)
+            .padding(.horizontal, AppSpacing.xSmall)
+            .padding(.vertical, AppSpacing.xSmall)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                    .fill(isHovering ? AppColor.subtleBackground : .clear)
+            )
+            .contentShape(Rectangle())
             .foregroundStyle(requestExists ? .primary : .tertiary)
-            .opacity(requestExists ? 1 : 0.6)
+            .opacity(requestExists ? 1 : AppOpacity.disabled)
         }
         .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
         .disabled(!requestExists)
         .help(
             requestExists

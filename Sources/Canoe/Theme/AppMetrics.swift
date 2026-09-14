@@ -4,7 +4,13 @@ import Foundation
 enum AppSpacing {
     static let xxSmall: CGFloat = 2
     static let xSmall: CGFloat = 4
+    /// Compact 6pt gap (switcher icon+label, badge padding). Tokenized so
+    /// `xSmall + 2` math never scatters through views.
+    static let compact: CGFloat = 6
     static let small: CGFloat = 8
+    /// Comfortable 10pt padding (bar chrome, save chips). Tokenized so
+    /// `small + 2` math never scatters through views.
+    static let comfortable: CGFloat = 10
     static let medium: CGFloat = 12
     static let large: CGFloat = 16
     static let xLarge: CGFloat = 20
@@ -14,6 +20,14 @@ enum AppRadius {
     static let small: CGFloat = 4
     static let medium: CGFloat = 6
     static let large: CGFloat = 8
+    /// Pill/capsule shapes (badges, inherited markers).
+    static let pill: CGFloat = 999
+}
+
+enum AppOpacity {
+    static let disabled: CGFloat = 0.45
+    static let badgeBackground: CGFloat = 0.12
+    static let errorBackground: CGFloat = 0.10
 }
 
 enum AppSize {
@@ -46,6 +60,8 @@ enum AppSize {
     /// Height of the tab pills in the workspace tab strip - a step above the
     /// shared bars so tabs keep a comfortable hit target.
     static let tabHeight: CGFloat = 28
+    /// Vertical divider inside the tab strip (environment picker separator).
+    static let tabStripDividerHeight: CGFloat = 18
     /// Disclosure-chevron column in sidebar tree rows - the 16px codicon box
     /// VS Code uses for its tree twisties.
     static let treeChevronWidth: CGFloat = 16

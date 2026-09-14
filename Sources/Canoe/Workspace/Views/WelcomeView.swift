@@ -34,10 +34,6 @@ struct WelcomeView: View {
     /// The app icon rendered large, with a soft shadow like the Postman
     /// welcome screen.
     private var icon: some View {
-        Image("CanoeMark")
-            .resizable()
-            .frame(width: 96, height: 96)
-            .clipShape(RoundedRectangle(cornerRadius: 21, style: .continuous))
-            .shadow(color: AppColor.accent.opacity(0.3), radius: 20, y: 8)
+        CanoeMarkView(size: 96, showsShadow: true)
     }
 }

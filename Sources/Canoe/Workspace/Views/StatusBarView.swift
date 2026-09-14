@@ -9,7 +9,7 @@ struct StatusBarView: View {
     @Environment(AppStore.self) private var store
 
     var body: some View {
-        HStack(spacing: AppSpacing.medium) {
+        HStack(spacing: AppSpacing.small) {
             StatusToggleButton(
                 systemImage: "sidebar.left",
                 isOn: store.showSidebar,
@@ -46,24 +46,33 @@ struct StatusBarView: View {
 }
 
 /// Small panel toggle button: dimmed when the panel is hidden, highlighted
-/// while it is open.
+/// while it is open. Same 26pt square and hover language as the tab-row
+/// inspector toggles.
 private struct StatusToggleButton: View {
     let systemImage: String
     let isOn: Bool
     let help: String
     let action: () -> Void
+    @State private var isHovering = false
 
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.caption)
+                .font(.subheadline)
                 .foregroundStyle(isOn ? AppColor.accent : .secondary)
-                .frame(width: 18, height: 18)
-                .background(isOn ? AppColor.tabActiveBackground : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
+                .frame(width: AppSize.topBarControlHeight, height: AppSize.topBarControlHeight)
+                .background(
+                    RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                        .fill(
+                            isOn
+                                ? AppColor.tabActiveBackground
+                                : (isHovering ? AppColor.tabHoverBackground : .clear)
+                        )
+                )
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
         .help(help)
     }
 }

@@ -152,8 +152,8 @@ struct AuthorizationForm: View {
                     }
                     fieldRow("Password") {
                         SecureField("Password", text: $password)
-                            .textFieldStyle(.roundedBorder)
                             .font(AppFont.monoSubheadline)
+                            .variableFieldBordered()
                     }
                 case .bearer:
                     fieldRow("Token") {
@@ -189,8 +189,8 @@ struct AuthorizationForm: View {
                     Text("Inherited")
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
-                        .padding(.horizontal, AppSpacing.xSmall + 2)
-                        .padding(.vertical, 2)
+                        .padding(.horizontal, AppSpacing.compact)
+                        .padding(.vertical, AppSpacing.xxSmall)
                         .background(Capsule().fill(AppColor.subtleBackground))
                     Spacer(minLength: 0)
                     if onEditInParent != nil {
@@ -277,7 +277,7 @@ struct AuthorizationForm: View {
             .frame(maxWidth: .infinity, minHeight: 26, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                    .fill(Color.primary.opacity(0.02))
+                    .fill(AppColor.subtleBackground)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)

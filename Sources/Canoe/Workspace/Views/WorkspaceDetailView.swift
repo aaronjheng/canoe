@@ -43,6 +43,7 @@ struct WorkspaceDetailView: View {
             KeyValueEditor(
                 items: $draft.variables,
                 makeNew: Variable.init,
+                variables: draft.variables.resolvingDictionary(),
                 keyHeader: "Variable",
                 valueHeader: "Value",
                 secretKeyPath: \.isSecret
@@ -64,27 +65,10 @@ struct WorkspaceDetailView: View {
         }
     }
 
-    /// Postman-style Save: a filled chip with icon + label, enabled while
-    /// the variables have unsaved changes.
+    /// Postman-style Save: shared chip, enabled while dirty.
     private var saveButton: some View {
-        Button {
+        SaveChipButton(isDirty: isDirty, help: "Save Variables (⌘S)") {
             store.savePendingChanges()
-        } label: {
-            HStack(spacing: AppSpacing.xSmall) {
-                Image(systemName: "square.and.arrow.down")
-                Text("Save")
-            }
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(isDirty ? AppColor.accent : .secondary)
-            .padding(.horizontal, AppSpacing.small + 2)
-            .padding(.vertical, 2)
-            .background(
-                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                    .fill(isDirty ? AppColor.subtleBackground : Color.clear)
-            )
         }
-        .buttonStyle(.plain)
-        .disabled(!isDirty)
-        .help("Save Variables (⌘S)")
     }
 }

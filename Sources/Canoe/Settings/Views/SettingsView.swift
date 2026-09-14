@@ -94,7 +94,7 @@ struct SettingsView: View {
             if let message = locationError ?? appStore.vault.locationWarning ?? appStore.vault.loadError {
                 Section {
                     Text(message)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(AppColor.error)
                 }
             }
         }

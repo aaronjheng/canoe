@@ -88,7 +88,7 @@ private struct WorkspaceSwitcher: View {
                 }
             }
         } label: {
-            HStack(spacing: AppSpacing.xSmall + 2) {
+            HStack(spacing: AppSpacing.compact) {
                 // Menu labels render images as monochrome templates, so this
                 // icon stays a quiet gray - same as Postman's workspace icon.
                 Image(systemName: "square.stack.3d.up.fill")
@@ -97,7 +97,7 @@ private struct WorkspaceSwitcher: View {
                     .font(AppFont.sidebarRow.weight(.medium))
                     .lineLimit(1)
             }
-            .padding(.horizontal, AppSpacing.small + 2)
+            .padding(.horizontal, AppSpacing.comfortable)
             .frame(height: AppSize.topBarControlHeight)
             .contentShape(Rectangle())
         }
@@ -106,7 +106,7 @@ private struct WorkspaceSwitcher: View {
         .fixedSize()
         .background(
             RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                .fill(isHovering ? AppColor.subtleBackground : Color.clear)
+                .fill(isHovering ? AppColor.subtleBackground : .clear)
         )
         .onHover { isHovering = $0 }
         .help("Switch workspace")

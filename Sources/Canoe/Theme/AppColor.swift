@@ -64,7 +64,10 @@ enum AppColor {
         dark: RGB(red: 37, green: 37, blue: 38)
     )
     static let subtleBackground: Color = Color.secondary.opacity(0.10)
-    static let selectionBackground: Color = Color.accentColor.opacity(0.14)
+    /// Selected-row fill. Uses the app accent (not the system accentColor)
+    /// so selection stays deterministic across user accent choices and
+    /// never competes with the method colors inside the row.
+    static let selectionBackground: Color = accent.opacity(0.14)
 
     /// Border/hairline tokens for cards, tables, and popups. One scale so
     /// strokes stay consistent across appearances instead of scattering
@@ -83,7 +86,7 @@ enum AppColor {
     static let treeGuide: Color = Color(nsColor: .separatorColor)
 
     static func badgeBackground(_ color: Color) -> Color {
-        color.opacity(0.12)
+        color.opacity(AppOpacity.badgeBackground)
     }
 
     // MARK: - Status code buckets

@@ -23,7 +23,8 @@ struct EnvironmentDetailView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 TextField("Environment Name", text: $draft.name)
-                    .textFieldStyle(.roundedBorder)
+                    .font(.subheadline)
+                    .variableFieldBordered()
                 Spacer(minLength: AppSpacing.medium)
                 saveButton
             }
@@ -35,6 +36,7 @@ struct EnvironmentDetailView: View {
             KeyValueEditor(
                 items: $draft.variables,
                 makeNew: Variable.init,
+                variables: draft.variables.resolvingDictionary(),
                 keyHeader: "Variable",
                 valueHeader: "Value",
                 secretKeyPath: \.isSecret,
@@ -55,27 +57,10 @@ struct EnvironmentDetailView: View {
         }
     }
 
-    /// Postman-style Save: a filled chip with icon + label, enabled while
-    /// the environment has unsaved changes.
+    /// Postman-style Save: shared chip, enabled while dirty.
     private var saveButton: some View {
-        Button {
+        SaveChipButton(isDirty: isDirty, help: "Save Environment (⌘S)") {
             store.savePendingChanges()
-        } label: {
-            HStack(spacing: AppSpacing.xSmall) {
-                Image(systemName: "square.and.arrow.down")
-                Text("Save")
-            }
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(isDirty ? AppColor.accent : .secondary)
-            .padding(.horizontal, AppSpacing.small + 2)
-            .padding(.vertical, 2)
-            .background(
-                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                    .fill(isDirty ? AppColor.subtleBackground : Color.clear)
-            )
         }
-        .buttonStyle(.plain)
-        .disabled(!isDirty)
-        .help("Save Environment (⌘S)")
     }
 }

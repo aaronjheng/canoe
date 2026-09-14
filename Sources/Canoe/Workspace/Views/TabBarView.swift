@@ -36,7 +36,7 @@ struct TabBarView: View {
             // Postman keeps the environment selector and inspector toggles in
             // the tab row; the window's dedicated toolbar row was removed.
             Divider()
-                .frame(height: 18)
+                .frame(height: AppSize.tabStripDividerHeight)
             EnvironmentPicker()
             InspectorToggleButton(
                 systemImage: "curlybraces",
@@ -115,13 +115,13 @@ private struct InspectorToggleButton: View {
             Image(systemName: systemImage)
                 .font(.subheadline)
                 .foregroundStyle(isOn ? AppColor.accent : .secondary)
-                .frame(width: 26, height: 24)
+                .frame(width: AppSize.topBarControlHeight, height: AppSize.topBarControlHeight)
                 .background(
                     RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
                         .fill(
                             isOn
                                 ? AppColor.tabActiveBackground
-                                : (isHovering ? AppColor.tabHoverBackground : Color.clear)
+                                : (isHovering ? AppColor.tabHoverBackground : .clear)
                         )
                 )
                 .contentShape(Rectangle())
@@ -227,33 +227,33 @@ private struct TabPill: View {
             ProgressView()
                 .controlSize(.mini)
                 .frame(width: 16, height: 16)
-                .padding(.trailing, AppSpacing.xSmall + 2)
+                .padding(.trailing, AppSpacing.compact)
         } else if isHovering || (isSelected && !isDirty) {
             Button {
                 store.closeTab(tab)
             } label: {
                 Image(systemName: "xmark")
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(.secondary)
                     .frame(width: 16, height: 16)
                     // No resting fill - the circle only appears while the
                     // pointer is over the button, marking it as clickable.
                     .background {
-                        Circle().fill(isHoveringClose ? AppColor.border : Color.clear)
+                        Circle().fill(isHoveringClose ? AppColor.tabActiveBackground : .clear)
                     }
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .onHover { isHoveringClose = $0 }
             .help("Close Tab (⌘W)")
-            .padding(.trailing, AppSpacing.xSmall + 2)
+            .padding(.trailing, AppSpacing.compact)
         } else if isDirty {
             // Postman-style dirty dot: unsaved tabs show a dot where the
             // close button sits; hovering swaps it back to the × above.
             Circle()
                 .fill(AppColor.warning)
                 .frame(width: 8, height: 8)
-                .padding(.trailing, AppSpacing.small + 2)
+                .padding(.trailing, AppSpacing.compact)
         }
     }
 

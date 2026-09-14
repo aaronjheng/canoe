@@ -45,7 +45,7 @@ struct VariablesSidebarView: View {
     // MARK: - Header
 
     private var header: some View {
-        InspectorHeader(closeHelp: "Hide Variables (⇧⌘V)") {
+        InspectorHeader(closeHelp: "Hide Variables in Request (⇧⌘V)") {
             store.showVariablesSidebar = false
         }
     }

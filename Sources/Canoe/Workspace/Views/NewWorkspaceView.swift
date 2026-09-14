@@ -15,17 +15,18 @@ struct NewWorkspaceView: View {
                     .font(.title)
                     .foregroundStyle(AppColor.accent)
                 Text("New Workspace")
-                    .font(.title2.weight(.semibold))
+                    .font(AppFont.panelTitle)
             }
 
             Text("Give your workspace a name to organize related collections and requests.")
-                .font(.subheadline)
+                .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 300)
 
             TextField("Workspace Name", text: $name)
-                .textFieldStyle(.roundedBorder)
+                .font(.subheadline)
+                .variableFieldBordered()
                 .focused($isFocused)
                 .onSubmit(create)
 

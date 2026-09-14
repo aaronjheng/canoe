@@ -70,6 +70,8 @@ struct CollectionDetailView: View {
                 KeyValueEditor(
                     items: $draft.variables,
                     makeNew: Variable.init,
+                    variables: resolvedVariables,
+                    suggestions: suggestions,
                     keyHeader: "Variable",
                     valueHeader: "Value",
                     secretKeyPath: \.isSecret
@@ -143,7 +145,7 @@ struct CollectionDetailView: View {
     }
 
     private func overviewStat(value: String, label: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: AppSpacing.xxSmall) {
             Text(value)
                 .font(.title2.weight(.semibold))
                 .monospacedDigit()
@@ -201,27 +203,10 @@ struct CollectionDetailView: View {
         draft.workspaceID.flatMap { id in store.vault.workspaces.first(where: { $0.id == id }) }
     }
 
-    /// Postman-style Save: a filled chip with icon + label, enabled while
-    /// the collection has unsaved changes.
+    /// Postman-style Save: shared chip, enabled while dirty.
     private var saveButton: some View {
-        Button {
+        SaveChipButton(isDirty: isDirty, help: "Save Collection (⌘S)") {
             store.savePendingChanges()
-        } label: {
-            HStack(spacing: AppSpacing.xSmall) {
-                Image(systemName: "square.and.arrow.down")
-                Text("Save")
-            }
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(isDirty ? AppColor.accent : .secondary)
-            .padding(.horizontal, AppSpacing.small + 2)
-            .padding(.vertical, 2)
-            .background(
-                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                    .fill(isDirty ? AppColor.subtleBackground : Color.clear)
-            )
         }
-        .buttonStyle(.plain)
-        .disabled(!isDirty)
-        .help("Save Collection (⌘S)")
     }
 }

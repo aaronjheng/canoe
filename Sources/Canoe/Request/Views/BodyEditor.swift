@@ -152,7 +152,7 @@ private struct FormDataEditor: View {
                 HStack(spacing: AppSpacing.small) {
                     Toggle("", isOn: $field.isEnabled)
                         .labelsHidden()
-                        .toggleStyle(.switch)
+                        .toggleStyle(.checkbox)
                         .controlSize(.small)
                         .frame(width: 36)
                     VariableHighlightEditor(
@@ -186,7 +186,8 @@ private struct FormDataEditor: View {
                     } label: {
                         Image(systemName: "trash")
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
                     .help("Remove row")
                 }
             }

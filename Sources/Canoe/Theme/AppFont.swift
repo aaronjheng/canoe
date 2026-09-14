@@ -8,8 +8,8 @@ enum AppFont {
     static let monoBody = Font.system(.body, design: .monospaced)
     static let monoSubheadline = Font.system(.subheadline, design: .monospaced)
     static let monoCaption = Font.system(.caption, design: .monospaced)
-    /// Legacy alias kept for compatibility; identical to `monoBody`.
-    static let dataCell = Font.system(.body, design: .monospaced)
+    /// Legacy alias; use `monoBody` for new code.
+    static let dataCell = monoBody
     /// Sidebar tree row label (collections, folders, requests). Postman keeps
     /// one uniform size across every tree level.
     static let sidebarRow = Font.system(size: 13)
@@ -22,6 +22,7 @@ enum AppFont {
     static let panelTitle = Font.headline
     /// Small numeric badges (tab counts, group counts, status codes).
     static let countBadge = Font.caption2.weight(.medium)
-    /// Key/value cell text in tables.
-    static let cellText = Font.system(.subheadline, design: .monospaced)
+    /// Key/value cell text in tables. Alias of `monoSubheadline`; use
+    /// `monoSubheadline` for new code.
+    static let cellText = monoSubheadline
 }

@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: NSWindow?
     private var settingsToolbarController: SettingsToolbarController?
     private var variablesMenuItem: NSMenuItem?
+    private var fullScreenMenuItem: NSMenuItem?
     private var appearanceMenuItems: [NSMenuItem] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -45,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window = mainWindow
         observeEnvironmentChanges()
         observeSettingsChanges()
+        observeFullScreenChanges()
 
         Task {
             await appStore.prepare(
@@ -69,30 +71,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func newRequest() {
+        guard !isSettingsWindowKey else { return }
         appStore.addRequest()
     }
 
     @objc func newCollection() {
+        guard !isSettingsWindowKey else { return }
         appStore.addCollection()
     }
 
     @objc func newWorkspace() {
+        guard !isSettingsWindowKey else { return }
         appStore.addWorkspace()
     }
 
     @objc func newEnvironment() {
+        guard !isSettingsWindowKey else { return }
         appStore.addEnvironment()
     }
 
     @objc func clearHistory() {
+        guard !isSettingsWindowKey else { return }
         appStore.clearHistory()
     }
 
     @objc func saveRequest() {
+        guard !isSettingsWindowKey else { return }
         appStore.savePendingChanges()
     }
 
     @objc func closeTab() {
+        // ⌘W in Settings must close Settings (macOS standard), not the
+        // workspace tab behind it - both windows share one mainMenu.
+        if isSettingsWindowKey {
+            settingsWindow?.performClose(nil)
+            return
+        }
         appStore.closeSelectedTab()
     }
 
@@ -106,6 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Shows/hides the console panel docked below the Response pane.
     @objc func toggleConsole() {
+        guard !isSettingsWindowKey else { return }
         appStore.toggleConsole()
     }
 
@@ -142,7 +157,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Inspectors
 
+    /// Whether the Settings window currently has keyboard focus. Workspace
+    /// actions share one mainMenu across both windows, so they must no-op
+    /// here instead of mutating the workspace behind Settings.
+    private var isSettingsWindowKey: Bool {
+        guard let settingsWindow else { return false }
+        return NSApp.keyWindow == settingsWindow
+    }
+
     @objc func toggleVariablesSidebar() {
+        guard !isSettingsWindowKey else { return }
         appStore.toggleVariablesSidebar()
     }
 
@@ -166,6 +190,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SettingsStore.shared.settings.appearance = appearance.rawValue
         SettingsStore.shared.save()
         appearance.apply()
+        for window in NSApp.windows {
+            appearance.applyToWindow(window)
+        }
         refreshAppearanceMenu()
     }
 
@@ -189,6 +216,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.observeSettingsChanges()
             }
         }
+    }
+
+    /// Swaps the Full Screen menu title with the window state (macOS
+    /// standard behavior lost by using a custom menu item).
+    private func observeFullScreenChanges() {
+        for name in [
+            NSWindow.didEnterFullScreenNotification,
+            NSWindow.didExitFullScreenNotification,
+        ] {
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(refreshFullScreenMenu),
+                name: name,
+                object: nil
+            )
+        }
+    }
+
+    @objc private func refreshFullScreenMenu() {
+        let isFullScreen = NSApp.keyWindow?.styleMask.contains(.fullScreen) ?? false
+        fullScreenMenuItem?.title = isFullScreen ? "Exit Full Screen" : "Enter Full Screen"
     }
 
     private func buildMenuBar() {
@@ -276,6 +324,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             action: #selector(toggleFullScreen),
             keyEquivalent: "f")
         fullScreenItem.keyEquivalentModifierMask = [.command, .control]
+        fullScreenItem.target = self
+        fullScreenMenuItem = fullScreenItem
         viewMenu.addItem(fullScreenItem)
         viewMenu.addItem(.separator())
         let variablesItem = NSMenuItem(
@@ -296,6 +346,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         consoleItem.target = self
         viewMenu.addItem(consoleItem)
         viewMenu.addItem(.separator())
+        let appearanceHeader = NSMenuItem(title: "Appearance", action: nil, keyEquivalent: "")
+        appearanceHeader.isEnabled = false
+        viewMenu.addItem(appearanceHeader)
         let currentAppearance = AppAppearance(rawValue: SettingsStore.shared.settings.appearance) ?? .system
         for appearance in AppAppearance.allCases {
             let item = NSMenuItem(

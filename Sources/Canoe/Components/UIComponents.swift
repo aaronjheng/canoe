@@ -15,7 +15,7 @@ struct Badge: View {
             }
             Text(text)
         }
-        .font(.caption2.weight(.medium))
+        .font(AppFont.countBadge)
         .lineLimit(1)
         .foregroundStyle(foregroundColor)
         .padding(.horizontal, AppSpacing.small - AppSpacing.xxSmall)
@@ -152,8 +152,8 @@ struct ErrorBanner: View {
         }
         .padding(.horizontal, AppSpacing.small)
         .padding(.vertical, AppSpacing.small - AppSpacing.xxSmall)
-        .background(AppColor.error.opacity(0.10))
-        .clipShape(RoundedRectangle(cornerRadius: AppRadius.small))
+        .background(AppColor.error.opacity(AppOpacity.errorBackground))
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
     }
 }
 
@@ -193,7 +193,7 @@ struct SendButtonStyle: ButtonStyle {
             .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
             .brightness(configuration.isPressed ? -0.10 : (isHovering ? 0.06 : 0))
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .opacity(isEnabled ? 1 : 0.45)
+            .opacity(isEnabled ? 1 : AppOpacity.disabled)
             .onHover { isHovering = $0 }
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
             .animation(.easeOut(duration: 0.12), value: isHovering)
@@ -214,7 +214,7 @@ struct PrimaryButtonStyle: ButtonStyle {
             .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
             .brightness(configuration.isPressed ? -0.08 : (isHovering ? 0.08 : 0))
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .opacity(isEnabled ? 1 : 0.45)
+            .opacity(isEnabled ? 1 : AppOpacity.disabled)
             .onHover { isHovering = $0 }
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
             .animation(.easeOut(duration: 0.12), value: isHovering)
@@ -228,7 +228,7 @@ struct ToolbarButtonStyle: ButtonStyle {
             .font(.body)
             .foregroundStyle(configuration.isPressed ? .primary : .secondary)
             .padding(AppSpacing.small - AppSpacing.xxSmall)
-            .background(configuration.isPressed ? AppColor.border : Color.clear)
+            .background(configuration.isPressed ? AppColor.border : .clear)
             .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
             .contentShape(Rectangle())
     }
@@ -307,7 +307,7 @@ struct UnderlineTab: View {
             // and stretches the whole tab across the row.
             .background(alignment: .bottom) {
                 Rectangle()
-                    .fill(isSelected ? AppColor.accent : Color.clear)
+                    .fill(isSelected ? AppColor.accent : .clear)
                     .frame(height: 2)
             }
             .contentShape(Rectangle())
@@ -336,13 +336,61 @@ struct StatusCapsule: View {
         .foregroundStyle(color)
         .padding(.horizontal, AppSpacing.small)
         .padding(.vertical, AppSpacing.xxSmall)
-        .background(color.opacity(0.12))
+        .background(AppColor.badgeBackground(color))
         .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
         .fixedSize()
     }
 }
 
+// MARK: - App icon
+
+/// Shared Canoe mark with proportional continuous corners. The welcome
+/// screen opts into the soft accent shadow; inline states stay flat.
+struct CanoeMarkView: View {
+    let size: CGFloat
+    var showsShadow = false
+
+    var body: some View {
+        Image("CanoeMark")
+            .resizable()
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: size * 0.23, style: .continuous))
+            .shadow(
+                color: showsShadow ? AppColor.accent.opacity(0.3) : .clear,
+                radius: showsShadow ? 20 : 0, y: showsShadow ? 8 : 0
+            )
+    }
+}
+
 // MARK: - Panel toolbar
+
+/// Postman-style Save chip shared by the workspace/collection/environment
+/// detail headers: icon + label, accent when dirty, plain otherwise.
+struct SaveChipButton: View {
+    let isDirty: Bool
+    let help: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: AppSpacing.xSmall) {
+                Image(systemName: "square.and.arrow.down")
+                Text("Save")
+            }
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(isDirty ? AppColor.accent : .secondary)
+            .padding(.horizontal, AppSpacing.comfortable)
+            .padding(.vertical, AppSpacing.xxSmall)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                    .fill(isDirty ? AppColor.subtleBackground : .clear)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(!isDirty)
+        .help(help)
+    }
+}
 
 struct PanelToolbarModifier: ViewModifier {
     var horizontalPadding: CGFloat = AppSpacing.large
