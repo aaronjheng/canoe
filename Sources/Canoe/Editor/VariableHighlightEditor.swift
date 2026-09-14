@@ -59,8 +59,15 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
     var font: VariableEditorFont = .monoSubheadline
     var placeholder: String?
     /// Optional programmatic focus wiring, for containers that move keyboard
-    /// focus between cells (e.g. the key/value table's ghost row).
-    var focus: FocusState<FocusValue?>.Binding?
+    /// focus between cells (e.g. the key/value table's ghost row). A plain
+    /// binding, deliberately NOT a `@FocusState`: the single-line editors are
+    /// AppKit fields whose first responder is managed here, so a `@FocusState`
+    /// (never registered with `.focused()`, which does not bridge to
+    /// NSTextField) made writes no-ops and reads always nil - focus moves
+    /// silently failed and the stale-nil comparison re-focused the field on
+    /// every update, restarting its editing session (fresh sessions select
+    /// all, so the next keystroke overwrote the whole text).
+    var focus: Binding<FocusValue?>?
     var focusValue: FocusValue?
     /// Whether the AppKit field may grab first responder during SwiftUI
     /// updates. The key/value table needs it (ghost-row focus moves); a
@@ -69,6 +76,10 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
     /// session whose select-all replaces the whole text with the next
     /// keystroke.
     var autoFocusOnUpdate: Bool = true
+    /// Called after this field's editing session ends, whatever took the
+    /// focus elsewhere (the key/value table uses it to settle the ghost row
+    /// once the materialized row owns the content).
+    var onEditingEnded: (() -> Void)?
     /// Called when the user presses Return with no completion popup open
     /// (multi-line editors insert a line break instead).
     var onCommit: (() -> Void)?
@@ -87,9 +98,10 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         fillsContainer: Bool = false,
         font: VariableEditorFont = .monoSubheadline,
         placeholder: String? = nil,
-        focus: FocusState<FocusValue?>.Binding? = nil,
+        focus: Binding<FocusValue?>? = nil,
         focusValue: FocusValue? = nil,
         autoFocusOnUpdate: Bool = true,
+        onEditingEnded: (() -> Void)? = nil,
         onCommit: (() -> Void)? = nil
     ) {
         self._text = text
@@ -99,9 +111,10 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         self.fillsContainer = fillsContainer
         self.font = font
         self.placeholder = placeholder
-        if let focus { self.focus = focus }
-        if let focusValue { self.focusValue = focusValue }
+        self.focus = focus
+        self.focusValue = focusValue
         self.autoFocusOnUpdate = autoFocusOnUpdate
+        self.onEditingEnded = onEditingEnded
         self.onCommit = onCommit
     }
 
@@ -117,6 +130,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
                     focus: focus,
                     focusValue: focusValue,
                     autoFocusOnUpdate: autoFocusOnUpdate,
+                    onEditingEnded: onEditingEnded,
                     onCommit: onCommit
                 )
                 .frame(minHeight: 24, alignment: .center)
@@ -142,7 +156,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
     }
 
     private var multiLine: some View {
-        let field = MultiLineField(
+        MultiLineField(
             text: $text,
             variables: variables,
             suggestions: effectiveSuggestions,
@@ -150,16 +164,10 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
             fillsContainer: fillsContainer,
             focus: focus,
             focusValue: focusValue,
+            onEditingEnded: onEditingEnded,
             onCommit: onCommit,
             onContentHeightChange: fillsContainer ? nil : { contentHeight = $0 }
         )
-        return Group {
-            if let focus, let focusValue {
-                field.focused(focus, equals: focusValue)
-            } else {
-                field
-            }
-        }
     }
 
     /// Completion candidates: explicit scope-derived suggestions when
@@ -214,9 +222,10 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
     let suggestions: [VariableSuggestion]
     let font: VariableEditorFont
     let placeholder: String?
-    let focus: FocusState<FocusValue?>.Binding?
+    let focus: Binding<FocusValue?>?
     let focusValue: FocusValue?
     let autoFocusOnUpdate: Bool
+    let onEditingEnded: (() -> Void)?
     let onCommit: (() -> Void)?
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -270,15 +279,36 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
         // here: force-focusing an NSTextField starts a new editing session,
         // and a fresh session selects all - so a field that regains focus
         // between keystrokes replaces the whole text with the next character.
+        // When this editor DOES take focus programmatically, collapse that
+        // fresh session's select-all to a caret at the end: the materialized
+        // row already holds the first character, and typing must continue it,
+        // not overwrite it.
         guard autoFocusOnUpdate, let focus, let focusValue else { return }
-        if focus.wrappedValue == focusValue {
-            if field.currentEditor() == nil {
-                field.window?.makeFirstResponder(field)
+        guard focus.wrappedValue == focusValue, field.currentEditor() == nil else { return }
+        if let window = field.window {
+            Self.focusField(field)
+        } else {
+            // The first update runs before SwiftUI attaches the view to the
+            // window, where makeFirstResponder would be a silent no-op; retry
+            // once the view is in place (idempotent: the state is re-checked).
+            let coordinator = context.coordinator
+            DispatchQueue.main.async { [weak field, weak coordinator] in
+                guard let field, let coordinator,
+                    coordinator.parent.focus?.wrappedValue == focusValue,
+                    field.currentEditor() == nil
+                else { return }
+                Self.focusField(field)
             }
-        } else if field.currentEditor() != nil {
-            // Commit and blur: moving first responder back to the field itself
-            // ends the field-editor session (NSText has no commit-and-blur API).
-            field.window?.makeFirstResponder(field)
+        }
+    }
+
+    /// Takes first responder and collapses the fresh session's select-all to
+    /// a caret at the end of the text.
+    @MainActor
+    private static func focusField(_ field: NSTextField) {
+        field.window?.makeFirstResponder(field)
+        if let editor = field.currentEditor() as? NSTextView {
+            editor.setSelectedRange(NSRange(location: (field.stringValue as NSString).length, length: 0))
         }
     }
 
@@ -323,6 +353,12 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
 
         func controlTextDidEndEditing(_ notification: Notification) {
             completion.hide()
+            clearFocusClaim()
+            parent.onEditingEnded?()
+        }
+
+        /// Drops the focus claim when this field still holds it.
+        private func clearFocusClaim() {
             guard let focus = parent.focus, let focusValue = parent.focusValue,
                 focus.wrappedValue == focusValue
             else { return }
@@ -374,8 +410,9 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
     let suggestions: [VariableSuggestion]
     let font: VariableEditorFont
     let fillsContainer: Bool
-    let focus: FocusState<FocusValue?>.Binding?
+    let focus: Binding<FocusValue?>?
     let focusValue: FocusValue?
+    let onEditingEnded: (() -> Void)?
     let onCommit: (() -> Void)?
     let onContentHeightChange: ((CGFloat) -> Void)?
 
@@ -459,7 +496,9 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
         }
 
         // Programmatic focus moves (the URL popup hands focus over once
-        // inserted).
+        // inserted). Unlike NSTextField, taking first responder on an
+        // NSTextView does not select all, and resigning via nil does not
+        // restart anything - both handoffs are safe here.
         guard let focus, let focusValue else { return }
         if focus.wrappedValue == focusValue {
             if textView.window?.firstResponder !== textView {
@@ -518,6 +557,12 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
 
         func textDidEndEditing(_ notification: Notification) {
             completion.hide()
+            clearFocusClaim()
+            parent.onEditingEnded?()
+        }
+
+        /// Drops the focus claim when this view still holds it.
+        private func clearFocusClaim() {
             guard let focus = parent.focus, let focusValue = parent.focusValue,
                 focus.wrappedValue == focusValue
             else { return }

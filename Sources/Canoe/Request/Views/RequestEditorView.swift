@@ -65,9 +65,12 @@ struct RequestEditorView: View {
         case url
     }
 
-    @FocusState private var urlFieldFocused: URLFieldFocus?
+    // Plain @State, not @FocusState: these only mirror which AppKit field
+    // owns keyboard focus (first responder is managed inside the editors),
+    // and an unregistered @FocusState made writes no-ops and reads unreliable.
+    @State private var urlFieldFocused: URLFieldFocus?
     /// Focus of the multi-line popup editor shown while the URL is edited.
-    @FocusState private var urlPopupField: URLFieldFocus?
+    @State private var urlPopupField: URLFieldFocus?
     /// Whether the URL popup (multi-line editor floating over the sections)
     /// is open.
     @State private var isURLPopupVisible = false

@@ -54,8 +54,14 @@ struct KeyValueEditor<T: KVItem>: View {
     /// The in-progress trailing row. Display-only until the user types into
     /// it; then it materializes into `items` and focus follows the materialized
     /// row while a fresh empty row appears below.
+    /// Plain `@State`, not `@FocusState`: the cells are AppKit fields managed
+    /// by `VariableHighlightEditor` (first-responder based), and an unregistered
+    /// `@FocusState` made writes no-ops and reads always nil - focus moves
+    /// silently failed, and per-update re-focus logic restarted the editing
+    /// session on every keystroke (fresh sessions select all, so typing
+    /// overwrote the whole text).
     @State private var ghost: T?
-    @FocusState private var focusedCell: CellFocus?
+    @State private var focusedCell: CellFocus?
 
     /// Candidates shown by every cell's `{{` completion popup.
     private var rowSuggestions: [VariableSuggestion] {
@@ -90,7 +96,6 @@ struct KeyValueEditor<T: KVItem>: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(.background)
         .onChange(of: focusedCell) { _, newValue in
-            settleGhost(afterFocusChange: newValue)
             pruneAbandonedEmptyRows(newValue)
         }
     }
@@ -129,7 +134,9 @@ struct KeyValueEditor<T: KVItem>: View {
                 )
                 Divider()
             }
-            // The permanently present empty row (Postman-style).
+            // The permanently present empty row (Postman-style). Its cells
+            // report when their editing session ends: the ghost then resets
+            // to an empty buffer - the real row owns the content from there.
             KVRow(
                 isEnabled: ghostEnabledBinding,
                 key: ghostBinding(\.key, focusOn: { .key($0) }),
@@ -144,7 +151,8 @@ struct KeyValueEditor<T: KVItem>: View {
                 keyFocus: .ghostKey,
                 valueFocus: .ghostValue,
                 toggleColumnWidth: toggleColumnWidth,
-                deleteColumnWidth: deleteColumnWidth
+                deleteColumnWidth: deleteColumnWidth,
+                onEditingEnded: { ghost = nil }
             )
         }
         .background(.background)
@@ -221,16 +229,11 @@ struct KeyValueEditor<T: KVItem>: View {
         )
     }
 
-    /// Once focus lands on the materialized row, the ghost resets to an empty
-    /// buffer - the real row owns the content from here on.
-    private func settleGhost(afterFocusChange newValue: CellFocus?) {
-        guard let ghost else { return }
-        switch newValue {
-        case .key(let id), .value(let id):
-            if id == ghost.id { self.ghost = nil }
-        case .ghostKey, .ghostValue, nil:
-            break
-        }
+    /// Once the ghost's editing session ends (focus moved to the materialized
+    /// row or elsewhere), the real row owns the content from here on: the
+    /// buffer resets and the trailing row is empty again.
+    private func settleGhost() {
+        ghost = nil
     }
 
     /// Postman-style hygiene: a row left completely blank is removed once the
@@ -271,11 +274,14 @@ private struct KVRow: View {
     let suggestions: [VariableSuggestion]
     let keyPlaceholder: String
     let valuePlaceholder: String
-    let focus: FocusState<CellFocus?>.Binding
+    let focus: Binding<CellFocus?>
     let keyFocus: CellFocus
     let valueFocus: CellFocus
     let toggleColumnWidth: CGFloat
     let deleteColumnWidth: CGFloat
+    /// nil for real rows; the trailing ghost row reports its editing session's
+    /// end through this so the table can reset the ghost buffer.
+    var onEditingEnded: (() -> Void)?
     /// nil for the trailing ghost row (nothing to delete yet).
     var onDelete: (() -> Void)?
 
@@ -309,7 +315,8 @@ private struct KVRow: View {
                     suggestions: suggestions,
                     placeholder: keyPlaceholder,
                     focus: focus,
-                    focusValue: keyFocus
+                    focusValue: keyFocus,
+                    onEditingEnded: onEditingEnded
                 )
             }
             verticalRule
@@ -320,7 +327,8 @@ private struct KVRow: View {
                     suggestions: suggestions,
                     placeholder: valuePlaceholder,
                     focus: focus,
-                    focusValue: valueFocus
+                    focusValue: valueFocus,
+                    onEditingEnded: onEditingEnded
                 )
             }
             verticalRule
