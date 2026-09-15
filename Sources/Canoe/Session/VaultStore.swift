@@ -373,16 +373,9 @@ final class VaultStore {
 
     // MARK: - Config persistence
 
-    func setActiveWorkspace(_ id: UUID?) async {
-        config.activeWorkspaceID = id
-        await persistConfig()
-    }
-
-    func setActiveEnvironment(_ id: UUID?) async {
-        config.activeEnvironmentID = id
-        await persistConfig()
-    }
-
+    /// Persists the active workspace/environment ids. Callers flip
+    /// `config` synchronously first so the UI changes in one frame, then
+    /// await this for the disk write.
     func persistConfig() async {
         guard let configFileURL else { return }
         do {

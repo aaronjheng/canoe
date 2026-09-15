@@ -15,10 +15,18 @@ struct ContentView: View {
                     VaultLoadingView()
                 } else if store.vault.workspaces.isEmpty {
                     WelcomeView()
+                } else if store.activeWorkspace == nil {
+                    WorkspacesView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .transition(.opacity)
                 } else {
                     mainLayout
                 }
             }
+            // Softens workspace/manager swaps into a crossfade instead of a
+            // hard cut. Opacity-only: geometry animations around split views
+            // and AppKit bridges glitch.
+            .animation(.easeOut(duration: 0.15), value: store.activeWorkspace?.id)
             if store.vault.isReady {
                 Divider()
                 StatusBarView()
@@ -62,6 +70,7 @@ struct ContentView: View {
                     .frame(width: AppSize.inspectorWidth)
             }
         }
+        .transition(.opacity)
     }
 
     private var detailPane: some View {

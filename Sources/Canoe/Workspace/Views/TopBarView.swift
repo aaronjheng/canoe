@@ -87,6 +87,12 @@ private struct WorkspaceSwitcher: View {
                     showDeleteConfirm = true
                 }
             }
+            // Postman-style footer: the full management screen lives here,
+            // below the per-workspace actions.
+            Divider()
+            Button("View all workspaces", systemImage: "square.stack.3d.up") {
+                store.enterWorkspacesManager()
+            }
         } label: {
             HStack(spacing: AppSpacing.compact) {
                 // Menu labels render images as monochrome templates, so this

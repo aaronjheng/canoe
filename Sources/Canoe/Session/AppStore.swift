@@ -582,14 +582,36 @@ final class AppStore {
 
     func setActiveWorkspace(_ id: UUID?) {
         closeAllTabs()
+        // Flip the memory model synchronously with the click: sidebar,
+        // detail, and the manager-mode branch must change in the same
+        // frame. Only the disk write stays async - when the flip waited
+        // for the task, the UI showed the old workspace's contents under
+        // the new selection until it ran.
+        vault.config.activeWorkspaceID = id
         Task {
-            await vault.setActiveWorkspace(id)
             // Environments are workspace-scoped: the previous workspace's
             // active environment must not leak into the newly selected one.
             if let environment = vault.activeEnvironment, environment.workspaceID != id {
-                await vault.setActiveEnvironment(nil)
+                vault.config.activeEnvironmentID = nil
             }
+            await vault.persistConfig()
         }
+    }
+
+    /// Enters the workspaces manager: leaving the active workspace behind,
+    /// like Postman - there is no active workspace while managing. Quitting
+    /// here relaunches here, because the cleared active workspace persists
+    /// in vault.json like any switch does. Any workspace selection (list
+    /// row, top-bar switcher) exits it again.
+    func enterWorkspacesManager() {
+        setActiveWorkspace(nil)
+    }
+
+    /// Enters a workspace from the manager: activates it and lands on its
+    /// home page.
+    func openWorkspace(_ id: UUID) {
+        setActiveWorkspace(id)
+        openTab(.workspace(id))
     }
 
     /// Cancels every in-flight send and drops all tabs and their cached
@@ -605,6 +627,16 @@ final class AppStore {
         viewingHistoryIndexByTab = [:]
         openTabs = []
         selectedTab = nil
+    }
+
+    /// Latest request activity in a workspace (for management sorting and
+    /// "last activity" labels). nil when the workspace holds no requests.
+    func lastActivity(in workspaceID: UUID) -> Date? {
+        vault.collections
+            .filter { $0.workspaceID == workspaceID }
+            .flatMap(\.requests)
+            .map(\.updatedAt)
+            .max()
     }
 
     func updateWorkspace(_ workspace: Workspace) {
@@ -1419,7 +1451,10 @@ final class AppStore {
     }
 
     func setActiveEnvironment(_ id: UUID?) {
-        Task { await vault.setActiveEnvironment(id) }
+        // Same synchronous flip as workspaces: pickers, editor highlights,
+        // and the variables inspector must agree in one frame.
+        vault.config.activeEnvironmentID = id
+        Task { await vault.persistConfig() }
     }
 
     // MARK: - Send

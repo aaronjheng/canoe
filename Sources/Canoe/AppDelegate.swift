@@ -124,6 +124,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appStore.toggleConsole()
     }
 
+    /// Opens the top-level workspaces management screen.
+    @objc func openWorkspaces() {
+        guard !isSettingsWindowKey else { return }
+        appStore.enterWorkspacesManager()
+    }
+
     @objc func openSettings() {
         if let settingsWindow {
             settingsWindow.makeKeyAndOrderFront(nil)
@@ -345,6 +351,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         consoleItem.keyEquivalentModifierMask = [.command, .option]
         consoleItem.target = self
         viewMenu.addItem(consoleItem)
+        let workspacesItem = NSMenuItem(
+            title: "Workspaces",
+            action: #selector(openWorkspaces),
+            keyEquivalent: "")
+        workspacesItem.target = self
+        viewMenu.addItem(workspacesItem)
         viewMenu.addItem(.separator())
         let appearanceHeader = NSMenuItem(title: "Appearance", action: nil, keyEquivalent: "")
         appearanceHeader.isEnabled = false
