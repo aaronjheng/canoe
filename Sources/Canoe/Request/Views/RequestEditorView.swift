@@ -116,6 +116,11 @@ struct RequestEditorView: View {
     @State private var urlBarHeight: CGFloat = 0
     /// The raw text currently shown in the URL bar.
     @State private var urlText = ""
+    /// Live caret location of the bar's field editor, mirrored out so the
+    /// multi-line popup can continue at the same offset when it takes over
+    /// keyboard focus (the async handoff otherwise lands on a default caret
+    /// and discards the position the user placed inside the bar).
+    @State private var urlBarCaret: Int?
 
     /// The URL bar text: the stored base URL plus the query rendered from the
     /// params table (the table is the source of truth for the query; the
@@ -246,19 +251,13 @@ struct RequestEditorView: View {
         }
         // The bar field stays a single line; gaining focus opens the
         // multi-line popup editor below and hands focus over to it.
+        // The bar is the primary URL editing surface; the popup below is an
+        // expanded view opened on demand (bar chevron / ⇧⌘E). Focusing the
+        // bar while the popup is open returns editing to the bar - the popup
+        // closes itself via the claim drop in onChange(of: urlPopupField).
         .onChange(of: urlFieldFocused) { _, focused in
             guard focused == .url else { return }
             isMethodMenuVisible = false
-            if isURLPopupVisible {
-                // Clicking the bar while the popup is already open: the
-                // popup keeps the keystrokes, so release the bar's focus
-                // claim immediately instead of re-entering the fight below.
-                urlFieldFocused = nil
-                return
-            }
-            isURLPopupVisible = true
-            // Hand focus to the popup's editor once it is inserted.
-            DispatchQueue.main.async { urlPopupField = .url }
         }
         .onChange(of: isMethodMenuVisible) { _, visible in
             guard visible else {
@@ -280,14 +279,14 @@ struct RequestEditorView: View {
         .onChange(of: urlPopupField) { _, focused in
             if focused == .url {
                 // The popup editor owns the keystrokes now: drop the bar
-                // field's focus claim. Otherwise the bar's focus pass calls
-                // `makeFirstResponder` on every recompose, ripping focus back
-                // from the popup mid-typing - which closed the popup after
-                // the first typed character and dropped characters typed
-                // during the handoff.
+                // field's focus claim so the bar stops mirroring an editing
+                // session it no longer has.
                 urlFieldFocused = nil
             } else {
                 isURLPopupVisible = false
+                // The takeover already consumed the mirrored bar caret;
+                // stale offsets must not leak into the next expansion.
+                urlBarCaret = nil
             }
         }
         .onAppear {
@@ -384,15 +383,16 @@ struct RequestEditorView: View {
                         placeholder: "https://api.example.com/users",
                         focus: $urlFieldFocused,
                         focusValue: .url,
-                        // The bar is a display surface: the popup editor owns
-                        // the keystrokes. Allowing the field to grab first
-                        // responder during updates would restart its editing
-                        // session mid-typing - a fresh NSTextField session
-                        // selects all, so the next character overwrites the
-                        // whole URL.
-                        autoFocusOnUpdate: false
+                        // The bar is the primary editing surface. Still no
+                        // update-driven focus grabs: force-focusing an
+                        // NSTextField mid-update restarts its editing
+                        // session - a fresh session selects all, so the next
+                        // character would overwrite the whole URL.
+                        autoFocusOnUpdate: false,
+                        onCaretChange: { urlBarCaret = $0 }
                     )
                     .padding(.leading, AppSpacing.small + 2)
+                    expandURLButton
                 }
                 .variableFieldBordered(isFocused: urlFieldFocused == .url, verticalPadding: 3)
 
@@ -438,8 +438,49 @@ struct RequestEditorView: View {
 
     // MARK: - URL popup
 
-    /// Editing surface for long URLs: the bar field never wraps, so while it
-    /// is focused a multi-line editor floats below the bar in a card. It is
+    /// Closes the expanded URL editor and drops its focus claim (and the
+    /// consumed caret mirror with it).
+    private func closeURLPopup() {
+        urlPopupField = nil
+        isURLPopupVisible = false
+        urlBarCaret = nil
+    }
+
+    /// Expand/collapse toggle for the bar's trailing chevron (and ⇧⌘E):
+    /// long URLs are unwieldy in the single-line bar, so the popup shows the
+    /// whole value in a multi-line editor while it is open.
+    private func toggleURLPopup() {
+        if isURLPopupVisible || urlPopupField == .url {
+            closeURLPopup()
+        } else {
+            isMethodMenuVisible = false
+            isURLPopupVisible = true
+            // Hand focus to the popup's editor once it is inserted; it
+            // continues at the bar's last caret offset.
+            DispatchQueue.main.async { urlPopupField = .url }
+        }
+    }
+
+    /// Trailing chevron inside the bar: expands the URL into the multi-line
+    /// popup editor, toggles back on a second press.
+    private var expandURLButton: some View {
+        Button {
+            toggleURLPopup()
+        } label: {
+            Image(systemName: isURLPopupVisible ? "chevron.down.chevron" : "chevron.up.chevron")
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(isURLPopupVisible ? AppColor.accent : Color.secondary)
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut("e", modifiers: [.command, .shift])
+        .help(isURLPopupVisible ? "Collapse URL Editor (⇧⌘E)" : "Expand URL Editor (⇧⌘E)")
+        .padding(.trailing, AppSpacing.small)
+    }
+
+    /// Editing surface for long URLs: opened on demand from the bar's
+    /// chevron, a multi-line editor floats below the bar in a card. It is
     /// an overlay - the bar's height and the section layout below never
     /// change - and a click-outside catcher gives it popover dismissal
     /// semantics (the first click outside closes it without activating what
@@ -449,10 +490,10 @@ struct RequestEditorView: View {
             if isURLPopupVisible {
                 Color.clear
                     .contentShape(Rectangle())
-                    .onTapGesture { isURLPopupVisible = false }
+                    .onTapGesture { closeURLPopup() }
                 // Escape also dismisses (cancelAction); the zero-size hidden
                 // button keeps the shortcut registered.
-                Button("Cancel Editing") { isURLPopupVisible = false }
+                Button("Cancel Editing") { closeURLPopup() }
                     .keyboardShortcut(.cancelAction)
                     .frame(width: 0, height: 0)
                     .opacity(0)
@@ -584,7 +625,8 @@ struct RequestEditorView: View {
             focusValue: .url,
             // Return (with no completion popup open) commits and closes,
             // like the newline handling in `urlPopupBinding` for pasted text.
-            onCommit: { isURLPopupVisible = false }
+            onCommit: { closeURLPopup() },
+            incomingCaretLocation: urlBarCaret
         )
         .padding(.horizontal, AppSpacing.small)
         .padding(.vertical, AppSpacing.xSmall)

@@ -90,6 +90,16 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
     /// Called when the user presses Return with no completion popup open
     /// (multi-line editors insert a line break instead).
     var onCommit: (() -> Void)?
+    /// Single-line only: reports the live field-editor caret location on
+    /// every caret move (click, arrow, typing). Containers that float a
+    /// second editing surface over this one (the URL bar -> URL popup
+    /// handoff) use it to continue typing at the same offset.
+    var onCaretChange: ((Int) -> Void)?
+    /// Multi-line only: caret location to apply when this editor takes over
+    /// keyboard focus (first responder) from the single-line field, so the
+    /// takeover continues at the offset the user had placed there instead of
+    /// the fresh text view's default.
+    var incomingCaretLocation: Int?
 
     /// Cap of the auto-grow editor height before it scrolls internally.
     /// Computed: static stored properties are unsupported on generic types.
@@ -111,7 +121,9 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         isEditable: Bool = true,
         onEditingEnded: (() -> Void)? = nil,
         onCommit: (() -> Void)? = nil,
-        syntax: BodySyntax = .plain
+        syntax: BodySyntax = .plain,
+        onCaretChange: ((Int) -> Void)? = nil,
+        incomingCaretLocation: Int? = nil
     ) {
         self._text = text
         self.variables = variables
@@ -127,6 +139,8 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         self.onEditingEnded = onEditingEnded
         self.onCommit = onCommit
         self.syntax = syntax
+        self.onCaretChange = onCaretChange
+        self.incomingCaretLocation = incomingCaretLocation
     }
 
     var body: some View {
@@ -143,7 +157,8 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
                     autoFocusOnUpdate: autoFocusOnUpdate,
                     isEditable: isEditable,
                     onEditingEnded: onEditingEnded,
-                    onCommit: onCommit
+                    onCommit: onCommit,
+                    onCaretChange: onCaretChange
                 )
                 .frame(minHeight: 24, alignment: .center)
             } else {
@@ -179,7 +194,8 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
             onEditingEnded: onEditingEnded,
             onCommit: onCommit,
             onContentHeightChange: fillsContainer ? nil : { contentHeight = $0 },
-            syntax: syntax
+            syntax: syntax,
+            incomingCaretLocation: incomingCaretLocation
         )
     }
 
@@ -241,6 +257,7 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
     let isEditable: Bool
     let onEditingEnded: (() -> Void)?
     let onCommit: (() -> Void)?
+    let onCaretChange: ((Int) -> Void)?
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
@@ -346,6 +363,11 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
 
         func controlTextDidChange(_ notification: Notification) {
             guard let field = notification.object as? NSTextField else { return }
+            // Mirror the caret AFTER the inserted character: the floating
+            // popup reads this when it takes over keyboard focus.
+            if let editor = field.currentEditor() {
+                parent.onCaretChange?(editor.selectedRange.location)
+            }
             // Defensive: single-line values never carry line breaks.
             var value = field.stringValue
             if value.contains("\n") || value.contains("\r") {
@@ -363,6 +385,13 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
         }
 
         func controlTextDidBeginEditing(_ notification: Notification) {
+            // Mirror the click caret: the field editor's selection change on
+            // session start is not forwarded via textViewDidChangeSelection.
+            if let field = notification.object as? NSTextField,
+                let editor = field.currentEditor()
+            {
+                parent.onCaretChange?(editor.selectedRange.location)
+            }
             guard let focus = parent.focus, let focusValue = parent.focusValue,
                 focus.wrappedValue != focusValue
             else { return }
@@ -387,6 +416,7 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
         /// glued to the caret.
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let editor = notification.object as? NSTextView else { return }
+            parent.onCaretChange?(editor.selectedRange.location)
             completion.selectionChanged(editor)
         }
 
@@ -434,6 +464,7 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
     let onCommit: (() -> Void)?
     let onContentHeightChange: ((CGFloat) -> Void)?
     var syntax: BodySyntax = .plain
+    let incomingCaretLocation: Int?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -525,6 +556,14 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
         if focus.wrappedValue == focusValue {
             if textView.window?.firstResponder !== textView {
                 textView.window?.makeFirstResponder(textView)
+                // Continue at the offset the single-line field held when this
+                // editor took over (the URL bar -> popup handoff): without
+                // this the fresh text view's default caret discards the
+                // position the user had placed in the bar.
+                if let location = incomingCaretLocation {
+                    let length = (textView.string as NSString).length
+                    textView.setSelectedRange(NSRange(location: min(location, length), length: 0))
+                }
             }
         } else if textView.window?.firstResponder === textView {
             textView.window?.makeFirstResponder(nil)
