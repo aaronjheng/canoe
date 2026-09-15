@@ -82,6 +82,8 @@ struct CollectionDetailView: View {
         .onChange(of: draft.variables.map(\.key)) { _, _ in
             draft.variables.sortByName()
         }
+        .onAppear { applyRequestedSection() }
+        .onChange(of: store.selectedTab) { _, _ in applyRequestedSection() }
         .onChange(of: draft) { _, newValue in
             // Memory-only + dirty mark; the drafts mirror inside the store
             // is debounced, so no per-keystroke disk write happens here.
@@ -99,6 +101,16 @@ struct CollectionDetailView: View {
     }
 
     // MARK: - Section tabs
+
+    /// Applies a one-shot deep-link from the variables inspector:
+    /// "Add Variables" / "Edit" land on Variables.
+    private func applyRequestedSection() {
+        guard let requested = store.consumeDetailSection(for: draft.id) else { return }
+        switch requested {
+        case .overview: section = .overview
+        case .variables: section = .variables
+        }
+    }
 
     private var sectionTabs: some View {
         HStack(spacing: 0) {

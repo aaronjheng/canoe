@@ -240,10 +240,17 @@ final class AppStore {
         return vault.collections.first { $0.id == id }
     }
 
-    /// The workspace shown in the selected tab (nil unless a workspace
-    /// variables tab is active).
+    /// The workspace shown in the selected tab (nil unless the workspace
+    /// Overview tab is active).
     var selectedWorkspaceTab: Workspace? {
         guard case .workspace(let id) = selectedTab else { return nil }
+        return vault.workspaces.first { $0.id == id }
+    }
+
+    /// The workspace whose variables are shown in the selected tab (nil
+    /// unless a workspace-variables tab is active).
+    var selectedWorkspaceVariablesTab: Workspace? {
+        guard case .workspaceVariables(let id) = selectedTab else { return nil }
         return vault.workspaces.first { $0.id == id }
     }
 
@@ -429,6 +436,8 @@ final class AppStore {
                 collectionIDs.contains(id)
             } else if let id = tab.workspaceID {
                 workspaceIDs.contains(id)
+            } else if let id = tab.workspaceVariablesID {
+                workspaceIDs.contains(id)
             } else {
                 false
             }
@@ -451,6 +460,31 @@ final class AppStore {
     func openTab(_ tab: OpenTab) {
         if !openTabs.contains(tab) { openTabs.append(tab) }
         selectedTab = tab
+    }
+
+    /// One-shot section deep-link for the collection detail tab. Set when
+    /// opening from the variables inspector; the detail view consumes its
+    /// entry on appear, so the request applies exactly once.
+    var detailSectionRequests: [UUID: DetailSection] = [:]
+
+    /// Opens (or focuses) the standalone workspace-variables tab: the
+    /// variables inspector's "Add Variables" / "Edit" entry points and the
+    /// top-bar "Workspace Variables" menu.
+    func openWorkspaceVariables(_ id: UUID) {
+        openTab(.workspaceVariables(id))
+    }
+
+    /// Opens a collection tab directly on its Variables section (same entry
+    /// points as above, for the collection scope).
+    func openCollectionVariables(_ id: UUID) {
+        detailSectionRequests[id] = .variables
+        openTab(.collection(id))
+    }
+
+    /// Takes (and clears) the pending section for a detail tab, if any.
+    func consumeDetailSection(for id: UUID) -> DetailSection? {
+        defer { detailSectionRequests[id] = nil }
+        return detailSectionRequests[id]
     }
 
     /// Cancels the selected tab's in-flight send, if any. Responses,
@@ -517,6 +551,8 @@ final class AppStore {
                 !collectionIDs.contains(id)
             } else if let id = tab.workspaceID {
                 !workspaceIDs.contains(id)
+            } else if let id = tab.workspaceVariablesID {
+                !workspaceIDs.contains(id)
             } else {
                 false
             }
@@ -556,6 +592,7 @@ final class AppStore {
 
     func deleteWorkspace(_ id: UUID) {
         closeTab(.workspace(id))
+        closeTab(.workspaceVariables(id))
         pendingWorkspaceVariables[id] = nil
         persistedWorkspaceVariableBaselines[id] = nil
         for collection in vault.collections where collection.workspaceID == id {
@@ -608,7 +645,7 @@ final class AppStore {
     }
 
     /// Enters a workspace from the manager: activates it and lands on its
-    /// home page.
+    /// Overview tab. This is the only entry point to the Overview.
     func openWorkspace(_ id: UUID) {
         setActiveWorkspace(id)
         openTab(.workspace(id))

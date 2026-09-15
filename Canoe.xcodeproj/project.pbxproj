@@ -994,7 +994,18 @@
 			<key>lastKnownFileType</key>
 			<string>sourcecode.swift</string>
 			<key>path</key>
-			<string>WorkspaceDetailView.swift</string>
+			<string>WorkspaceOverviewView.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>76BD5F1F73E64CB591E896EDEB2FC560</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>WorkspaceVariablesView.swift</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
@@ -1023,6 +1034,7 @@
 				<string>7BA2827FFD5B71A006EDD60F</string>
 				<string>A436134153001817C6EC42FC</string>
 				<string>273D4B57E898D204ED97E9E8</string>
+				<string>76BD5F1F73E64CB591E896EDEB2FC560</string>
 				<string>F00DCAFE1234567890ABB01</string>
 			</array>
 			<key>sourceTree</key>
@@ -1422,6 +1434,13 @@
 			<key>fileRef</key>
 			<string>273D4B57E898D204ED97E9E8</string>
 		</dict>
+		<key>E9888F0379484C11A458636DAF9AA937</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>76BD5F1F73E64CB591E896EDEB2FC560</string>
+		</dict>
 		<key>F00DCAFE1234567890ABB02</key>
 		<dict>
 			<key>isa</key>
@@ -1625,6 +1644,7 @@
 				<string>968587FFD15696AFB7A5067C</string>
 				<string>630D056DDA121170B96201E1</string>
 				<string>4469B292F3F7689870E0F6EE</string>
+				<string>E9888F0379484C11A458636DAF9AA937</string>
 				<string>F00DCAFE1234567890ABB02</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>

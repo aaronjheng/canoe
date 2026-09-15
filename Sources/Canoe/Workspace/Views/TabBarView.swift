@@ -183,9 +183,15 @@ private struct TabPill: View {
             }
         case .workspace(let id):
             if let workspace = store.vault.workspaces.first(where: { $0.id == id }) {
-                "\(workspace.name) - workspace variables"
+                "\(workspace.name) - workspace overview"
             } else {
                 "Workspace"
+            }
+        case .workspaceVariables(let id):
+            if let workspace = store.vault.workspaces.first(where: { $0.id == id }) {
+                "\(workspace.name) - workspace variables"
+            } else {
+                "Workspace Variables"
             }
         }
     }
@@ -226,8 +232,8 @@ private struct TabPill: View {
         }
     }
 
-    /// Whether the tab's request, environment, or collection has unsaved
-    /// modifications.
+    /// Whether the tab's request, environment, collection, or workspace
+    /// variables have unsaved modifications.
     private var isDirty: Bool {
         switch tab {
         case .request(let id):
@@ -236,6 +242,8 @@ private struct TabPill: View {
             return store.hasPendingEnvironmentChanges(for: id)
         case .collection(let id):
             return store.hasPendingCollectionChanges(for: id)
+        case .workspaceVariables(let id):
+            return store.hasPendingWorkspaceVariables(for: id)
         default:
             return false
         }
@@ -261,6 +269,10 @@ private struct TabPill: View {
                 .foregroundStyle(AppColor.accent)
         case .workspace:
             Image(systemName: "square.stack.3d.up.fill")
+                .font(.caption)
+                .foregroundStyle(AppColor.accent)
+        case .workspaceVariables:
+            Image(systemName: "curlybraces")
                 .font(.caption)
                 .foregroundStyle(AppColor.accent)
         }
@@ -293,6 +305,14 @@ private struct TabPill: View {
                     .help("\(collection.name) - collection settings")
             }
         case .workspace(let id):
+            if let workspace = store.vault.workspaces.first(where: { $0.id == id }) {
+                Text(workspace.name)
+                    .font(.subheadline)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .help("\(workspace.name) - workspace overview")
+            }
+        case .workspaceVariables(let id):
             if let workspace = store.vault.workspaces.first(where: { $0.id == id }) {
                 Text(workspace.name)
                     .font(.subheadline)

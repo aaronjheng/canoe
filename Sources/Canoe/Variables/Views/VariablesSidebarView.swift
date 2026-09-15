@@ -155,8 +155,8 @@ struct VariablesSidebarView: View {
     private func openEditor(for scope: RequestVariableScope) {
         guard let ownerID = scope.ownerID else { return }
         switch scope.kind {
-        case .workspace: store.openTab(.workspace(ownerID))
-        case .collection: store.openTab(.collection(ownerID))
+        case .workspace: store.openWorkspaceVariables(ownerID)
+        case .collection: store.openCollectionVariables(ownerID)
         case .environment: store.openEnvironment(ownerID)
         }
     }

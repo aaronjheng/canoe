@@ -89,7 +89,10 @@ struct ContentView: View {
             CollectionDetailView(collection: collection)
                 .id(collection.id)
         } else if let workspace = store.selectedWorkspaceTab {
-            WorkspaceDetailView(workspace: workspace)
+            WorkspaceOverviewView(workspace: workspace)
+                .id(workspace.id)
+        } else if let workspace = store.selectedWorkspaceVariablesTab {
+            WorkspaceVariablesView(workspace: workspace)
                 .id(workspace.id)
         } else {
             EmptyStateView()

@@ -85,7 +85,7 @@ private struct WorkspaceSwitcher: View {
             Button("New Workspace", systemImage: "plus") { store.addWorkspace() }
             Button("Workspace Variables", systemImage: "curlybraces.square") {
                 if let active = store.activeWorkspace {
-                    store.openTab(.workspace(active.id))
+                    store.openWorkspaceVariables(active.id)
                 }
             }
             .disabled(store.activeWorkspace == nil)
