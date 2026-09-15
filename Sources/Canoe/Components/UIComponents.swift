@@ -234,6 +234,38 @@ struct ToolbarButtonStyle: ButtonStyle {
     }
 }
 
+/// Compact icon toggle for panel chrome (the tab-row inspector toggles, the
+/// status-bar panel toggles): on = accent tint + selection fill, hover =
+/// light gray. One component so both bars stay identical.
+struct ToolbarToggleButton: View {
+    let systemImage: String
+    let isOn: Bool
+    let help: String
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.subheadline)
+                .foregroundStyle(isOn ? AppColor.accent : .secondary)
+                .frame(width: AppSize.topBarControlHeight, height: AppSize.topBarControlHeight)
+                .background(
+                    RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                        .fill(
+                            isOn
+                                ? AppColor.tabActiveBackground
+                                : (isHovering ? AppColor.tabHoverBackground : .clear)
+                        )
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .help(help)
+    }
+}
+
 // MARK: - Filter field
 
 /// Shared magnifier + plain field + clear button used by the sidebar,
@@ -402,9 +434,31 @@ struct PanelToolbarModifier: ViewModifier {
     }
 }
 
+/// Floating card chrome for the popups anchored under the URL bar (the
+/// method dropdown, the multi-line URL editor): solid fill, soft shadow,
+/// and the standard border. One place so the floating surfaces always match.
+struct PopupPanelModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                    .fill(.background)
+                    .shadow(color: AppColor.popupShadow, radius: 12, y: 4)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                    .strokeBorder(AppColor.border, lineWidth: 1)
+            )
+    }
+}
+
 extension View {
     func panelToolbar(horizontalPadding: CGFloat = AppSpacing.large) -> some View {
         modifier(PanelToolbarModifier(horizontalPadding: horizontalPadding))
+    }
+
+    func popupPanel() -> some View {
+        modifier(PopupPanelModifier())
     }
 
     /// Applies `help` only when `condition` holds; otherwise leaves the view

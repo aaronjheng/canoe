@@ -38,14 +38,14 @@ struct TabBarView: View {
             Divider()
                 .frame(height: AppSize.tabStripDividerHeight)
             EnvironmentPicker()
-            InspectorToggleButton(
+            ToolbarToggleButton(
                 systemImage: "curlybraces",
                 isOn: store.showVariablesSidebar,
                 help: store.showVariablesSidebar ? "Hide Variables in Request" : "Show Variables in Request"
             ) {
                 store.toggleVariablesSidebar()
             }
-            InspectorToggleButton(
+            ToolbarToggleButton(
                 systemImage: "chevron.left.forwardslash.chevron.right",
                 isOn: store.showCodeSnippetSidebar,
                 help: store.showCodeSnippetSidebar ? "Hide Code Snippet" : "Show Code Snippet"
@@ -98,37 +98,6 @@ struct EnvironmentPicker: View {
         .lineLimit(1)
         .truncationMode(.tail)
         .help(store.activeEnvironment.map { "Active environment: \($0.name)" } ?? "No environment selected")
-    }
-}
-
-/// Compact icon toggle for the right-edge inspectors (on = accent tint +
-/// selection fill, hover = light gray).
-private struct InspectorToggleButton: View {
-    let systemImage: String
-    let isOn: Bool
-    let help: String
-    let action: () -> Void
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.subheadline)
-                .foregroundStyle(isOn ? AppColor.accent : .secondary)
-                .frame(width: AppSize.topBarControlHeight, height: AppSize.topBarControlHeight)
-                .background(
-                    RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                        .fill(
-                            isOn
-                                ? AppColor.tabActiveBackground
-                                : (isHovering ? AppColor.tabHoverBackground : .clear)
-                        )
-                )
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
-        .help(help)
     }
 }
 

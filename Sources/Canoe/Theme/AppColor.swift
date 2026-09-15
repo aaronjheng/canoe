@@ -57,6 +57,8 @@ enum AppColor {
 
     static let codeBackground: Color = Color(nsColor: .textBackgroundColor)
     static let controlBackground: Color = Color(nsColor: .controlBackgroundColor)
+    /// Barely-there wash for borderless input fields (the variable editors).
+    static let fieldBackground: Color = Color.primary.opacity(0.03)
     /// Postman-style sidebar fill: light gray in light mode, charcoal in
     /// dark mode - always a visible step away from the center content.
     static let sidebarBackground: Color = dynamic(
@@ -81,6 +83,9 @@ enum AppColor {
     /// the tab and stays independent of the user's system accent color.
     static let tabActiveBackground: Color = Color.primary.opacity(0.08)
     static let tabHoverBackground: Color = Color.primary.opacity(0.05)
+
+    /// Soft shadow for floating popup cards (method dropdown, URL editor).
+    static let popupShadow: Color = Color.primary.opacity(0.22)
 
     /// Hairline for the sidebar tree indent guides (adapts to appearance).
     static let treeGuide: Color = Color(nsColor: .separatorColor)

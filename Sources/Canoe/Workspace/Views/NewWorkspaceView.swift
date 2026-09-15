@@ -35,7 +35,9 @@ struct NewWorkspaceView: View {
                     .keyboardShortcut(.cancelAction)
                 Spacer()
                 Button("Create", action: create)
-                    .buttonStyle(SendButtonStyle())
+                    // Standard sheet confirm, matching the folder editor's
+                    // Save (hero buttons stay on the welcome/empty states).
+                    .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
             }
         }

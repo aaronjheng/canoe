@@ -682,7 +682,7 @@ extension View {
             .padding(.vertical, verticalPadding)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                    .fill(Color.primary.opacity(0.03))
+                    .fill(AppColor.fieldBackground)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)

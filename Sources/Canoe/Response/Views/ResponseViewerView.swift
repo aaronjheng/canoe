@@ -113,7 +113,7 @@ struct ResponseViewerView: View {
     private var statusDot: some View {
         Text("\u{00B7}")
             .font(.caption)
-            .foregroundStyle(.secondary.opacity(0.6))
+            .foregroundStyle(.tertiary)
     }
 
     private func statusMetric(_ value: String, systemImage: String) -> some View {

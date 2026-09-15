@@ -217,8 +217,10 @@ final class VaultStore {
 
             // Config
             if let configFileURL, let data = try await FileStore.readDataIfExists(at: configFileURL) {
-                if let decoded = try? JSONDecoder.iso.decode(VaultConfig.self, from: data) {
-                    config = decoded
+                do {
+                    config = try JSONDecoder.iso.decode(VaultConfig.self, from: data)
+                } catch {
+                    AppLogger.error("Failed to decode vault config, using defaults: \(error)", category: "Vault")
                 }
             }
 

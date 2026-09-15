@@ -10,7 +10,7 @@ struct StatusBarView: View {
 
     var body: some View {
         HStack(spacing: AppSpacing.small) {
-            StatusToggleButton(
+            ToolbarToggleButton(
                 systemImage: "sidebar.left",
                 isOn: store.showSidebar,
                 help: store.showSidebar ? "Hide Sidebar" : "Show Sidebar"
@@ -20,7 +20,7 @@ struct StatusBarView: View {
             // Console entry sits with the left-edge toggles, right of the
             // sidebar switch (Postman keeps its console toggle in the
             // bottom bar too): docks the network log below the Response pane.
-            StatusToggleButton(
+            ToolbarToggleButton(
                 systemImage: "terminal",
                 isOn: store.showConsole,
                 help: store.showConsole ? "Hide Console" : "Show Console"
@@ -30,7 +30,7 @@ struct StatusBarView: View {
             Spacer(minLength: 0)
             // Symmetric counterpart on the trailing edge: shows/hides the
             // right-edge inspector (Variables or Code Snippet).
-            StatusToggleButton(
+            ToolbarToggleButton(
                 systemImage: "sidebar.right",
                 isOn: store.isRightSidebarVisible,
                 help: store.isRightSidebarVisible ? "Hide Right Sidebar" : "Show Right Sidebar"
@@ -41,38 +41,5 @@ struct StatusBarView: View {
         .padding(.horizontal, AppSpacing.medium)
         .frame(height: AppSize.statusBarHeight)
         .background(AppColor.controlBackground)
-    }
-
-}
-
-/// Small panel toggle button: dimmed when the panel is hidden, highlighted
-/// while it is open. Same 26pt square and hover language as the tab-row
-/// inspector toggles.
-private struct StatusToggleButton: View {
-    let systemImage: String
-    let isOn: Bool
-    let help: String
-    let action: () -> Void
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.subheadline)
-                .foregroundStyle(isOn ? AppColor.accent : .secondary)
-                .frame(width: AppSize.topBarControlHeight, height: AppSize.topBarControlHeight)
-                .background(
-                    RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                        .fill(
-                            isOn
-                                ? AppColor.tabActiveBackground
-                                : (isHovering ? AppColor.tabHoverBackground : .clear)
-                        )
-                )
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
-        .help(help)
     }
 }

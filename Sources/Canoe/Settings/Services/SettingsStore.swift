@@ -30,14 +30,26 @@ final class SettingsStore {
     }
 
     func load() {
-        guard let data = try? Data(contentsOf: fileURL),
-            let decoded = try? JSONDecoder().decode(AppSettings.self, from: data)
-        else { return }
-        settings = decoded
+        // A missing file is normal on first launch - only failures after
+        // that point are worth logging.
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+        guard let data = try? Data(contentsOf: fileURL) else {
+            AppLogger.error("Failed to read settings file, using defaults", category: "Settings")
+            return
+        }
+        do {
+            settings = try JSONDecoder().decode(AppSettings.self, from: data)
+        } catch {
+            AppLogger.error("Failed to decode settings, using defaults: \(error)", category: "Settings")
+        }
     }
 
     func save() {
-        guard let data = try? JSONEncoder().encode(settings) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        do {
+            let data = try JSONEncoder().encode(settings)
+            try data.write(to: fileURL, options: .atomic)
+        } catch {
+            AppLogger.error("Failed to save settings: \(error)", category: "Settings")
+        }
     }
 }

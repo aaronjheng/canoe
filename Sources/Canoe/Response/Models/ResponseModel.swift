@@ -49,14 +49,24 @@ struct ResponseModel: Identifiable, Sendable {
     }
 
     var formattedDuration: String {
-        if duration < 1 {
-            return String(format: "%.0f ms", duration * 1000)
-        }
-        return String(format: "%.2f s", duration)
+        duration.formattedDuration
     }
 
     var formattedSize: String {
         ByteCountFormatter.string(fromByteCount: Int64(body.count), countStyle: .file)
+    }
+}
+
+extension TimeInterval {
+    /// Postman-style duration label ("123 ms", "1.23 s"). The decimal point
+    /// is fixed regardless of locale so timings read the same on every Mac;
+    /// shared by the response metrics and the console log.
+    var formattedDuration: String {
+        let posix = Locale(identifier: "en_US_POSIX")
+        if self < 1 {
+            return String(format: "%.0f ms", locale: posix, self * 1000)
+        }
+        return String(format: "%.2f s", locale: posix, self)
     }
 }
 

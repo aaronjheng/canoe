@@ -151,7 +151,7 @@ private struct ConsoleEntryRow: View {
                 ConsoleEntryDetail(entry: entry, copied: copied, onCopyRaw: onCopyRaw)
             }
         }
-        .background(entry.isError ? AppColor.error.opacity(0.07) : Color.clear)
+        .background(entry.isError ? AppColor.error.opacity(AppOpacity.errorBackground) : Color.clear)
     }
 
     private var summaryRow: some View {

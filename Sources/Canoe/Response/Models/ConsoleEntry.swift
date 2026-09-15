@@ -58,10 +58,7 @@ struct ConsoleEntry: Identifiable, Sendable {
 
     var formattedDuration: String? {
         guard let duration else { return nil }
-        if duration < 1 {
-            return String(format: "%.0f ms", duration * 1000)
-        }
-        return String(format: "%.2f s", duration)
+        return duration.formattedDuration
     }
 
     /// The transaction as a raw HTTP exchange: request line + headers + body,

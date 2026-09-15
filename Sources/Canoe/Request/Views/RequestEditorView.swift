@@ -569,15 +569,7 @@ struct RequestEditorView: View {
             .padding(.vertical, AppSpacing.xSmall)
         }
         .frame(width: 144)
-        .background(
-            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                .fill(.background)
-                .shadow(color: Color.primary.opacity(0.22), radius: 12, y: 4)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                .strokeBorder(AppColor.border, lineWidth: 1)
-        )
+        .popupPanel()
     }
 
     /// The floating multi-line URL editor: same two-way sync as the bar
@@ -597,15 +589,7 @@ struct RequestEditorView: View {
         .padding(.horizontal, AppSpacing.small)
         .padding(.vertical, AppSpacing.xSmall)
         .frame(minHeight: 56, alignment: .topLeading)
-        .background(
-            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                .fill(.background)
-                .shadow(color: Color.primary.opacity(0.22), radius: 12, y: 4)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                .strokeBorder(AppColor.border, lineWidth: 1)
-        )
+        .popupPanel()
     }
 
     /// The popup editor's binding: mirrors `urlBinding`, but treats a line
