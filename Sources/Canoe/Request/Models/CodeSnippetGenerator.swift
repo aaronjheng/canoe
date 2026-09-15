@@ -86,7 +86,7 @@ enum CodeSnippetGenerator {
         let withScheme = resolvedURLString.contains("://") ? resolvedURLString : "https://\(resolvedURLString)"
         guard var components = URLComponents(string: withScheme) else { return nil }
 
-        let enabledParams = request.params.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespaces).isEmpty }
+        let enabledParams = request.params.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         if !enabledParams.isEmpty {
             var queryItems = components.queryItems ?? []
             for param in enabledParams {
@@ -169,7 +169,7 @@ enum CodeSnippetGenerator {
             }
         case .urlEncoded:
             let pairs = request.urlEncodedFields
-                .filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespaces).isEmpty }
+                .filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                 .compactMap { field -> (key: String, value: String)? in
                     let key = VariableResolver.resolve(field.key, variables: variables)
                     guard !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
@@ -181,7 +181,7 @@ enum CodeSnippetGenerator {
             body = pairs.isEmpty ? .none : .urlEncoded(pairs: pairs)
         case .formData:
             let fields = request.formFields
-                .filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespaces).isEmpty }
+                .filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                 .compactMap { field -> Prepared.Body.Field? in
                     let name = VariableResolver.resolve(field.key, variables: variables)
                     guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }

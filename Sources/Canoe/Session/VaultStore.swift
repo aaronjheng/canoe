@@ -101,7 +101,7 @@ final class VaultStore {
         return
             collections
             .filter { $0.workspaceID == activeID }
-            .sorted { $0.orderIndex < $1.orderIndex }
+            .sorted { ($0.orderIndex, $0.id.uuidString) < ($1.orderIndex, $1.id.uuidString) }
     }
 
     /// Environments belonging to the active workspace.
@@ -110,7 +110,7 @@ final class VaultStore {
         return
             environments
             .filter { $0.workspaceID == activeID }
-            .sorted { $0.orderIndex < $1.orderIndex }
+            .sorted { ($0.orderIndex, $0.id.uuidString) < ($1.orderIndex, $1.id.uuidString) }
     }
 
     // MARK: - Preparation
@@ -235,9 +235,17 @@ final class VaultStore {
             let (loadedWorkspaces, loadedCollections, loadedEnvironments) = await (
                 loadedWorkspacesTask, loadedCollectionsTask, loadedEnvironmentsTask
             )
-            workspaces = loadedWorkspaces.sorted { $0.orderIndex < $1.orderIndex }
-            collections = loadedCollections.sorted { $0.orderIndex < $1.orderIndex }
-            environments = loadedEnvironments.sorted { $0.orderIndex < $1.orderIndex }
+            // The id tiebreaker keeps the order deterministic when two files
+            // share an orderIndex (legacy files, same-second iCloud copies).
+            workspaces = loadedWorkspaces.sorted {
+                ($0.orderIndex, $0.id.uuidString) < ($1.orderIndex, $1.id.uuidString)
+            }
+            collections = loadedCollections.sorted {
+                ($0.orderIndex, $0.id.uuidString) < ($1.orderIndex, $1.id.uuidString)
+            }
+            environments = loadedEnvironments.sorted {
+                ($0.orderIndex, $0.id.uuidString) < ($1.orderIndex, $1.id.uuidString)
+            }
 
             // One-time migration: environments gained their workspace scope
             // later, so legacy files carry no workspaceID. Attach them to the
@@ -456,7 +464,9 @@ final class VaultStore {
         try manager.createDirectory(at: second, withIntermediateDirectories: true)
         let firstNames = Set((try? manager.contentsOfDirectory(atPath: first.path)) ?? [])
         let secondNames = Set((try? manager.contentsOfDirectory(atPath: second.path)) ?? [])
-        for name in firstNames.union(secondNames) where name.hasSuffix(".json") {
+        // Sorted: set iteration order is nondeterministic, and the merge
+        // logs ties - keep the log order stable across runs.
+        for name in firstNames.union(secondNames).sorted() where name.hasSuffix(".json") {
             try mergeFile(
                 first.appendingPathComponent(name), second.appendingPathComponent(name),
                 preferFirstOnTie: preferFirstOnTie)
@@ -550,9 +560,9 @@ final class VaultStore {
             await resolveConflicts(at: file, kind: kind)
         }
         // Duplicates are appended out of order - restore it.
-        workspaces.sort { $0.orderIndex < $1.orderIndex }
-        collections.sort { $0.orderIndex < $1.orderIndex }
-        environments.sort { $0.orderIndex < $1.orderIndex }
+        workspaces.sort { ($0.orderIndex, $0.id.uuidString) < ($1.orderIndex, $1.id.uuidString) }
+        collections.sort { ($0.orderIndex, $0.id.uuidString) < ($1.orderIndex, $1.id.uuidString) }
+        environments.sort { ($0.orderIndex, $0.id.uuidString) < ($1.orderIndex, $1.id.uuidString) }
     }
 
     private func resolveConflicts(at file: URL, kind: ConflictKind) async {

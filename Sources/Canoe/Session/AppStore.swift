@@ -788,13 +788,15 @@ final class AppStore {
         var changed = true
         while changed {
             changed = false
-            for folder in collection.folders where toDelete.contains(folder.parentFolderID ?? UUID()) {
+            for folder in collection.folders {
+                guard let parent = folder.parentFolderID, toDelete.contains(parent) else { continue }
                 if toDelete.insert(folder.id).inserted { changed = true }
             }
         }
         collection.folders.removeAll { toDelete.contains($0.id) }
         // Requests inside deleted folders are moved to the collection root.
-        for requestIndex in collection.requests.indices where toDelete.contains(collection.requests[requestIndex].folderID ?? UUID()) {
+        for requestIndex in collection.requests.indices {
+            guard let folder = collection.requests[requestIndex].folderID, toDelete.contains(folder) else { continue }
             collection.requests[requestIndex].folderID = nil
         }
         vault.collections[idx] = collection
@@ -1255,19 +1257,22 @@ final class AppStore {
                 completion?()
                 return
             }
-            for snapshot in pendingRequests.values {
+            // Sorted by id: dictionary iteration order is nondeterministic,
+            // and two dirty requests can share one collection file - keep
+            // the write order stable across saves.
+            for snapshot in pendingRequests.values.sorted(by: { $0.id.uuidString < $1.id.uuidString }) {
                 await self.persistRequest(snapshot)
             }
-            for snapshot in pendingEnvironments.values {
+            for snapshot in pendingEnvironments.values.sorted(by: { $0.id.uuidString < $1.id.uuidString }) {
                 await self.persistEnvironment(snapshot)
             }
-            for (id, variables) in pendingWorkspaceVariables {
+            for (id, variables) in pendingWorkspaceVariables.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
                 await self.persistWorkspaceVariables(id, variables)
             }
-            for (id, variables) in pendingCollectionVariables {
+            for (id, variables) in pendingCollectionVariables.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
                 await self.persistCollectionVariables(id, variables)
             }
-            for (id, authorization) in pendingCollectionAuthorizations {
+            for (id, authorization) in pendingCollectionAuthorizations.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
                 await self.persistCollectionAuthorization(id, authorization)
             }
             await self.vault.saveDrafts(VaultDrafts())
@@ -1370,20 +1375,22 @@ final class AppStore {
     /// True when a key/value row carries no data at all (skipped at send
     /// time, stripped at persist time).
     private func isBlankRow(_ key: String, _ value: String) -> Bool {
-        key.trimmingCharacters(in: .whitespaces).isEmpty
-            && value.trimmingCharacters(in: .whitespaces).isEmpty
+        key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     // MARK: - Environments
 
     func addEnvironment() {
-        // Max + 1, not count: deleted environments leave orderIndex gaps, and
-        // count would collide with an existing value on the first add after a
-        // deletion (two environments tying in the load-time sort).
-        let orderIndex = (vault.environments.map(\.orderIndex).max() ?? -1) + 1
         // New environments always land in a workspace - the active one, or
         // the first when called before any workspace is active.
         let workspaceID = vault.activeWorkspace?.id ?? vault.workspaces.first?.id
+        // Max + 1 within the workspace, not count: deleted environments leave
+        // orderIndex gaps, and count would collide with an existing value on
+        // the first add after a deletion (two environments tying in the
+        // load-time sort).
+        let siblingMax = vault.environments.filter { $0.workspaceID == workspaceID }.map(\.orderIndex).max()
+        let orderIndex = (siblingMax ?? -1) + 1
         let env = EnvProfile(name: "New Environment", orderIndex: orderIndex, workspaceID: workspaceID)
         vault.environments.append(env)
         Task { await vault.saveEnvironment(env) }
@@ -1399,14 +1406,17 @@ final class AppStore {
         copy.name = "\(vault.environments[sourceIndex].name) copy"
         copy.createdAt = Date()
         // Slot the copy right after the source and shift every later
-        // environment back by one, so the saved orderIndex values keep
-        // matching the sidebar order after a reload. The shifted files are
-        // re-saved too - stale orderIndex values on disk would sort
-        // nondeterministically against the copy's on the next load.
+        // environment in the same workspace back by one, so the saved
+        // orderIndex values keep matching the sidebar order after a reload.
+        // The shifted files are re-saved too - stale orderIndex values on
+        // disk would sort nondeterministically against the copy's on the
+        // next load. Other workspaces are untouched: their order is separate.
         copy.orderIndex = vault.environments[sourceIndex].orderIndex + 1
         var shifted: [EnvProfile] = []
-        for index in vault.environments.indices
-        where vault.environments[index].orderIndex >= copy.orderIndex {
+        for index in vault.environments.indices {
+            guard vault.environments[index].workspaceID == copy.workspaceID,
+                vault.environments[index].orderIndex >= copy.orderIndex
+            else { continue }
             vault.environments[index].orderIndex += 1
             shifted.append(vault.environments[index])
         }
@@ -1626,7 +1636,7 @@ final class AppStore {
     func childFolders(of parentFolderID: UUID?, in collection: Collection) -> [Folder] {
         collection.folders
             .filter { $0.parentFolderID == parentFolderID }
-            .sorted { $0.orderIndex < $1.orderIndex }
+            .sorted { ($0.orderIndex, $0.id.uuidString) < ($1.orderIndex, $1.id.uuidString) }
     }
 
     /// The breadcrumb path leading to `request`, outermost first and starting
@@ -1658,7 +1668,7 @@ final class AppStore {
     func requests(in folderID: UUID?, collection: Collection) -> [RequestItem] {
         collection.requests
             .filter { $0.folderID == folderID }
-            .sorted { $0.orderIndex < $1.orderIndex }
+            .sorted { ($0.orderIndex, $0.id.uuidString) < ($1.orderIndex, $1.id.uuidString) }
     }
 
     // MARK: - Filtering

@@ -67,9 +67,18 @@ private struct WorkspaceSwitcher: View {
     @State private var isHovering = false
     @State private var showDeleteConfirm = false
 
+    /// Finder-style name order, matching the workspaces manager's default
+    /// sort - the menu otherwise follows vault insertion order, which drifts
+    /// from what the manager shows.
+    private var sortedWorkspaces: [Workspace] {
+        store.vault.workspaces.sorted {
+            $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
+    }
+
     var body: some View {
         Menu {
-            ForEach(store.vault.workspaces) { workspace in
+            ForEach(sortedWorkspaces) { workspace in
                 Button(workspace.name) { store.setActiveWorkspace(workspace.id) }
             }
             Divider()

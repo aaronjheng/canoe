@@ -27,7 +27,7 @@ struct WorkspacesView: View {
     }
 
     private var workspaces: [Workspace] {
-        store.vault.workspaces.sorted { $0.orderIndex < $1.orderIndex }
+        store.vault.workspaces.sorted { ($0.orderIndex, $0.id.uuidString) < ($1.orderIndex, $1.id.uuidString) }
     }
 
     private var visibleWorkspaces: [Workspace] {
@@ -44,10 +44,13 @@ struct WorkspacesView: View {
         case .activity:
             return filtered.sorted {
                 switch (store.lastActivity(in: $0.id), store.lastActivity(in: $1.id)) {
-                case let (lhs?, rhs?): lhs != rhs ? lhs > rhs : $0.name < $1.name
-                case (_?, nil): true
-                case (nil, _?): false
-                case (nil, nil): $0.name < $1.name
+                case let (lhs?, rhs?):
+                    if lhs != rhs { return lhs > rhs }
+                    return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+                case (_?, nil): return true
+                case (nil, _?): return false
+                case (nil, nil):
+                    return $0.name.localizedStandardCompare($1.name) == .orderedAscending
                 }
             }
         }
@@ -150,6 +153,10 @@ private struct WorkspaceRow: View {
     let onDelete: () -> Void
     @State private var isHovering = false
 
+    /// Shared relative-time formatter: construction is expensive, so one
+    /// instance serves every row.
+    private static let relativeFormatter = RelativeDateTimeFormatter()
+
     private var collections: [Collection] {
         store.vault.collections.filter { $0.workspaceID == workspace.id }
     }
@@ -164,7 +171,7 @@ private struct WorkspaceRow: View {
 
     private var lastActivityText: String {
         guard let latest = store.lastActivity(in: workspace.id) else { return "No activity yet" }
-        return RelativeDateTimeFormatter().localizedString(for: latest, relativeTo: Date())
+        return Self.relativeFormatter.localizedString(for: latest, relativeTo: Date())
     }
 
     private var statsLine: String {
@@ -178,7 +185,7 @@ private struct WorkspaceRow: View {
                     .font(.title3)
                     .foregroundStyle(.secondary)
                     .frame(width: 32)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: AppSpacing.xxSmall) {
                     Text(workspace.name)
                         .font(.subheadline.weight(.medium))
                         .lineLimit(1)

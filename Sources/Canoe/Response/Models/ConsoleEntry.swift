@@ -43,10 +43,18 @@ struct ConsoleEntry: Identifiable, Sendable {
     private let httpVersion = "HTTP/1.1"
 
     var formattedTime: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss.SSS"
-        return formatter.string(from: date)
+        Self.timeFormatter.string(from: date)
     }
+
+    /// Shared timestamp formatter: construction is expensive and the fixed
+    /// format must render identically regardless of the user's locale, so one
+    /// POSIX instance serves every row.
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "HH:mm:ss.SSS"
+        return formatter
+    }()
 
     var formattedDuration: String? {
         guard let duration else { return nil }

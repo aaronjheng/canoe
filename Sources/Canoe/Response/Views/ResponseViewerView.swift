@@ -126,16 +126,25 @@ struct ResponseViewerView: View {
     // MARK: - Response detail (Headers | Body tab bar)
 
     private func responseDetail(_ response: ResponseModel) -> some View {
-        refreshBodyRender(response)
-        let display = bodyRenderDisplay
+        let key = "\(response.id)-\(bodyMode)"
+        // Cache hit: reuse the rendered Text. Miss (a fresh response or mode
+        // switch): compute synchronously for this frame so the first paint is
+        // correct; the task below warms the cache so later renders
+        // (header-filter keystrokes, tab switches) reuse it. State is only
+        // written from the task, never during view evaluation.
+        let display: BodyDisplay = key == bodyRenderKey ? bodyRenderDisplay : bodyDisplay(response)
+        let rendered: Text = key == bodyRenderKey ? bodyRenderText : renderedText(for: display)
         return VStack(spacing: 0) {
             sectionBar(response)
             Divider()
             if responseSection == .body {
-                bodyContent(response, display)
+                bodyContent(response, display, rendered: rendered)
             } else {
                 headersPane(response)
             }
+        }
+        .task(id: key) {
+            updateBodyRenderCache(response, key: key)
         }
     }
 
@@ -143,15 +152,17 @@ struct ResponseViewerView: View {
     /// hundreds of ms (measured ~80ms + ~90ms at 2MB, plus layout of the
     /// resulting Text). Redoing it on every render - header-filter
     /// keystrokes, switching tabs back and forth - is the visible lag, so
-    /// each response+mode renders once and reuses the result. The key check
-    /// converges: a miss computes and stores, the scheduled re-render hits.
-    private func refreshBodyRender(_ response: ResponseModel) {
-        let key = "\(response.id)-\(bodyMode)"
+    /// each response+mode renders once and reuses the result.
+    private func updateBodyRenderCache(_ response: ResponseModel, key: String) {
         guard key != bodyRenderKey else { return }
         let display = bodyDisplay(response)
         bodyRenderDisplay = display
-        bodyRenderText = display.isJSON ? SyntaxHighlight.highlightedText(display.text) : Text(display.text)
+        bodyRenderText = renderedText(for: display)
         bodyRenderKey = key
+    }
+
+    private func renderedText(for display: BodyDisplay) -> Text {
+        display.isJSON ? SyntaxHighlight.highlightedText(display.text) : Text(display.text)
     }
 
     /// Response tab bar - and the panel's top row while a response exists:
@@ -184,7 +195,7 @@ struct ResponseViewerView: View {
         .padding(.horizontal, AppSpacing.small)
     }
 
-    private func bodyContent(_ response: ResponseModel, _ display: BodyDisplay) -> some View {
+    private func bodyContent(_ response: ResponseModel, _ display: BodyDisplay, rendered: Text) -> some View {
         Group {
             if display.text.isEmpty {
                 ContentUnavailableView(
@@ -196,7 +207,7 @@ struct ResponseViewerView: View {
                 VStack(spacing: 0) {
                     bodyToolbar(response, display.text)
                     Divider()
-                    bodyScroll(display)
+                    bodyScroll(display, rendered: rendered)
                 }
             }
         }
@@ -243,7 +254,7 @@ struct ResponseViewerView: View {
         .padding(.vertical, AppSpacing.xSmall)
     }
 
-    private func bodyScroll(_ display: BodyDisplay) -> some View {
+    private func bodyScroll(_ display: BodyDisplay, rendered: Text) -> some View {
         VStack(spacing: 0) {
             if let totalCount = display.totalCount {
                 let shown = display.text.count.formatted()
@@ -260,9 +271,9 @@ struct ResponseViewerView: View {
                 Divider()
             }
             ScrollView(wordWrap ? .vertical : [.vertical, .horizontal]) {
-                // Cached render (see refreshBodyRender) - never rebuild the
-                // highlighted Text here.
-                bodyRenderText
+                // Cached render (see updateBodyRenderCache) - never rebuild
+                // the highlighted Text here.
+                rendered
                     .font(AppFont.monoBody)
                     .textSelection(.enabled)
                     .frame(maxWidth: wordWrap ? .infinity : nil, alignment: .leading)
@@ -307,7 +318,7 @@ struct ResponseViewerView: View {
             )
         } else {
             VStack(spacing: 0) {
-                FilterField(text: $headerFilter, placeholder: "Search Headers", verticalPadding: AppSpacing.small)
+                FilterField(text: $headerFilter, placeholder: "Search Headers")
                 Divider()
                 let query = headerFilter.trimmingCharacters(in: .whitespacesAndNewlines)
                 let matches = response.headers.filter { header in
@@ -353,11 +364,15 @@ struct ResponseViewerView: View {
 
     /// Saves the full (untruncated) response body to a file, like Postman's
     /// "Save Response". The suggested extension follows the response MIME.
+    /// The id suffix keeps two saves within the same second from suggesting
+    /// the same filename and silently overwriting each other.
     private func saveResponse(_ response: ResponseModel) {
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
-        panel.nameFieldStringValue =
-            "response-\(response.statusCode)-\(Int(response.timestamp.timeIntervalSince1970)).\(fileExtension(for: response))"
+        let timestamp = Int(response.timestamp.timeIntervalSince1970)
+        let idSuffix = response.id.uuidString.prefix(8)
+        let ext = fileExtension(for: response)
+        panel.nameFieldStringValue = "response-\(response.statusCode)-\(timestamp)-\(idSuffix).\(ext)"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try response.body.write(to: url)

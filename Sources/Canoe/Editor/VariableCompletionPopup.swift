@@ -58,7 +58,7 @@ struct VariableSuggestionList: View {
             }
             Spacer(minLength: AppSpacing.small)
             if let kind = suggestion.scopeKind {
-                HStack(spacing: 2) {
+                HStack(spacing: AppSpacing.xxSmall) {
                     Image(systemName: kind.systemImage)
                         .font(.system(size: 8))
                     Text(kind.rawValue)

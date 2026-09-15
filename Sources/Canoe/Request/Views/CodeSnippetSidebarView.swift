@@ -95,18 +95,32 @@ struct CodeSnippetSidebarView: View {
         ScrollView(.vertical) {
             ScrollView(.horizontal) {
                 VStack(alignment: .leading, spacing: 0) {
-                    let lines = code.components(separatedBy: "\n")
+                    // Computed once: `code` regenerates the whole snippet, so
+                    // evaluating it per line below would redo it N+1 times.
+                    let snippet = code
+                    let lines = snippet.components(separatedBy: "\n")
+                    // For the raw HTTP format, headers run until the first
+                    // blank line; everything after it is body.
+                    let httpBlank = language == .http ? lines.firstIndex(where: { $0.isEmpty }) : nil
                     ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                        let isBody = httpBlank.map { index > $0 } ?? false
                         HStack(alignment: .firstTextBaseline, spacing: AppSpacing.medium) {
                             Text("\(index + 1)")
                                 .font(AppFont.monoCaption)
                                 .monospacedDigit()
                                 .foregroundStyle(.tertiary)
                                 .frame(minWidth: 18, alignment: .trailing)
-                            Text(highlightedLine(line, index: index))
-                                .font(AppFont.monoCaption)
-                                .textSelection(.enabled)
-                                .fixedSize(horizontal: true, vertical: false)
+                            Text(
+                                SnippetHighlighter.attributedLine(
+                                    line,
+                                    language: language,
+                                    isFirstLine: index == 0,
+                                    isBody: isBody
+                                )
+                            )
+                            .font(AppFont.monoCaption)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: true, vertical: false)
                         }
                     }
                 }
@@ -115,32 +129,17 @@ struct CodeSnippetSidebarView: View {
         }
     }
 
-    private func highlightedLine(_ line: String, index: Int) -> AttributedString {
-        let lines = code.components(separatedBy: "\n")
-        // For the raw HTTP format, headers run until the first blank line;
-        // everything after it is body.
-        var isBody = false
-        if language == .http, let blank = lines.firstIndex(where: { $0.isEmpty }) {
-            isBody = index > blank
-        }
-        return SnippetHighlighter.attributedLine(
-            line,
-            language: language,
-            isFirstLine: index == 0,
-            isBody: isBody
-        )
-    }
-
     private var emptyState: some View {
         VStack(spacing: AppSpacing.small) {
             Image(systemName: "chevron.left.forwardslash.chevron.right")
                 .font(.system(size: 36, weight: .light))
                 .foregroundStyle(.secondary)
             Text("No Request Selected")
-                .font(.headline)
+                .font(.callout)
+                .foregroundStyle(.secondary)
             Text("Open a request to generate its code snippet.")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 220)
         }
@@ -192,7 +191,7 @@ private enum SnippetHighlighter {
         capture: Int,
         color: Color
     ) {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
+        guard let regex = cachedRegex(for: pattern) else { return }
         let line = String(result.characters)
         let fullRange = NSRange(line.startIndex..., in: line)
         for match in regex.matches(in: line, options: [], range: fullRange) {
@@ -204,5 +203,30 @@ private enum SnippetHighlighter {
             else { continue }
             result[lower..<upper].foregroundColor = color
         }
+    }
+
+    /// Compiled once per pattern: the pane highlights every visible line, so
+    /// recompiling per line would redo the same work dozens of times per
+    /// frame. An immutable table - safe to share across threads.
+    private static let regexes: [String: NSRegularExpression] = {
+        let patterns = [
+            "(?:^|\\s)(-{1,2}[A-Za-z][A-Za-z0-9-]*)",
+            "'(?:[^'\\\\]|\\\\.)*'",
+            "^[A-Z]+",
+            "HTTP/[0-9.]+$",
+            "^[A-Za-z0-9-]+(?=\\s*:)",
+        ]
+        var table: [String: NSRegularExpression] = [:]
+        for pattern in patterns {
+            if let compiled = try? NSRegularExpression(pattern: pattern) {
+                table[pattern] = compiled
+            }
+        }
+        return table
+    }()
+
+    private static func cachedRegex(for pattern: String) -> NSRegularExpression? {
+        if let compiled = regexes[pattern] { return compiled }
+        return try? NSRegularExpression(pattern: pattern)
     }
 }

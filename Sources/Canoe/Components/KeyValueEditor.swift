@@ -206,7 +206,7 @@ struct KeyValueEditor<T: KVItem>: View {
             verticalRule
             headerLabel(valueHeader)
         }
-        .frame(height: 28)
+        .frame(height: AppSize.tabHeight)
     }
 
     /// Indent matching the body rows' leading icon columns (including their
@@ -347,8 +347,8 @@ struct KeyValueEditor<T: KVItem>: View {
         }
         items.removeAll { row in
             row.id != focusedRowID
-                && row.key.trimmingCharacters(in: .whitespaces).isEmpty
-                && row.value.trimmingCharacters(in: .whitespaces).isEmpty
+                && row.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && row.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
     }
 
@@ -466,7 +466,7 @@ private struct KVRow: View {
             }
             deleteColumn
         }
-        .frame(height: 32)
+        .frame(height: AppSize.toolbarHeight)
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         .opacity(isDragging ? 0.5 : 1)

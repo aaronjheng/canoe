@@ -101,13 +101,13 @@ struct WorkspaceDetailView: View {
     private var liveCollections: [Collection] {
         store.vault.collections
             .filter { $0.workspaceID == draft.id }
-            .sorted { $0.orderIndex < $1.orderIndex }
+            .sorted { ($0.orderIndex, $0.id.uuidString) < ($1.orderIndex, $1.id.uuidString) }
     }
 
     private var liveEnvironments: [EnvProfile] {
         store.vault.environments
             .filter { $0.workspaceID == draft.id }
-            .sorted { $0.orderIndex < $1.orderIndex }
+            .sorted { ($0.orderIndex, $0.id.uuidString) < ($1.orderIndex, $1.id.uuidString) }
     }
 
     private var overviewPane: some View {
@@ -139,7 +139,7 @@ struct WorkspaceDetailView: View {
     }
 
     private func overviewStat(value: String, label: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: AppSpacing.xxSmall) {
             Text(value)
                 .font(.title2.weight(.semibold))
                 .monospacedDigit()
@@ -224,7 +224,7 @@ struct WorkspaceDetailView: View {
 
     private var overviewVariablesRow: some View {
         HStack(spacing: AppSpacing.small) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: AppSpacing.xxSmall) {
                 Text("Variables")
                     .font(.subheadline.weight(.semibold))
                 Text("\(draft.variables.count) workspace variables apply to every request here.")

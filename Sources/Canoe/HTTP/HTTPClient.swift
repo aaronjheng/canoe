@@ -81,7 +81,7 @@ enum HTTPClient {
 
         // Merge enabled query params into the URL (skip empty keys, which
         // would otherwise produce junk like "?=value").
-        let enabledParams = request.params.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespaces).isEmpty }
+        let enabledParams = request.params.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         if !enabledParams.isEmpty {
             var queryItems = components.queryItems ?? []
             for param in enabledParams {
@@ -163,9 +163,17 @@ enum HTTPClient {
 
         guard let http = response as? HTTPURLResponse else { throw HTTPClientError.noResponse }
 
+        // `allHeaderFields` is a dictionary: iterate sorted so the stored
+        // header order is deterministic across runs instead of hash order.
         let headers = http.allHeaderFields.compactMap { (key, value) -> HTTPHeaderField? in
             guard let key = key as? String, let value = value as? String else { return nil }
             return HTTPHeaderField(key: key, value: value)
+        }
+        .sorted {
+            let order = $0.key.localizedCaseInsensitiveCompare($1.key)
+            return order == .orderedSame
+                ? $0.value.localizedStandardCompare($1.value) == .orderedAscending
+                : order == .orderedAscending
         }
 
         return ResponseModel(
@@ -216,7 +224,7 @@ enum HTTPClient {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             return BuiltBody(data: data, contentType: contentType.isEmpty ? nil : contentType)
         case .urlEncoded:
-            let pairs = request.urlEncodedFields.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespaces).isEmpty }
+            let pairs = request.urlEncodedFields.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             guard !pairs.isEmpty else { return nil }
             var encodedPairs: [String] = []
             for field in pairs {
@@ -230,7 +238,7 @@ enum HTTPClient {
             guard let data = encoded.data(using: .utf8) else { return nil }
             return BuiltBody(data: data, contentType: "application/x-www-form-urlencoded")
         case .formData:
-            let fields = request.formFields.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespaces).isEmpty }
+            let fields = request.formFields.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             guard !fields.isEmpty else { return nil }
             var parts: [MultipartForm.Part] = []
             for field in fields {

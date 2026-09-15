@@ -56,13 +56,13 @@ struct BodyEditor: View {
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()
-                .frame(width: 110)
+                .frame(width: AppSize.methodPickerWidth)
                 .help("Raw body format (sets the Content-Type)")
             }
         }
         // The Raw format picker is taller than the radio labels: without a
         // floor the whole row grows when switching to Raw.
-        .frame(minHeight: 28)
+        .frame(minHeight: AppSize.tabHeight)
         .padding(.horizontal, AppSpacing.medium)
         .padding(.vertical, AppSpacing.small)
     }
@@ -154,7 +154,7 @@ private struct FormDataEditor: View {
                         .labelsHidden()
                         .toggleStyle(.checkbox)
                         .controlSize(.small)
-                        .frame(width: 36)
+                        .frame(width: 32)
                     VariableHighlightEditor(
                         text: $field.key,
                         variables: variables,

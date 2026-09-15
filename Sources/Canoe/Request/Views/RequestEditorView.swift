@@ -27,12 +27,12 @@ struct RequestEditorView: View {
     /// Shown on the Params tab. Mirrors what HTTPClient actually sends:
     /// enabled rows with a non-empty key. Blank leftover rows don't count.
     private var enabledParamCount: Int {
-        draft.params.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespaces).isEmpty }.count
+        draft.params.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count
     }
 
     /// Shown on the Headers tab; same non-blank rule as Params.
     private var enabledHeaderCount: Int {
-        draft.headers.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespaces).isEmpty }.count
+        draft.headers.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count
     }
 
     /// Shown on the Authorization tab. Unlike `RequestItem.hasAuthConfigured`
@@ -50,9 +50,9 @@ struct RequestEditorView: View {
     private var bodyRowCount: Int? {
         switch draft.requestBodyType {
         case .formData:
-            draft.formFields.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespaces).isEmpty }.count
+            draft.formFields.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count
         case .urlEncoded:
-            draft.urlEncodedFields.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespaces).isEmpty }.count
+            draft.urlEncodedFields.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count
         case .none, .raw, .binary:
             nil
         }
@@ -125,7 +125,7 @@ struct RequestEditorView: View {
     private func composedURLText(base: String, params: [QueryParam]) -> String {
         let query =
             params
-            .filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespaces).isEmpty }
+            .filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             .map { "\($0.key)=\($0.value)" }
             .joined(separator: "&")
         guard !query.isEmpty else { return base }
@@ -195,7 +195,7 @@ struct RequestEditorView: View {
             }
         }
         // Rows the bar never shows survive bar edits untouched.
-        merged += remaining.filter { !$0.isEnabled || $0.key.trimmingCharacters(in: .whitespaces).isEmpty }
+        merged += remaining.filter { !$0.isEnabled || $0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         // Enabled non-blank rows absent from the bar text were deleted there.
         let changed =
             merged.count != draft.params.count
@@ -352,32 +352,12 @@ struct RequestEditorView: View {
         .frame(height: AppSize.toolbarHeight)
     }
 
-    /// Postman-style Save: a filled chip with icon + label, enabled while the
-    /// request has unsaved changes.
+    /// Postman-style Save: shared chip, enabled while the request has
+    /// unsaved changes.
     private var saveButton: some View {
-        Button {
+        SaveChipButton(isDirty: isDirty, help: "Save Request (⌘S)") {
             store.savePendingChanges()
-        } label: {
-            // Explicit Image + Text (not Label): plain-style buttons on macOS
-            // can collapse a Label to title-only, dropping the icon. The icon
-            // is macOS's standard Save symbol - "floppy.disk" does not exist
-            // in SF Symbols and renders silently as nothing.
-            HStack(spacing: AppSpacing.xSmall) {
-                Image(systemName: "square.and.arrow.down")
-                Text("Save")
-            }
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(isDirty ? AppColor.accent : .secondary)
-            .padding(.horizontal, AppSpacing.small + 2)
-            .padding(.vertical, 2)
-            .background(
-                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                    .fill(isDirty ? AppColor.subtleBackground : Color.clear)
-            )
         }
-        .buttonStyle(.plain)
-        .disabled(!isDirty)
-        .help("Save Request (⌘S)")
     }
 
     // MARK: - URL bar

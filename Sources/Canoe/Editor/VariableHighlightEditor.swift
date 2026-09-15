@@ -160,8 +160,8 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
                 Text(placeholder)
                     .font(font.swiftUIFont)
                     .foregroundStyle(.tertiary)
-                    .padding(.leading, 6)
-                    .padding(.top, 4)
+                    .padding(.leading, AppSpacing.compact)
+                    .padding(.top, AppSpacing.xSmall)
                     .allowsHitTesting(false)
             }
         }

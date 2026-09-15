@@ -45,9 +45,9 @@ struct ConsoleView: View {
                     .labelStyle(.titleAndIcon)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(AppColor.error)
-                    .padding(.horizontal, AppSpacing.xSmall + 2)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(AppColor.error.opacity(0.12)))
+                    .padding(.horizontal, AppSpacing.small - AppSpacing.xxSmall)
+                    .padding(.vertical, AppSpacing.xxSmall)
+                    .background(Capsule().fill(AppColor.badgeBackground(AppColor.error)))
             }
             Spacer(minLength: 0)
             Picker("Filter", selection: $errorsOnly) {
@@ -57,9 +57,14 @@ struct ConsoleView: View {
             .pickerStyle(.menu)
             .labelsHidden()
             .fixedSize()
-            Button("Clear", action: { store.clearConsole() })
-                .buttonStyle(.bordered)
-                .disabled(store.consoleEntries.isEmpty)
+            Button("Clear", systemImage: "trash") {
+                store.clearConsole()
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+            .disabled(store.consoleEntries.isEmpty)
+            .help("Clear console")
         }
         .padding(.horizontal, AppSpacing.medium)
         .padding(.vertical, AppSpacing.xSmall)
@@ -158,9 +163,13 @@ private struct ConsoleEntryRow: View {
             Image(systemName: entry.isError ? "exclamationmark.triangle.fill" : "arrow.down.circle")
                 .font(.caption)
                 .foregroundStyle(entry.isError ? AppColor.error : AppColor.success)
-            Text(entry.method)
-                .font(AppFont.cellText.weight(.semibold))
-                .foregroundStyle(HTTPMethod(rawValue: entry.method)?.color ?? .primary)
+            if let method = HTTPMethod(rawValue: entry.method) {
+                MethodTag(method: method)
+            } else {
+                Text(entry.method)
+                    .font(AppFont.cellText.weight(.semibold))
+                    .foregroundStyle(.primary)
+            }
             Text(entry.url)
                 .font(AppFont.monoSubheadline)
                 .lineLimit(1)
@@ -174,7 +183,7 @@ private struct ConsoleEntryRow: View {
                 Text("\(statusCode)")
                     .font(.caption.weight(.medium))
                     .monospacedDigit()
-                    .foregroundStyle((200..<300).contains(statusCode) ? AppColor.success : AppColor.warning)
+                    .foregroundStyle(AppColor.statusColor(statusCode))
             }
             if let duration = entry.formattedDuration {
                 Text(duration)
@@ -184,7 +193,7 @@ private struct ConsoleEntryRow: View {
             }
         }
         .padding(.horizontal, AppSpacing.medium)
-        .padding(.vertical, AppSpacing.xSmall + 2)
+        .padding(.vertical, AppSpacing.compact)
     }
 }
 
@@ -243,7 +252,7 @@ private struct ConsoleEntryDetail: View {
                     HStack(spacing: AppSpacing.small) {
                         Text(entry.statusText)
                             .font(.subheadline.weight(.medium))
-                            .foregroundStyle((200..<300).contains(statusCode) ? AppColor.success : AppColor.warning)
+                            .foregroundStyle(AppColor.statusColor(statusCode))
                         if let duration = entry.formattedDuration {
                             Text(duration)
                                 .font(.caption)
@@ -296,7 +305,7 @@ private struct ConsoleEntryDetail: View {
     }
 
     private func headerList(_ headers: [HTTPHeaderField]) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: AppSpacing.xxSmall) {
             ForEach(headers) { header in
                 HStack(alignment: .top, spacing: 0) {
                     Text("\(header.key): ")
