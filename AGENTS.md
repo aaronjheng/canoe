@@ -6,8 +6,8 @@ Canoe is a native macOS API client (a lightweight Postman alternative) written i
 
 ## Tech Stack
 
-- **Language**: Swift 6.3+
-- **Platform**: macOS 26+
+- **Language**: Swift 6.4+
+- **Platform**: macOS 27+
 - **UI Framework**: SwiftUI + AppKit (hybrid as needed)
 - **Storage**: File-based vault (one JSON file per workspace / collection / environment) under `~/Library/Application Support/Canoe/`
 - **Networking**: URLSession with async/await

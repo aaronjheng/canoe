@@ -55,30 +55,30 @@ struct RequestItem: Identifiable, Codable, Hashable, Sendable {
     /// Tolerates files written before newer fields (auth, body types, form
     /// fields) existed, so old vault files keep loading.
     init(from decoder: any Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
-        name = try c.decodeIfPresent(String.self, forKey: .name) ?? "New Request"
-        type = try c.decodeIfPresent(String.self, forKey: .type) ?? RequestType.http.rawValue
-        method = try c.decodeIfPresent(String.self, forKey: .method) ?? HTTPMethod.get.rawValue
-        urlString = try c.decodeIfPresent(String.self, forKey: .urlString) ?? ""
-        bodyText = try c.decodeIfPresent(String.self, forKey: .bodyText) ?? ""
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? "New Request"
+        type = try container.decodeIfPresent(String.self, forKey: .type) ?? RequestType.http.rawValue
+        method = try container.decodeIfPresent(String.self, forKey: .method) ?? HTTPMethod.get.rawValue
+        urlString = try container.decodeIfPresent(String.self, forKey: .urlString) ?? ""
+        bodyText = try container.decodeIfPresent(String.self, forKey: .bodyText) ?? ""
         bodyContentType =
-            try c.decodeIfPresent(String.self, forKey: .bodyContentType) ?? "application/json"
-        bodyType = try c.decodeIfPresent(String.self, forKey: .bodyType) ?? RequestBodyType.raw.rawValue
-        bodyRawKind = try c.decodeIfPresent(String.self, forKey: .bodyRawKind) ?? RawBodyKind.json.rawValue
-        formFields = try c.decodeIfPresent([FormField].self, forKey: .formFields) ?? []
-        urlEncodedFields = try c.decodeIfPresent([FormField].self, forKey: .urlEncodedFields) ?? []
-        binaryFilePath = try c.decodeIfPresent(String.self, forKey: .binaryFilePath) ?? ""
-        authType = try c.decodeIfPresent(String.self, forKey: .authType) ?? RequestAuthType.none.rawValue
-        authUsername = try c.decodeIfPresent(String.self, forKey: .authUsername) ?? ""
-        authPassword = try c.decodeIfPresent(String.self, forKey: .authPassword) ?? ""
-        authToken = try c.decodeIfPresent(String.self, forKey: .authToken) ?? ""
-        orderIndex = try c.decodeIfPresent(Int.self, forKey: .orderIndex) ?? 0
-        folderID = try c.decodeIfPresent(UUID.self, forKey: .folderID)
-        createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
-        updatedAt = try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
-        headers = try c.decodeIfPresent([HTTPHeader].self, forKey: .headers) ?? []
-        params = try c.decodeIfPresent([QueryParam].self, forKey: .params) ?? []
+            try container.decodeIfPresent(String.self, forKey: .bodyContentType) ?? "application/json"
+        bodyType = try container.decodeIfPresent(String.self, forKey: .bodyType) ?? RequestBodyType.raw.rawValue
+        bodyRawKind = try container.decodeIfPresent(String.self, forKey: .bodyRawKind) ?? RawBodyKind.json.rawValue
+        formFields = try container.decodeIfPresent([FormField].self, forKey: .formFields) ?? []
+        urlEncodedFields = try container.decodeIfPresent([FormField].self, forKey: .urlEncodedFields) ?? []
+        binaryFilePath = try container.decodeIfPresent(String.self, forKey: .binaryFilePath) ?? ""
+        authType = try container.decodeIfPresent(String.self, forKey: .authType) ?? RequestAuthType.none.rawValue
+        authUsername = try container.decodeIfPresent(String.self, forKey: .authUsername) ?? ""
+        authPassword = try container.decodeIfPresent(String.self, forKey: .authPassword) ?? ""
+        authToken = try container.decodeIfPresent(String.self, forKey: .authToken) ?? ""
+        orderIndex = try container.decodeIfPresent(Int.self, forKey: .orderIndex) ?? 0
+        folderID = try container.decodeIfPresent(UUID.self, forKey: .folderID)
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+        headers = try container.decodeIfPresent([HTTPHeader].self, forKey: .headers) ?? []
+        params = try container.decodeIfPresent([QueryParam].self, forKey: .params) ?? []
     }
 
     var httpMethod: HTTPMethod {

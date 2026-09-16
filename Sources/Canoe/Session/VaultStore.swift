@@ -480,7 +480,6 @@ final class VaultStore {
     /// difference (clock skew, same-second copies) takes the deterministic
     /// tiebreak - so the two roots can never diverge silently forever.
     private func mergeFile(_ first: URL, _ second: URL, preferFirstOnTie: Bool) throws {
-        let manager = FileManager.default
         let firstDate = modificationDate(of: first)
         let secondDate = modificationDate(of: second)
         switch (firstDate, secondDate) {

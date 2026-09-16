@@ -320,7 +320,7 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
         // not overwrite it.
         guard autoFocusOnUpdate, let focus, let focusValue else { return }
         guard focus.wrappedValue == focusValue, field.currentEditor() == nil else { return }
-        if let window = field.window {
+        if field.window != nil {
             Self.focusField(field)
         } else {
             // The first update runs before SwiftUI attaches the view to the
@@ -387,9 +387,7 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
         func controlTextDidBeginEditing(_ notification: Notification) {
             // Mirror the click caret: the field editor's selection change on
             // session start is not forwarded via textViewDidChangeSelection.
-            if let field = notification.object as? NSTextField,
-                let editor = field.currentEditor()
-            {
+            if let field = notification.object as? NSTextField, let editor = field.currentEditor() {
                 parent.onCaretChange?(editor.selectedRange.location)
             }
             guard let focus = parent.focus, let focusValue = parent.focusValue,

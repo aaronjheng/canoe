@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import Synchronization
 
 /// Central app state. Coordinates the vault (loading/saving) with UI
 /// selection, request execution, history, and open tabs.
@@ -1544,16 +1545,16 @@ final class AppStore {
             let authorization = authorizationForRequest(request)
             let sendStart = Date()
             // The HTTP client runs off the main actor; the callback hands the
-            // assembled request back through this box. It is written once
-            // before the network call and read after the await returns, so
-            // the unchecked Sendable is race-free in practice.
-            let sentRequest = SentRequestCapture()
+            // assembled request back through this mutex-guarded slot. It is
+            // written once before the network call and read after the await
+            // returns, so the two sides never race.
+            let sentRequest = Mutex<URLRequest?>(nil)
             do {
                 let response = try await HTTPClient.send(
                     request: request,
                     variables: variables,
                     authorization: authorization,
-                    onRequest: { sentRequest.urlRequest = $0 }
+                    onRequest: { urlRequest in sentRequest.withLock { $0 = urlRequest } }
                 )
                 guard sendTokens[tab] == token else { return }
                 guard !Task.isCancelled else { return }
@@ -1565,10 +1566,10 @@ final class AppStore {
                         date: response.timestamp,
                         requestName: request.name,
                         method: request.httpMethod.rawValue,
-                        url: sentRequest.urlRequest?.url?.absoluteString ?? request.urlString,
-                        requestHeaders: sentRequest.urlRequest.map(ConsoleEntry.maskedRequestHeaders(from:)) ?? [],
-                        requestBody: ConsoleEntry.capped(sentRequest.urlRequest?.httpBody).data,
-                        requestBodyTruncated: ConsoleEntry.capped(sentRequest.urlRequest?.httpBody).truncated,
+                        url: sentRequest.withLock { $0 }?.url?.absoluteString ?? request.urlString,
+                        requestHeaders: sentRequest.withLock { $0 }.map(ConsoleEntry.maskedRequestHeaders(from:)) ?? [],
+                        requestBody: ConsoleEntry.capped(sentRequest.withLock { $0 }?.httpBody).data,
+                        requestBodyTruncated: ConsoleEntry.capped(sentRequest.withLock { $0 }?.httpBody).truncated,
                         statusCode: response.statusCode,
                         responseHeaders: response.headers,
                         responseBody: ConsoleEntry.capped(response.body).data,
@@ -1596,10 +1597,10 @@ final class AppStore {
                         date: Date(),
                         requestName: request.name,
                         method: request.httpMethod.rawValue,
-                        url: sentRequest.urlRequest?.url?.absoluteString ?? request.urlString,
-                        requestHeaders: sentRequest.urlRequest.map(ConsoleEntry.maskedRequestHeaders(from:)) ?? [],
-                        requestBody: ConsoleEntry.capped(sentRequest.urlRequest?.httpBody).data,
-                        requestBodyTruncated: ConsoleEntry.capped(sentRequest.urlRequest?.httpBody).truncated,
+                        url: sentRequest.withLock { $0 }?.url?.absoluteString ?? request.urlString,
+                        requestHeaders: sentRequest.withLock { $0 }.map(ConsoleEntry.maskedRequestHeaders(from:)) ?? [],
+                        requestBody: ConsoleEntry.capped(sentRequest.withLock { $0 }?.httpBody).data,
+                        requestBodyTruncated: ConsoleEntry.capped(sentRequest.withLock { $0 }?.httpBody).truncated,
                         statusCode: nil,
                         responseHeaders: [],
                         responseBody: nil,
@@ -1759,11 +1760,4 @@ final class AppStore {
         let exists = vault.collections.contains { $0.requests.contains { $0.id == selected } }
         if !exists { selectedRequestID = nil }
     }
-}
-
-/// Single-slot holder for the exact URLRequest the HTTP client assembled.
-/// `@unchecked Sendable` is safe here: written once inside the network task
-/// before the await, read on the main actor after it returns.
-private final class SentRequestCapture: @unchecked Sendable {
-    var urlRequest: URLRequest?
 }

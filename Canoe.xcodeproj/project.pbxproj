@@ -1821,7 +1821,7 @@
 				<key>GCC_WARN_UNUSED_VARIABLE</key>
 				<string>YES</string>
 				<key>MACOSX_DEPLOYMENT_TARGET</key>
-				<string>26.0</string>
+				<string>27.0</string>
 				<key>MTL_ENABLE_DEBUG_INFO</key>
 				<string>INCLUDE_SOURCE</string>
 				<key>MTL_FAST_MATH</key>
@@ -1839,7 +1839,7 @@
 				<key>SWIFT_OPTIMIZATION_LEVEL</key>
 				<string>-Onone</string>
 				<key>SWIFT_VERSION</key>
-				<string>6.3</string>
+				<string>6.4</string>
 			</dict>
 		</dict>
 		<key>FD546C52CE35045F3D88E303</key>
@@ -1933,7 +1933,7 @@
 				<key>GCC_WARN_UNUSED_VARIABLE</key>
 				<string>YES</string>
 				<key>MACOSX_DEPLOYMENT_TARGET</key>
-				<string>26.0</string>
+				<string>27.0</string>
 				<key>MTL_FAST_MATH</key>
 				<string>YES</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
@@ -1943,7 +1943,7 @@
 				<key>SDKROOT</key>
 				<string>macosx</string>
 				<key>SWIFT_VERSION</key>
-				<string>6.3</string>
+				<string>6.4</string>
 				<key>DEBUG_INFORMATION_FORMAT</key>
 				<string>dwarf-with-dsym</string>
 				<key>ENABLE_TESTABILITY</key>
@@ -2084,7 +2084,7 @@
 				<key>BuildIndependentTargetsInParallel</key>
 				<string>YES</string>
 				<key>LastUpgradeCheck</key>
-				<string>1430</string>
+				<string>2700</string>
 			</dict>
 			<key>buildConfigurationList</key>
 			<string>9BBD7A742431E16B5A65D70D</string>

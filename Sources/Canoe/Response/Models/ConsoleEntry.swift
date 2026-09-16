@@ -43,18 +43,23 @@ struct ConsoleEntry: Identifiable, Sendable {
     private let httpVersion = "HTTP/1.1"
 
     var formattedTime: String {
-        Self.timeFormatter.string(from: date)
+        date.formatted(Self.timeFormat)
     }
 
-    /// Shared timestamp formatter: construction is expensive and the fixed
-    /// format must render identically regardless of the user's locale, so one
-    /// POSIX instance serves every row.
-    private static let timeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "HH:mm:ss.SSS"
-        return formatter
-    }()
+    /// Shared timestamp style: verbatim format styles are cheap Sendable value
+    /// types (unlike the shared mutable `DateFormatter` they replace), and the
+    /// fixed format must render identically regardless of the user's locale, so
+    /// the style pins `en_US_POSIX`. Renders a 24-hour two-digit hour, minutes,
+    /// seconds, and a three-digit fractional second, in the local time zone.
+    private static let timeFormat = Date.VerbatimFormatStyle(
+        format: """
+            \(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)):\(minute: .twoDigits)\
+            :\(second: .twoDigits).\(secondFraction: .fractional(3))
+            """,
+        locale: Locale(identifier: "en_US_POSIX"),
+        timeZone: .current,
+        calendar: .current
+    )
 
     var formattedDuration: String? {
         guard let duration else { return nil }
@@ -78,7 +83,7 @@ struct ConsoleEntry: Identifiable, Sendable {
             lines.append("")
             lines.append(text)
         }
-        if let statusCode {
+        if statusCode != nil {
             lines.append("")
             lines.append("\(httpVersion) \(statusText)")
             for header in responseHeaders {
