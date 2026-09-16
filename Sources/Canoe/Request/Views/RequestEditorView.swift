@@ -112,8 +112,10 @@ struct RequestEditorView: View {
         keyboardMethod = filteredMethods[min(max(idx + delta, 0), filteredMethods.count - 1)]
         hoveredMethod = nil
     }
-    /// Measured height of the URL bar row - anchors the popup right below it.
-    @State private var urlBarHeight: CGFloat = 0
+    /// Anchor of the URL bar row's bounds in the editor - resolved against
+    /// the overlay's own geometry when placing the floating panels, so the
+    /// panels clear the row's bottom edge by a fixed gap in every layout.
+    @State private var barRowAnchor: Anchor<CGRect>?
     /// The raw text currently shown in the URL bar.
     @State private var urlText = ""
     /// Live caret location of the bar's field editor, mirrored out so the
@@ -233,6 +235,7 @@ struct RequestEditorView: View {
         }
         .background(.background)
         .overlay { urlPopupOverlay }
+        .onPreferenceChange(BarRowAnchorKey.self) { barRowAnchor = $0 }
         .onChange(of: draft) { _, newDraft in
             store.updateRequest(newDraft)
             // Params-table edits (and request switches) re-compose the URL
@@ -364,17 +367,15 @@ struct RequestEditorView: View {
     private var urlBar: some View {
         VStack(spacing: AppSpacing.xSmall) {
             HStack(spacing: AppSpacing.small) {
-                // Postman-style unified bar: one bordered container holding
-                // the method picker and the URL field, separated by a
-                // hairline. Focusing the field highlights the whole bar.
+                // Postman-style pair of fields: the method picker and the URL
+                // field are separate bordered fields with a small gap; each
+                // carries its own focus highlight - the picker's while its
+                // dropdown is open, the URL field's while it is being edited.
+                MethodPicker(
+                    selection: $draft.httpMethod,
+                    isExpanded: $isMethodMenuVisible
+                )
                 HStack(spacing: 0) {
-                    MethodPicker(
-                        selection: $draft.httpMethod,
-                        isExpanded: $isMethodMenuVisible
-                    )
-                    Rectangle()
-                        .fill(AppColor.border)
-                        .frame(width: 1, height: 20)
                     VariableHighlightEditor(
                         text: urlBinding,
                         variables: resolvedVariables,
@@ -391,9 +392,11 @@ struct RequestEditorView: View {
                         autoFocusOnUpdate: false,
                         onCaretChange: { urlBarCaret = $0 }
                     )
-                    .padding(.leading, AppSpacing.small + 2)
                     expandURLButton
                 }
+                // Same 24pt content height as the method field, so the two
+                // fields read as one row.
+                .frame(height: 24)
                 .variableFieldBordered(isFocused: urlFieldFocused == .url, verticalPadding: 3)
 
                 // One morphing slot: Send becomes Cancel while a response is
@@ -426,14 +429,13 @@ struct RequestEditorView: View {
                     .help("Send Request (⌘↩)")
                 }
             }
+            // The floating panels anchor to this row's bounds (resolved in
+            // the overlay's own geometry), so they always land just below
+            // the fields regardless of the layout above them.
+            .anchorPreference(key: BarRowAnchorKey.self, value: .bounds) { $0 }
         }
         .padding(.horizontal, AppSpacing.medium)
         .padding(.vertical, AppSpacing.small)
-        .onGeometryChange(for: CGFloat.self) {
-            $0.size.height
-        } action: {
-            urlBarHeight = $0
-        }
     }
 
     // MARK: - URL popup
@@ -485,48 +487,52 @@ struct RequestEditorView: View {
     /// change - and a click-outside catcher gives it popover dismissal
     /// semantics (the first click outside closes it without activating what
     /// is underneath).
+    /// is underneath). The GeometryReader resolves the bar row's anchor in
+    /// its own space - the same space the panels are positioned in - so the
+    /// panels' top edges land exactly one gap below the row's bottom edge.
     private var urlPopupOverlay: some View {
-        ZStack(alignment: .topLeading) {
-            if isURLPopupVisible {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture { closeURLPopup() }
-                // Escape also dismisses (cancelAction); the zero-size hidden
-                // button keeps the shortcut registered.
-                Button("Cancel Editing") { closeURLPopup() }
-                    .keyboardShortcut(.cancelAction)
-                    .frame(width: 0, height: 0)
-                    .opacity(0)
-                    .accessibilityHidden(true)
-                urlPopup
-                    .padding(
-                        .top,
-                        AppSize.toolbarHeight + urlBarHeight + AppSpacing.xxSmall
-                    )
-                    // Left edge tracks the URL field: bar padding + method
-                    // picker + the spacing between them.
-                    .padding(.leading, AppSpacing.medium + AppSize.methodPickerWidth + AppSpacing.small)
-                    .padding(.trailing, AppSpacing.medium)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            }
-            if isMethodMenuVisible {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture { isMethodMenuVisible = false }
-                Button("Close Method Menu") { isMethodMenuVisible = false }
-                    .keyboardShortcut(.cancelAction)
-                    .frame(width: 0, height: 0)
-                    .opacity(0)
-                    .accessibilityHidden(true)
-                methodMenuPanel
-                    // Anchors below the URL bar, left-aligned with the method
-                    // segment (the bar's leading padding).
-                    .padding(
-                        .top,
-                        AppSize.toolbarHeight + urlBarHeight + AppSpacing.xxSmall
-                    )
-                    .padding(.leading, AppSpacing.medium)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        GeometryReader { proxy in
+            let rowBottom = barRowAnchor.map { proxy[$0].maxY } ?? 0
+            ZStack(alignment: .topLeading) {
+                if isURLPopupVisible {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { closeURLPopup() }
+                    // Escape also dismisses (cancelAction); the zero-size hidden
+                    // button keeps the shortcut registered.
+                    Button("Cancel Editing") { closeURLPopup() }
+                        .keyboardShortcut(.cancelAction)
+                        .frame(width: 0, height: 0)
+                        .opacity(0)
+                        .accessibilityHidden(true)
+                    urlPopup
+                        // Top edge tracks the bar row's resolved bottom, so
+                        // the card clears the fields by a small fixed gap no
+                        // matter what the layout above them looks like.
+                        .offset(y: rowBottom + AppSpacing.xSmall)
+                        // Left edge tracks the URL field: section padding + the
+                        // method field + the gap between the two fields.
+                        .padding(.leading, AppSpacing.medium + AppSize.methodPickerWidth + AppSpacing.xSmall)
+                        .padding(.trailing, AppSpacing.medium)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+                if isMethodMenuVisible {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { isMethodMenuVisible = false }
+                    Button("Close Method Menu") { isMethodMenuVisible = false }
+                        .keyboardShortcut(.cancelAction)
+                        .frame(width: 0, height: 0)
+                        .opacity(0)
+                        .accessibilityHidden(true)
+                    methodMenuPanel
+                        // Anchors below the URL bar row (its resolved bottom),
+                        // left-aligned with the method field (the section's
+                        // leading padding).
+                        .offset(y: rowBottom + AppSpacing.xSmall)
+                        .padding(.leading, AppSpacing.medium)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
             }
         }
     }
@@ -725,10 +731,20 @@ struct RequestEditorView: View {
 
 // MARK: - Method picker
 
-/// Postman-style method segment inside the unified URL bar: method name in
-/// its signature color plus a dropdown chevron, separated from the URL field
-/// by the container's hairline. Clicking toggles the dropdown panel hosted
-/// in the window-level overlay; while open the segment wears a focus ring.
+/// Preference carrying the URL bar row's bounds anchor. The floating method
+/// menu and URL popup resolve it against the overlay's own geometry, so they
+/// land just below the row without stacked-offset arithmetic.
+private struct BarRowAnchorKey: PreferenceKey {
+    static let defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+        value = value ?? nextValue()
+    }
+}
+
+/// Postman-style method field: a standalone bordered field left of the URL
+/// field - method name in its signature color plus a dropdown chevron.
+/// Clicking toggles the dropdown panel hosted in the window-level overlay;
+/// while open the field's own border wears the focus highlight.
 private struct MethodPicker: View {
     @Binding var selection: HTTPMethod
     @Binding var isExpanded: Bool
@@ -746,19 +762,14 @@ private struct MethodPicker: View {
                     .font(.caption2.weight(.medium))
                     .foregroundStyle(.secondary)
             }
-            .padding(.leading, AppSpacing.small + 2)
-            .padding(.trailing, AppSpacing.small)
-            .frame(width: AppSize.methodPickerWidth, height: 24)
+            .padding(.leading, AppSpacing.xSmall)
+            .padding(.trailing, AppSpacing.xSmall)
+            .frame(height: 24)
             .contentShape(Rectangle())
-            .background(
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .strokeBorder(
-                        isExpanded ? AppColor.accent : .clear,
-                        lineWidth: isExpanded ? 2 : 1
-                    )
-            )
         }
         .buttonStyle(.plain)
         .help("HTTP method")
+        .variableFieldBordered(isFocused: isExpanded, verticalPadding: 3)
+        .frame(width: AppSize.methodPickerWidth)
     }
 }
