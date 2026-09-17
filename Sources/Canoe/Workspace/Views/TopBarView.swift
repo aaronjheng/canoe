@@ -60,12 +60,12 @@ struct TopBarView: View {
 }
 
 /// Compact workspace menu: icon + name + chevron, mirroring Postman's
-/// workspace pill in the top bar. Owns the same actions the old sidebar
-/// selector had: switch, create, variables, delete.
+/// workspace pill in the top bar. Switch, create, and variables live here;
+/// deletion stays in the workspaces manager so a slip in this always-visible
+/// menu can't wipe a whole workspace.
 private struct WorkspaceSwitcher: View {
     @Environment(AppStore.self) private var store
     @State private var isHovering = false
-    @State private var showDeleteConfirm = false
 
     /// Finder-style name order, matching the workspaces manager's default
     /// sort - the menu otherwise follows vault insertion order, which drifts
@@ -90,12 +90,6 @@ private struct WorkspaceSwitcher: View {
             }
             .disabled(store.activeWorkspace == nil)
             .help("Edit the active workspace's variables")
-            if store.activeWorkspace != nil {
-                Divider()
-                Button("Delete Workspace", role: .destructive) {
-                    showDeleteConfirm = true
-                }
-            }
             // Postman-style footer: the full management screen lives here,
             // below the per-workspace actions.
             Divider()
@@ -125,20 +119,6 @@ private struct WorkspaceSwitcher: View {
         )
         .onHover { isHovering = $0 }
         .help("Switch workspace")
-        .confirmationDialog(
-            "Delete this workspace and everything in it",
-            isPresented: $showDeleteConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("Delete Workspace", role: .destructive) {
-                if let active = store.activeWorkspace {
-                    store.deleteWorkspace(active.id)
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Collections, requests, folders, environments, and variables in this workspace will be permanently deleted.")
-        }
     }
 }
 

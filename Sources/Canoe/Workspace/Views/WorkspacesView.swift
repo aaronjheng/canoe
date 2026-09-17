@@ -297,6 +297,12 @@ struct WorkspacesView: View {
         // buttons above never reach here - controls consume their own taps.
         .contentShape(Rectangle())
         .onHover { hovering in hoveredID = hovering ? workspace.id : nil }
+        // Double-click opens the workspace; it takes priority over the
+        // single-click checkbox toggle below. Taps on the row buttons never
+        // reach here - controls consume their own taps.
+        .onTapGesture(count: 2) {
+            store.openWorkspace(workspace.id)
+        }
         .onTapGesture {
             if checked.contains(workspace.id) {
                 checked.remove(workspace.id)
