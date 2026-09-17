@@ -58,6 +58,11 @@ enum AppColor {
 
     static let codeBackground: Color = Color(nsColor: .textBackgroundColor)
     static let controlBackground: Color = Color(nsColor: .controlBackgroundColor)
+    /// Raised neutral surface for the URL field, distinct from the dark editor canvas.
+    static let urlFieldBackground: Color = dynamic(
+        light: RGB(red: 255, green: 255, blue: 255),
+        dark: RGB(red: 44, green: 44, blue: 46)
+    )
     /// Barely-there wash for borderless input fields (the variable editors).
     static let fieldBackground: Color = Color.primary.opacity(0.03)
     /// Postman-style sidebar fill: light gray in light mode, charcoal in

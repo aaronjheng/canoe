@@ -258,7 +258,12 @@ private enum VariablePlaceholderStyling {
         // consults it first and ignores the text container's own
         // `lineBreakMode` (verified: container-only char wrapping never took
         // effect). Nil keeps every other editor byte-identical.
-        var base: [NSAttributedString.Key: Any] = [.font: font.nsFont]
+        // Replacing text storage also replaces NSTextView's textColor:
+        // keep a dynamic foreground on every run instead of defaulting to black.
+        var base: [NSAttributedString.Key: Any] = [
+            .font: font.nsFont,
+            .foregroundColor: NSColor.labelColor,
+        ]
         if let lineBreakMode {
             base[.paragraphStyle] = paragraphStyle(lineBreakMode: lineBreakMode)
         }

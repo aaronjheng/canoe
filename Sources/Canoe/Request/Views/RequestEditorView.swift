@@ -411,7 +411,7 @@ struct RequestEditorView: View {
         )
         .padding(.horizontal, AppSpacing.compact)
         .padding(.vertical, 3)
-        .background(AppColor.codeBackground, in: shape)
+        .background(AppColor.urlFieldBackground, in: shape)
         .overlay {
             if urlFieldFocused == .url {
                 shape.inset(by: -1.5)
