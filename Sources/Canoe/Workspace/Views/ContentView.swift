@@ -22,7 +22,7 @@ struct ContentView: View {
                     mainLayout
                 }
             }
-            if store.vault.isReady {
+            if store.vault.isReady && store.activeWorkspace != nil {
                 Divider()
                 StatusBarView()
             }

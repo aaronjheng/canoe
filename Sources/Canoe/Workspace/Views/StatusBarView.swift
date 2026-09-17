@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// Global status bar pinned to the bottom edge of the window, spanning the
+/// Workspace status bar pinned to the bottom edge of the window, spanning the
 /// full width across the sidebar and detail area.
 ///
-/// The leading edge toggles the left sidebar. (The right-edge inspector
-/// toggles live in the tab row now, next to the environment picker.)
+/// Workspace-only controls toggle the left sidebar and console at the
+/// leading edge, and the right inspector at the trailing edge.
 struct StatusBarView: View {
     @Environment(AppStore.self) private var store
 
