@@ -205,6 +205,7 @@ struct KeyValueEditor<T: KVItem>: View {
             headerLabel(keyHeader)
             verticalRule
             headerLabel(valueHeader)
+            Color.clear.frame(width: trailingIconWidth)
         }
         .frame(height: AppSize.tabHeight)
     }
@@ -213,6 +214,12 @@ struct KeyValueEditor<T: KVItem>: View {
     /// 1pt hairlines) so the text labels land exactly over the cells.
     private var leadingIconWidth: CGFloat {
         (allowsReorder ? gripColumnWidth + 1 : 0) + toggleColumnWidth + 1
+    }
+
+    /// Reserve the same trailing columns and hairlines as the body so Key
+    /// and Value divide the same remaining width in both header and rows.
+    private var trailingIconWidth: CGFloat {
+        1 + (secretColumnWidth > 0 ? secretColumnWidth + 1 : 0) + deleteColumnWidth
     }
 
     private func headerLabel(_ text: String) -> some View {
@@ -462,6 +469,7 @@ private struct KVRow: View {
             verticalRule
             if secretColumnWidth > 0 {
                 secretColumn
+                    .frame(width: secretColumnWidth)
                 verticalRule
             }
             deleteColumn
