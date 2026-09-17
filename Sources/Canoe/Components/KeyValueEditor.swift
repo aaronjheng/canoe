@@ -51,8 +51,9 @@ struct KeyValueEditor<T: KVItem>: View {
     /// Optional per-row secret column: when set to the item's flag, each row
     /// shows an eye button toggling it (environment variables' `isSecret`).
     var secretKeyPath: WritableKeyPath<T, Bool>?
-    /// Drag-to-reorder rows via a grip handle (query params and environment
-    /// variables). Off by default; each table opts in when order is editable.
+    /// Drag-to-reorder rows via a grip handle (query params, headers, and
+    /// environment variables). Off by default; each table opts in when order
+    /// is editable.
     var allowsReorder: Bool = false
 
     /// The in-progress trailing row. Display-only until the user types into

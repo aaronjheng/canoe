@@ -600,7 +600,8 @@ struct RequestEditorView: View {
                 variables: resolvedVariables,
                 suggestions: requestSuggestions,
                 keyPlaceholder: "Header-Name",
-                valuePlaceholder: "value"
+                valuePlaceholder: "value",
+                allowsReorder: true
             )
         case .auth:
             AuthEditor(request: $draft)
