@@ -51,9 +51,8 @@ struct KeyValueEditor<T: KVItem>: View {
     /// Optional per-row secret column: when set to the item's flag, each row
     /// shows an eye button toggling it (environment variables' `isSecret`).
     var secretKeyPath: WritableKeyPath<T, Bool>?
-    /// Drag-to-reorder rows via a grip handle (environment variables).
-    /// Off by default: params/headers send in row order and the other
-    /// variables tables keep alphabetical order, so their rows stay fixed.
+    /// Drag-to-reorder rows via a grip handle (query params and environment
+    /// variables). Off by default; each table opts in when order is editable.
     var allowsReorder: Bool = false
 
     /// The in-progress trailing row. Display-only until the user types into
@@ -420,18 +419,24 @@ private struct KVRow: View {
         HStack(spacing: 0) {
             if allowsReorder {
                 // Grip-only dragging: dragging the whole row would fight
-                // text selection inside the cells.
-                Image(systemName: "line.3.horizontal")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(width: gripColumnWidth, alignment: .center)
-                    .frame(maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .opacity(isHovering || isDragging ? 1 : 0)
-                    .onDrag {
-                        guard let onGripDrag else { return NSItemProvider() }
-                        return onGripDrag()
-                    }
+                // text selection inside the cells. The trailing ghost row
+                // keeps just the empty slot - nothing to drag yet.
+                if isGhostRow {
+                    Color.clear
+                        .frame(width: gripColumnWidth)
+                } else {
+                    Image(systemName: "line.3.horizontal")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(width: gripColumnWidth, alignment: .center)
+                        .frame(maxHeight: .infinity)
+                        .contentShape(Rectangle())
+                        .opacity(isHovering || isDragging ? 1 : 0)
+                        .onDrag {
+                            guard let onGripDrag else { return NSItemProvider() }
+                            return onGripDrag()
+                        }
+                }
                 verticalRule
             }
             // The trailing ghost row shows an unchecked, inert checkbox: it

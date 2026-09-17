@@ -589,7 +589,8 @@ struct RequestEditorView: View {
                 variables: resolvedVariables,
                 suggestions: requestSuggestions,
                 keyPlaceholder: "parameter",
-                valuePlaceholder: "value"
+                valuePlaceholder: "value",
+                allowsReorder: true
             )
         case .headers:
             KeyValueEditor(
