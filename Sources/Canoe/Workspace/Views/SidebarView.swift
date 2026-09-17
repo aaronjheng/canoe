@@ -226,7 +226,7 @@ private struct EnvironmentRow: View {
         }
         .help(isActive ? "\(env.name) (active environment)" : "Edit \(env.name)")
         .confirmationDialog(
-            "Delete environment \"\(env.name)\"?",
+            "Delete environment \"\(env.name)\"",
             isPresented: $showDeleteConfirm,
             titleVisibility: .visible
         ) {
@@ -260,7 +260,7 @@ private struct HistoryView: View {
                     .foregroundStyle(.secondary)
                     .help("Clear history")
                     .confirmationDialog(
-                        "Clear all history?",
+                        "Clear all history",
                         isPresented: $showClearConfirm,
                         titleVisibility: .visible
                     ) {
@@ -444,7 +444,7 @@ private struct CollectionTree: View {
             Button("Cancel", role: .cancel) {}
         }
         .confirmationDialog(
-            "Delete collection \"\(collection.name)\"?",
+            "Delete collection \"\(collection.name)\"",
             isPresented: $showDeleteConfirm,
             titleVisibility: .visible
         ) {
@@ -567,7 +567,7 @@ private struct FolderTree: View {
             Button("Cancel", role: .cancel) {}
         }
         .confirmationDialog(
-            "Delete folder \"\(folder.name)\"?",
+            "Delete folder \"\(folder.name)\"",
             isPresented: $showDeleteConfirm,
             titleVisibility: .visible
         ) {
@@ -639,7 +639,7 @@ private struct RequestRow: View {
         }
         .help(request.name)
         .confirmationDialog(
-            "Delete request \"\(request.name)\"?",
+            "Delete request \"\(request.name)\"",
             isPresented: $showDeleteConfirm,
             titleVisibility: .visible
         ) {

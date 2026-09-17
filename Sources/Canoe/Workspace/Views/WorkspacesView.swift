@@ -313,9 +313,9 @@ struct WorkspacesView: View {
     private var deleteTitle: String {
         let targets = visibleWorkspaces.filter { deleteTargets.contains($0.id) }
         if targets.count == 1, let workspace = targets.first {
-            return "Delete workspace \"\(workspace.name)\"?"
+            return "Delete workspace \"\(workspace.name)\""
         }
-        return "Delete \(deleteTargets.count) workspaces?"
+        return "Delete \(deleteTargets.count) workspaces"
     }
 
     private var header: some View {

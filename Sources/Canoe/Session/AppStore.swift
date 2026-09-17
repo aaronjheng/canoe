@@ -501,9 +501,10 @@ final class AppStore {
     }
 
     /// Closes a tab, cancelling its in-flight send and dropping its cached
-    /// response. Activates the left neighbor (or the new first tab). Edits
-    /// are untouched: they live in memory and the drafts mirror, so closing
-    /// and reopening a tab brings the edited state right back.
+    /// response. Activates the left neighbor (or the new first tab).
+    /// Unsaved edits are discarded: their pending snapshots are dropped and
+    /// the in-memory vault is restored to the last saved content, so
+    /// reopening shows no modifications (and the drafts mirror is pruned).
     func closeTab(_ tab: OpenTab) {
         sendTasks[tab]?.cancel()
         sendTasks[tab] = nil
@@ -514,6 +515,7 @@ final class AppStore {
         errorsByTab[tab] = nil
         responseHistoryByTab[tab] = nil
         viewingHistoryIndexByTab[tab] = nil
+        discardPendingEdits(for: tab)
         guard let idx = openTabs.firstIndex(of: tab) else { return }
         openTabs.remove(at: idx)
         if selectedTab == tab {
@@ -528,7 +530,169 @@ final class AppStore {
     }
 
     func closeSelectedTab() {
-        if let tab = selectedTab { closeTab(tab) }
+        if let tab = selectedTab { requestCloseTab(tab) }
+    }
+
+    /// A tab close awaiting confirmation because the tab is dirty. Rendered
+    /// by the tab strip's confirmation dialog; clean tabs close immediately
+    /// and never stage here.
+    enum PendingClose: Hashable {
+        case tab(OpenTab)
+        case others(except: OpenTab)
+    }
+
+    var pendingClose: PendingClose?
+
+    /// Whether the tab has unsaved modifications of any kind it edits.
+    func hasPendingEdits(for tab: OpenTab) -> Bool {
+        switch tab {
+        case .request(let id):
+            return hasPendingChanges(for: id)
+        case .environment(let id):
+            return hasPendingEnvironmentChanges(for: id)
+        case .collection(let id):
+            return hasPendingCollectionChanges(for: id)
+        case .workspaceVariables(let id):
+            return hasPendingWorkspaceVariables(for: id)
+        case .workspace:
+            return false
+        }
+    }
+
+    /// Short display name for close-confirmation titles.
+    func tabDisplayName(_ tab: OpenTab) -> String {
+        switch tab {
+        case .request(let id):
+            vault.collections.flatMap(\.requests).first { $0.id == id }?.name ?? "Request"
+        case .environment(let id):
+            vault.environments.first { $0.id == id }?.name ?? "Environment"
+        case .collection(let id):
+            vault.collections.first { $0.id == id }?.name ?? "Collection"
+        case .workspace(let id):
+            vault.workspaces.first { $0.id == id }?.name ?? "Workspace"
+        case .workspaceVariables(let id):
+            vault.workspaces.first { $0.id == id }?.name ?? "Workspace Variables"
+        }
+    }
+
+    /// User-initiated tab close (× button, context menu, ⌘W): dirty tabs
+    /// stage a confirmation instead of closing, clean tabs close at once.
+    /// Delete flows call closeTab directly and never confirm.
+    func requestCloseTab(_ tab: OpenTab) {
+        guard hasPendingEdits(for: tab) else {
+            closeTab(tab)
+            return
+        }
+        pendingClose = .tab(tab)
+    }
+
+    /// User-initiated close-others: confirms once when any other tab is
+    /// dirty, otherwise closes at once.
+    func requestCloseOtherTabs(except tab: OpenTab) {
+        guard openTabs.contains(where: { $0 != tab && hasPendingEdits(for: $0) }) else {
+            closeOtherTabs(except: tab)
+            return
+        }
+        pendingClose = .others(except: tab)
+    }
+
+    /// How many of the other tabs (besides `tab`) are dirty. Drives the
+    /// close-others confirmation copy.
+    func dirtyOtherTabCount(except tab: OpenTab) -> Int {
+        openTabs.filter { $0 != tab && hasPendingEdits(for: $0) }.count
+    }
+
+    /// Resolves the staged close confirmation. Saving persists everything
+    /// first (the app saves all pending edits as one unit); the pending
+    /// snapshots clear up front, so the close that follows never discards.
+    func resolvePendingClose(saving: Bool) {
+        guard let pending = pendingClose else { return }
+        pendingClose = nil
+        if saving {
+            savePendingChanges()
+        }
+        switch pending {
+        case .tab(let tab):
+            closeTab(tab)
+        case .others(let except):
+            closeOtherTabs(except: except)
+        }
+    }
+
+    /// Drops a closing tab's unsaved edits and restores the in-memory vault
+    /// to the last saved content, so reopening shows no modifications. Only
+    /// the pending snapshots are cleared - the saved files are untouched -
+    /// and the drafts mirror is rewritten without them. Workspace switches
+    /// (closeAllTabs) deliberately preserve edits: only explicit closes
+    /// discard.
+    private func discardPendingEdits(for tab: OpenTab) {
+        var dropped = false
+        switch tab {
+        case .request(let id):
+            if pendingRequestSnapshots[id] != nil {
+                if let baseline = persistedRequestBaselines[id] {
+                    for ci in vault.collections.indices {
+                        if let ri = vault.collections[ci].requests.firstIndex(where: { $0.id == id }) {
+                            vault.collections[ci].requests[ri] = baseline
+                            break
+                        }
+                    }
+                }
+                pendingRequestSnapshots[id] = nil
+                persistedRequestBaselines[id] = nil
+                dropped = true
+            }
+        case .environment(let id):
+            if pendingEnvironmentSnapshots[id] != nil {
+                if let baseline = persistedEnvironmentBaselines[id] {
+                    if let idx = vault.environments.firstIndex(where: { $0.id == id }) {
+                        vault.environments[idx] = baseline
+                    }
+                }
+                pendingEnvironmentSnapshots[id] = nil
+                persistedEnvironmentBaselines[id] = nil
+                dropped = true
+            }
+        case .collection(let id):
+            if pendingCollectionVariables[id] != nil {
+                if let baseline = persistedCollectionVariableBaselines[id] {
+                    if let idx = vault.collections.firstIndex(where: { $0.id == id }) {
+                        vault.collections[idx].variables = baseline
+                    }
+                }
+                pendingCollectionVariables[id] = nil
+                persistedCollectionVariableBaselines[id] = nil
+                dropped = true
+            }
+            if pendingCollectionAuthorizations[id] != nil {
+                if let baseline = persistedCollectionAuthorizationBaselines[id] {
+                    if let idx = vault.collections.firstIndex(where: { $0.id == id }) {
+                        vault.collections[idx].authorization = baseline
+                    }
+                }
+                pendingCollectionAuthorizations[id] = nil
+                persistedCollectionAuthorizationBaselines[id] = nil
+                dropped = true
+            }
+        case .workspaceVariables(let id):
+            if pendingWorkspaceVariables[id] != nil {
+                if let baseline = persistedWorkspaceVariableBaselines[id] {
+                    if let idx = vault.workspaces.firstIndex(where: { $0.id == id }) {
+                        vault.workspaces[idx].variables = baseline
+                    }
+                }
+                pendingWorkspaceVariables[id] = nil
+                persistedWorkspaceVariableBaselines[id] = nil
+                dropped = true
+            }
+        case .workspace:
+            // The Overview tab is read-only (renames save immediately), so
+            // there is never anything pending to drop.
+            break
+        }
+        if dropped {
+            scheduleDraftPersistence()
+        }
     }
 
     func closeOtherTabs(except tab: OpenTab) {

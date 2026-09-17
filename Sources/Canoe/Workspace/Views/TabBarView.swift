@@ -61,6 +61,46 @@ struct TabBarView: View {
         .onAppear { store.pruneDanglingTabs() }
         .onChange(of: store.vault.collections) { _, _ in store.pruneDanglingTabs() }
         .onChange(of: store.vault.environments) { _, _ in store.pruneDanglingTabs() }
+        .confirmationDialog(
+            closeConfirmationTitle,
+            isPresented: Binding(
+                get: { store.pendingClose != nil },
+                set: { if !$0 { store.pendingClose = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(closeConfirmationSaveLabel) { store.resolvePendingClose(saving: true) }
+            Button(closeConfirmationDiscardLabel, role: .destructive) {
+                store.resolvePendingClose(saving: false)
+            }
+            Button("Cancel", role: .cancel) { store.pendingClose = nil }
+        } message: {
+            Text("Unsaved changes will be permanently discarded.")
+        }
+    }
+
+    private var closeConfirmationTitle: String {
+        switch store.pendingClose {
+        case .tab(let tab):
+            return "Close \"\(store.tabDisplayName(tab))\" without saving"
+        case .others(let except):
+            let count = store.dirtyOtherTabCount(except: except)
+            if count == 1 {
+                return "Close 1 tab without saving"
+            } else {
+                return "Close \(count) tabs without saving"
+            }
+        case nil:
+            return "Close tab without saving"
+        }
+    }
+
+    private var closeConfirmationSaveLabel: String {
+        if case .others = store.pendingClose { "Save All & Close" } else { "Save" }
+    }
+
+    private var closeConfirmationDiscardLabel: String {
+        if case .others = store.pendingClose { "Discard All" } else { "Close Without Saving" }
     }
 
     /// Postman-style tab sizing: tabs share the strip width equally. They cap
@@ -156,8 +196,8 @@ private struct TabPill: View {
         }
         .onHover { isHovering = $0 }
         .contextMenu {
-            Button("Close Tab") { store.closeTab(tab) }
-            Button("Close Other Tabs") { store.closeOtherTabs(except: tab) }
+            Button("Close Tab") { store.requestCloseTab(tab) }
+            Button("Close Other Tabs") { store.requestCloseOtherTabs(except: tab) }
         }
     }
 
@@ -205,7 +245,7 @@ private struct TabPill: View {
                 .padding(.trailing, AppSpacing.compact)
         } else if isHovering || (isSelected && !isDirty) {
             Button {
-                store.closeTab(tab)
+                store.requestCloseTab(tab)
             } label: {
                 Image(systemName: "xmark")
                     .font(.caption2.weight(.semibold))

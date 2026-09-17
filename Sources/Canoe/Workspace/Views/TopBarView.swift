@@ -126,7 +126,7 @@ private struct WorkspaceSwitcher: View {
         .onHover { isHovering = $0 }
         .help("Switch workspace")
         .confirmationDialog(
-            "Delete this workspace and everything in it?",
+            "Delete this workspace and everything in it",
             isPresented: $showDeleteConfirm,
             titleVisibility: .visible
         ) {
