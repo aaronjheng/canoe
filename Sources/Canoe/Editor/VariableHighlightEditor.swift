@@ -53,11 +53,17 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
     /// Single-line editors run on a no-wrap, horizontally-scrolling AppKit
     /// text field (URL-bar behavior).
     var isSingleLine: Bool = true
+    var wrapsWhenFocused: Bool = false
     /// Fill-container editors (the raw body) stretch to the available height
     /// instead of growing with their content.
     var fillsContainer: Bool = false
     var font: VariableEditorFont = .monoSubheadline
     var placeholder: String?
+    /// Leading inset of the empty-state placeholder overlay. Matches the
+    /// AppKit text origin: the wrapping URL bar runs zero fragment padding
+    /// (text starts at the view edge), every other editor keeps the standard
+    /// padding, so only the URL bar overrides this to zero.
+    var placeholderLeadingPadding: CGFloat = AppSpacing.compact
     /// Optional programmatic focus wiring, for containers that move keyboard
     /// focus between cells (e.g. the key/value table's ghost row). A plain
     /// binding, deliberately NOT a `@FocusState`: the single-line editors are
@@ -106,15 +112,18 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
     private var multiLineMaxHeight: CGFloat { 96 }
 
     @State private var contentHeight: CGFloat = 40
+    @State private var urlContentHeight: CGFloat = 24
 
     init(
         text: Binding<String>,
         variables: [String: String] = [:],
         suggestions: [VariableSuggestion]? = nil,
         isSingleLine: Bool = true,
+        wrapsWhenFocused: Bool = false,
         fillsContainer: Bool = false,
         font: VariableEditorFont = .monoSubheadline,
         placeholder: String? = nil,
+        placeholderLeadingPadding: CGFloat = AppSpacing.compact,
         focus: Binding<FocusValue?>? = nil,
         focusValue: FocusValue? = nil,
         autoFocusOnUpdate: Bool = true,
@@ -129,9 +138,11 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         self.variables = variables
         self.suggestions = suggestions
         self.isSingleLine = isSingleLine
+        self.wrapsWhenFocused = wrapsWhenFocused
         self.fillsContainer = fillsContainer
         self.font = font
         self.placeholder = placeholder
+        self.placeholderLeadingPadding = placeholderLeadingPadding
         self.focus = focus
         self.focusValue = focusValue
         self.autoFocusOnUpdate = autoFocusOnUpdate
@@ -161,6 +172,32 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
                     onCaretChange: onCaretChange
                 )
                 .frame(minHeight: 24, alignment: .center)
+            } else if wrapsWhenFocused {
+                WrappingURLField(
+                    text: $text,
+                    variables: variables,
+                    suggestions: effectiveSuggestions,
+                    font: font,
+                    placeholder: placeholder,
+                    focus: focus,
+                    focusValue: focusValue,
+                    autoFocusOnUpdate: autoFocusOnUpdate,
+                    isFocusedNow: focus?.wrappedValue == focusValue,
+                    onCommit: onCommit,
+                    onContentHeightChange: { newHeight in
+                        // updateNSView runs inside SwiftUI's update transaction,
+                        // where a synchronous @State write is silently dropped
+                        // (measured 39, frame stayed 24). Defer one runloop so
+                        // it applies; ordering is preserved (FIFO).
+                        DispatchQueue.main.async { urlContentHeight = newHeight }
+                    }
+                )
+                .frame(
+                    height: focus?.wrappedValue == focusValue
+                        ? max(urlContentHeight, WrappingURLField<FocusValue>.collapsedHeight)
+                        : WrappingURLField<FocusValue>.collapsedHeight,
+                    alignment: .top
+                )
             } else {
                 multiLine
                     .frame(
@@ -175,7 +212,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
                 Text(placeholder)
                     .font(font.swiftUIFont)
                     .foregroundStyle(.tertiary)
-                    .padding(.leading, AppSpacing.compact)
+                    .padding(.leading, placeholderLeadingPadding)
                     .padding(.top, AppSpacing.xSmall)
                     .allowsHitTesting(false)
             }
@@ -214,9 +251,18 @@ private enum VariablePlaceholderStyling {
         _ plain: String,
         font: VariableEditorFont,
         variables: [String: String],
-        syntax: BodySyntax = .plain
+        syntax: BodySyntax = .plain,
+        lineBreakMode: NSLineBreakMode? = nil
     ) -> NSAttributedString {
-        let out = NSMutableAttributedString(string: plain, attributes: [.font: font.nsFont])
+        // The break mode must ride on the paragraph style: the typesetter
+        // consults it first and ignores the text container's own
+        // `lineBreakMode` (verified: container-only char wrapping never took
+        // effect). Nil keeps every other editor byte-identical.
+        var base: [NSAttributedString.Key: Any] = [.font: font.nsFont]
+        if let lineBreakMode {
+            base[.paragraphStyle] = paragraphStyle(lineBreakMode: lineBreakMode)
+        }
+        let out = NSMutableAttributedString(string: plain, attributes: base)
         if let runs = SyntaxHighlight.foregroundRuns(in: plain, syntax: syntax) {
             for (range, color) in runs {
                 out.addAttribute(.foregroundColor, value: color, range: range)
@@ -230,6 +276,13 @@ private enum VariablePlaceholderStyling {
 
     static func tint(_ name: String, in variables: [String: String]) -> NSColor {
         NSColor(variables[name] != nil ? AppColor.success : AppColor.warning).withAlphaComponent(0.22)
+    }
+
+    /// Fresh paragraph style carrying a line break mode (see `attributed`).
+    static func paragraphStyle(lineBreakMode: NSLineBreakMode) -> NSParagraphStyle {
+        let style = NSMutableParagraphStyle()
+        style.lineBreakMode = lineBreakMode
+        return style.copy() as? NSParagraphStyle ?? style
     }
 
     /// UTF-16 ranges of every `{{name}}` run with the trimmed name.
@@ -443,6 +496,451 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
                     range: range
                 )
             }
+        }
+    }
+}
+
+/// NSTextView that reports actual first-responder changes. The
+/// `NSTextViewDelegate` editing notifications (`textDidBeginEditing` /
+/// `textDidEndEditing`) track the editing session, not keyboard focus: a
+/// click that only moves the caret never starts a session, so relying on
+/// them leaves the SwiftUI focus mirror stale (no ring, no expansion until
+/// the first keystroke). Responder overrides fire on every click-away too,
+/// which the editing notifications miss.
+private final class FocusObservingTextView: NSTextView {
+    var onDidBecomeFirstResponder: (() -> Void)?
+    var onDidResignFirstResponder: (() -> Void)?
+
+    override func becomeFirstResponder() -> Bool {
+        let ok = super.becomeFirstResponder()
+        if ok { onDidBecomeFirstResponder?() }
+        return ok
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let ok = super.resignFirstResponder()
+        if ok { onDidResignFirstResponder?() }
+        return ok
+    }
+}
+
+/// NSTextView-backed URL-bar editor that wraps in place while focused:
+/// collapsed it is a fixed-height single line (no wrap, long URLs scroll
+/// horizontally like a real URL bar, the line vertically centered),
+/// focused it wraps and auto-grows with the content (the container clips
+/// the growth into an overlay). One persistent text view - no focus-time
+/// view swap, so the caret and undo stack survive the expand/collapse.
+/// Return commits (drops focus) instead of inserting a line break; pasted
+/// line breaks are stripped.
+private struct WrappingURLField<FocusValue: Hashable>: NSViewRepresentable {
+    /// Collapsed single-line height. The centering math in `updateNSView`
+    /// must use this same value, or the line drifts off-center.
+    /// Computed: static stored properties are unsupported on generic types.
+    static var collapsedHeight: CGFloat { 24 }
+    @Binding var text: String
+    let variables: [String: String]
+    let suggestions: [VariableSuggestion]
+    let font: VariableEditorFont
+    let placeholder: String?
+    let focus: Binding<FocusValue?>?
+    let focusValue: FocusValue?
+    let autoFocusOnUpdate: Bool
+    let isFocusedNow: Bool
+    let onCommit: (() -> Void)?
+    let onContentHeightChange: ((CGFloat) -> Void)?
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let coordinator = context.coordinator
+        coordinator.completion.setCandidates(suggestions)
+        coordinator.lastVariables = variables
+
+        let textView = FocusObservingTextView()
+        textView.onDidBecomeFirstResponder = { [weak coordinator] in coordinator?.claimFocus() }
+        textView.onDidResignFirstResponder = { [weak coordinator] in coordinator?.didResignFocus() }
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.allowsUndo = true
+        textView.isEditable = true
+        textView.isSelectable = true
+        textView.drawsBackground = false
+        textView.textColor = .labelColor
+        textView.insertionPointColor = .controlAccentColor
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
+        textView.isContinuousSpellCheckingEnabled = false
+        textView.isGrammarCheckingEnabled = false
+        textView.isAutomaticLinkDetectionEnabled = false
+        textView.smartInsertDeleteEnabled = false
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        // Character wrapping lives on the paragraph style (see
+        // `VariablePlaceholderStyling.attributed`): the typesetter consults
+        // it first and ignores the container's own `lineBreakMode`, which is
+        // kept here only as defense in depth. URLs have no spaces, so word
+        // wrapping would break only at `/` and leave the first line half
+        // empty. (Collapsed single-line mode never wraps, so this only
+        // affects the focused expansion.)
+        textView.textContainer?.lineBreakMode = .byCharWrapping
+        // Zero fragment padding: the text starts exactly at the view edge on
+        // both sides (the SwiftUI padding outside supplies the symmetric
+        // border gap), so the collapsed clip and the wrapped lines share one
+        // origin and the first line breaks identically in both modes.
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainerInset = NSSize(width: 0, height: 0)
+        textView.typingAttributes = [
+            .font: font.nsFont,
+            .foregroundColor: NSColor.labelColor,
+            // Fresh typing (e.g. after select-all + delete) inherits this
+            // paragraph, so retyped URLs keep character wrapping.
+            .paragraphStyle: VariablePlaceholderStyling.paragraphStyle(lineBreakMode: .byCharWrapping),
+        ]
+        textView.textStorage?.setAttributedString(
+            VariablePlaceholderStyling.attributed(
+                text, font: font, variables: variables, lineBreakMode: .byCharWrapping
+            )
+        )
+        textView.delegate = coordinator
+
+        let scrollView = LayoutObservingScrollView()
+        scrollView.documentView = textView
+        scrollView.hasVerticalScroller = false
+        scrollView.hasHorizontalScroller = false
+        scrollView.drawsBackground = false
+        scrollView.onLayout = { [weak coordinator, weak textView, weak scrollView] in
+            guard let coordinator, let textView, let scrollView else { return }
+            // Post-settle healing (see `healWidths`): converges widths the
+            // update pass may have measured transiently, then reports.
+            coordinator.healWidths(scrollView: scrollView, textView: textView)
+            coordinator.reportContentHeight(textView)
+        }
+        coordinator.startMouseDownWatch(scrollView)
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        let coordinator = context.coordinator
+        coordinator.parent = self
+        coordinator.completion.setCandidates(suggestions)
+        guard let textView = scrollView.documentView as? NSTextView else { return }
+
+        if textView.string != text {
+            coordinator.completion.hide()
+            let selection = textView.selectedRange()
+            textView.textStorage?.setAttributedString(
+                VariablePlaceholderStyling.attributed(
+                    text, font: font, variables: variables, lineBreakMode: .byCharWrapping
+                )
+            )
+            textView.setSelectedRange(NSRange(location: min(selection.location, (text as NSString).length), length: 0))
+            coordinator.lastVariables = variables
+            coordinator.reportContentHeight(textView)
+        } else if coordinator.lastVariables != variables {
+            coordinator.lastVariables = variables
+            if textView.window?.firstResponder === textView {
+                coordinator.restyle(textView)
+            } else {
+                textView.textStorage?.setAttributedString(
+                    VariablePlaceholderStyling.attributed(
+                        text, font: font, variables: variables, lineBreakMode: .byCharWrapping
+                    )
+                )
+            }
+        }
+
+        // Stateless geometry: every update re-asserts the full layout for the
+        // current focus state. A latched one-shot transition proved
+        // deadlock-prone (one ineffective pass stuck the bar forever with no
+        // retry); these assignments are idempotent and URL-scale cheap, so
+        // convergence beats latching.
+        let collapsed = !isFocusedNow
+        Self.applyBarGeometry(
+            collapsed: collapsed, textView: textView, scrollView: scrollView, nsFont: font.nsFont)
+        coordinator.reportContentHeight(textView)
+        if !collapsed {
+            // Post-layout guarantee: if the bar is still unwrapped after the
+            // synchronous pass (used wider than the wrap width), re-apply
+            // once settled. Short URLs never trigger this - a fitting single
+            // line is legitimate - and the follow-up never chains (no loop).
+            let layoutManager = textView.layoutManager
+            let container = textView.textContainer
+            if let layoutManager, let container {
+                let wrapWidth = scrollView.contentSize.width
+                let used = layoutManager.usedRect(for: container)
+                if wrapWidth > 1, used.width > wrapWidth + 1 {
+                    let nsFont = font.nsFont
+                    DispatchQueue.main.async { [weak textView, weak scrollView, weak coordinator] in
+                        guard let textView, let scrollView, let coordinator,
+                            coordinator.parent.focus?.wrappedValue == coordinator.parent.focusValue
+                        else { return }
+                        Self.applyBarGeometry(
+                            collapsed: false, textView: textView, scrollView: scrollView, nsFont: nsFont)
+                        coordinator.reportContentHeight(textView)
+                    }
+                }
+            }
+        }
+
+        if isFocusedNow {
+            if textView.window != nil, textView.window?.firstResponder !== textView {
+                textView.window?.makeFirstResponder(textView)
+            }
+        } else if textView.window?.firstResponder === textView {
+            // The SwiftUI side cleared the claim (Send, tab switch, method
+            // menu): drop AppKit focus so the next click re-enters through
+            // becomeFirstResponder and the bar collapses immediately.
+            textView.window?.makeFirstResponder(nil)
+        }
+    }
+
+    /// Idempotent focus-mode geometry for one text view: collapsed is a true
+    /// single line (no wrap, horizontally scrolling, vertically centered),
+    /// expanded wraps at the clip width. Safe to run on every update and
+    /// from the post-layout retry - only layout changes, never the text, so
+    /// the caret and undo stack survive. Both modes share the same top
+    /// inset, so the first line never moves on focus.
+    private static func applyBarGeometry(
+        collapsed: Bool, textView: NSTextView, scrollView: NSScrollView, nsFont: NSFont
+    ) {
+        let lineHeight = textView.layoutManager?.defaultLineHeight(for: nsFont) ?? 15
+        let top = max(0, (Self.collapsedHeight - lineHeight) / 2)
+        textView.textContainerInset = NSSize(width: 0, height: top)
+        if collapsed {
+            // No `.width` mask: tiling would pin the document to the clip
+            // width and the tail could never scroll into view. `minSize`
+            // keeps short text full-width so empty bar area stays clickable.
+            textView.autoresizingMask = []
+            let minWidth = scrollView.contentSize.width
+            if minWidth > 1 {
+                textView.minSize = NSSize(width: minWidth, height: 0)
+            }
+            textView.isHorizontallyResizable = true
+            textView.textContainer?.widthTracksTextView = false
+            textView.textContainer?.containerSize = NSSize(
+                width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        } else {
+            textView.autoresizingMask = [.width]
+            textView.minSize = .zero
+            textView.isHorizontallyResizable = false
+            textView.textContainer?.widthTracksTextView = true
+            let wrapWidth = scrollView.contentSize.width
+            if wrapWidth > 1 {
+                // Narrow the view first so the tracked container follows
+                // synchronously, then pin the width explicitly as well:
+                // neither flag alone snaps a wide container back.
+                textView.setFrameSize(NSSize(width: wrapWidth, height: textView.frame.height))
+                // Fragment padding is zero (see `makeNSView`), so both modes
+                // fill from the same origin for the same width: the first
+                // line breaks on the same character collapsed and expanded.
+                textView.textContainer?.containerSize = NSSize(
+                    width: wrapWidth, height: CGFloat.greatestFiniteMagnitude)
+            }
+        }
+        if let container = textView.textContainer, let layoutManager = textView.layoutManager {
+            // Container mutations do not reliably invalidate layout on their
+            // own - notify explicitly, then lay out synchronously.
+            layoutManager.textContainerChangedGeometry(container)
+            layoutManager.ensureLayout(for: container)
+        }
+        // Redraw from the settled layout and bring a possibly scrolled-out
+        // caret back into view.
+        textView.needsDisplay = true
+        textView.scrollRangeToVisible(textView.selectedRange())
+    }
+
+    static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
+        coordinator.stopMouseDownWatch()
+        coordinator.completion.hide()
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        fileprivate var parent: WrappingURLField
+        fileprivate var lastVariables: [String: String] = [:]
+        fileprivate let completion = VariableCompletionController()
+        private var lastReportedHeight: CGFloat = 0
+        private weak var watchedScrollView: NSScrollView?
+        private var mouseDownMonitor: Any?
+
+        init(_ parent: WrappingURLField) {
+            self.parent = parent
+        }
+
+        /// Clicking a blank (non-focusable) area never moves AppKit focus on
+        /// its own, so the bar would stay expanded. Watch mouse-downs like
+        /// the completion popup does and drop the claim for outside clicks;
+        /// `updateNSView` then resigns real focus and the bar collapses.
+        /// Clicks inside the visible bar or into the suggestion panel keep
+        /// editing (the panel is non-activating and must not blur the field).
+        fileprivate func startMouseDownWatch(_ scrollView: NSScrollView) {
+            watchedScrollView = scrollView
+            guard mouseDownMonitor == nil else { return }
+            mouseDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+                MainActor.assumeIsolated {
+                    self?.handleMouseDown(event)
+                }
+                return event
+            }
+        }
+
+        fileprivate func stopMouseDownWatch() {
+            watchedScrollView = nil
+            if let mouseDownMonitor {
+                NSEvent.removeMonitor(mouseDownMonitor)
+                self.mouseDownMonitor = nil
+            }
+        }
+
+        private func handleMouseDown(_ event: NSEvent) {
+            guard parent.focus?.wrappedValue == parent.focusValue,
+                let scrollView = watchedScrollView
+            else { return }
+            // A suggestion pick: the panel never takes focus, editing goes on.
+            if let popup = completion.popupWindow, event.window === popup { return }
+            if event.window === scrollView.window {
+                let location = scrollView.convert(event.locationInWindow, from: nil)
+                // Inside the (possibly expanded) visible bar: just caret moves.
+                if scrollView.bounds.contains(location) { return }
+            }
+            clearFocusClaim()
+        }
+
+        /// Post-layout width healing, run from `onLayout` (i.e. once geometry
+        /// has settled): if the container no longer matches the clip - e.g.
+        /// the update pass measured a transient width, or a height-only
+        /// relayout never re-fired width tracking - snap it back and let the
+        /// caller re-measure. Deliberately scroll-free (never yank the caret
+        /// during layout) and converging (no-ops once equal, so no loop).
+        fileprivate func healWidths(scrollView: NSScrollView, textView: NSTextView) {
+            let clipWidth = scrollView.contentSize.width
+            guard clipWidth > 1,
+                let container = textView.textContainer
+            else { return }
+            if parent.focus?.wrappedValue == parent.focusValue {
+                guard abs(container.containerSize.width - clipWidth) > 0.5 else { return }
+                container.containerSize = NSSize(width: clipWidth, height: CGFloat.greatestFiniteMagnitude)
+            } else if abs(textView.minSize.width - clipWidth) > 0.5 {
+                textView.minSize = NSSize(width: clipWidth, height: 0)
+                return
+            } else {
+                return
+            }
+            if let layoutManager = textView.layoutManager {
+                layoutManager.textContainerChangedGeometry(container)
+                layoutManager.ensureLayout(for: container)
+            }
+            textView.needsDisplay = true
+        }
+
+        /// Real keyboard focus arrived (click or programmatic): claim it so
+        /// the ring shows and the field expands before the first keystroke.
+        fileprivate func claimFocus() {
+            guard let focus = parent.focus, let focusValue = parent.focusValue,
+                focus.wrappedValue != focusValue
+            else { return }
+            focus.wrappedValue = focusValue
+        }
+
+        /// Real keyboard focus left (click-away or programmatic resign):
+        /// hide the popup, collapse, and drop the claim.
+        fileprivate func didResignFocus() {
+            completion.hide()
+            clearFocusClaim()
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            var value = textView.string
+            if value.contains("\n") || value.contains("\r") {
+                value =
+                    value
+                    .replacingOccurrences(of: "\r", with: "")
+                    .replacingOccurrences(of: "\n", with: "")
+                textView.string = value
+                // `setString` drops the paragraph style above; restore it so
+                // pasted URLs keep character wrapping.
+                textView.textStorage?.addAttribute(
+                    .paragraphStyle,
+                    value: VariablePlaceholderStyling.paragraphStyle(lineBreakMode: .byCharWrapping),
+                    range: NSRange(location: 0, length: (value as NSString).length)
+                )
+            }
+            parent.text = value
+            restyle(textView)
+            completion.textChanged(textView)
+            reportContentHeight(textView)
+        }
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            completion.selectionChanged(textView)
+        }
+
+        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            if completion.handleCommand(commandSelector) { return true }
+            if commandSelector == #selector(NSResponder.insertNewline(_:)), let onCommit = parent.onCommit {
+                onCommit()
+                return true
+            }
+            return false
+        }
+
+        func textDidBeginEditing(_ notification: Notification) {
+            claimFocus()
+        }
+
+        func textDidEndEditing(_ notification: Notification) {
+            didResignFocus()
+        }
+
+        /// Drops the focus claim when this view still holds it.
+        private func clearFocusClaim() {
+            guard let focus = parent.focus, let focusValue = parent.focusValue,
+                focus.wrappedValue == focusValue
+            else { return }
+            focus.wrappedValue = nil
+        }
+
+        func restyle(_ textView: NSTextView) {
+            guard let storage = textView.textStorage else { return }
+            let length = (storage.string as NSString).length
+            let fullRange = NSRange(location: 0, length: length)
+            storage.removeAttribute(.backgroundColor, range: fullRange)
+            for (range, name) in VariablePlaceholderStyling.variableRanges(in: storage.string) {
+                storage.addAttribute(
+                    .backgroundColor,
+                    value: VariablePlaceholderStyling.tint(name, in: parent.variables),
+                    range: range
+                )
+            }
+        }
+
+        /// Reports the laid-out content height so the SwiftUI side can grow
+        /// the editor with its content (auto-grow mode only).
+        func reportContentHeight(_ textView: NSTextView?) {
+            guard let textView,
+                let onContentHeightChange = parent.onContentHeightChange,
+                let layoutManager = textView.layoutManager,
+                let container = textView.textContainer
+            else { return }
+            // A fresh edit invalidates layout, and `usedRect` reads back
+            // empty until it is laid out again (seen as bogus ~9pt reports
+            // that would collapse an expanded bar for a frame). Settle first;
+            // at URL-bar scale this is trivially cheap.
+            layoutManager.ensureLayout(for: container)
+            let used = layoutManager.usedRect(for: container)
+            let height = ceil(used.height + textView.textContainerInset.height * 2)
+            guard abs(height - lastReportedHeight) > 0.5 else { return }
+            lastReportedHeight = height
+            onContentHeightChange(height)
         }
     }
 }
@@ -686,6 +1184,7 @@ extension VariableHighlightEditor where FocusValue == Never {
         variables: [String: String] = [:],
         suggestions: [VariableSuggestion]? = nil,
         isSingleLine: Bool = true,
+        wrapsWhenFocused: Bool = false,
         fillsContainer: Bool = false,
         font: VariableEditorFont = .monoSubheadline,
         placeholder: String? = nil,

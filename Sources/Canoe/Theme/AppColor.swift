@@ -10,6 +10,7 @@ enum AppColor {
     /// Primary brand blue for links, the active tab underline, and key icons.
     /// Primer `accent.fg`: #0969da in light mode, #1f6feb in dark mode.
     static let accent = dynamic(light: RGB(red: 9, green: 105, blue: 218), dark: RGB(red: 31, green: 111, blue: 235))
+    static let focusRing = dynamic(light: RGB(red: 160, green: 191, blue: 255), dark: RGB(red: 88, green: 140, blue: 230))
 
     /// Deeper brand blue for the bottom edge of brand gradients.
     static let accentDark = dynamic(light: RGB(red: 5, green: 80, blue: 174), dark: RGB(red: 17, green: 88, blue: 199))

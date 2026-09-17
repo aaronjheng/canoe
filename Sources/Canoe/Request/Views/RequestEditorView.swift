@@ -80,11 +80,6 @@ struct RequestEditorView: View {
     // owns keyboard focus (first responder is managed inside the editors),
     // and an unregistered @FocusState made writes no-ops and reads unreliable.
     @State private var urlFieldFocused: URLFieldFocus?
-    /// Focus of the multi-line popup editor shown while the URL is edited.
-    @State private var urlPopupField: URLFieldFocus?
-    /// Whether the URL popup (multi-line editor floating over the sections)
-    /// is open.
-    @State private var isURLPopupVisible = false
     /// Whether the method dropdown panel is open.
     @State private var isMethodMenuVisible = false
     /// Method under the pointer in the dropdown (hover highlight).
@@ -112,17 +107,9 @@ struct RequestEditorView: View {
         keyboardMethod = filteredMethods[min(max(idx + delta, 0), filteredMethods.count - 1)]
         hoveredMethod = nil
     }
-    /// Anchor of the URL bar row's bounds in the editor - resolved against
-    /// the overlay's own geometry when placing the floating panels, so the
-    /// panels clear the row's bottom edge by a fixed gap in every layout.
-    @State private var barRowAnchor: Anchor<CGRect>?
+    @State private var methodMenuAnchor: Anchor<CGRect>?
     /// The raw text currently shown in the URL bar.
     @State private var urlText = ""
-    /// Live caret location of the bar's field editor, mirrored out so the
-    /// multi-line popup can continue at the same offset when it takes over
-    /// keyboard focus (the async handoff otherwise lands on a default caret
-    /// and discards the position the user placed inside the bar).
-    @State private var urlBarCaret: Int?
 
     /// The URL bar text: the stored base URL plus the query rendered from the
     /// params table (the table is the source of truth for the query; the
@@ -217,10 +204,9 @@ struct RequestEditorView: View {
         Binding(
             get: { urlText },
             set: { newValue in
-                urlText = newValue
-                // The set only fires from the URL bar editor itself, so the
-                // typed text is authoritative here.
-                syncParamsFromURLText(newValue)
+                let cleaned = newValue.components(separatedBy: .newlines).joined()
+                urlText = cleaned
+                syncParamsFromURLText(cleaned)
             }
         )
     }
@@ -229,35 +215,29 @@ struct RequestEditorView: View {
         VStack(spacing: 0) {
             nameBar
             urlBar
+                .zIndex(1)
             sectionTabs
             Divider()
             sectionContent
         }
         .background(.background)
-        .overlay { urlPopupOverlay }
-        .onPreferenceChange(BarRowAnchorKey.self) { barRowAnchor = $0 }
+        .overlay { methodMenuOverlay }
+        .onPreferenceChange(MethodMenuAnchorKey.self) { methodMenuAnchor = $0 }
         .onChange(of: draft) { _, newDraft in
             store.updateRequest(newDraft)
             // Params-table edits (and request switches) re-compose the URL
             // bar text - unless the user is typing in the URL bar itself. The
             // focused surface always wins, keeping the two-way sync loop-free.
-            guard urlFieldFocused == nil, urlPopupField == nil else { return }
+            guard urlFieldFocused == nil else { return }
             urlText = composedURLText(base: newDraft.urlString, params: newDraft.params)
         }
         .onChange(of: request.id) { _, _ in
+            urlFieldFocused = nil
+            isMethodMenuVisible = false
             draft = request
-            // A section tab chosen for one request (e.g. Body) can be
-            // meaningless for the next (e.g. a GET with no body) - restart
-            // at Params like the draft does.
+            urlText = composedURLText(base: request.urlString, params: request.params)
             section = .params
-            isURLPopupVisible = false
         }
-        // The bar field stays a single line; gaining focus opens the
-        // multi-line popup editor below and hands focus over to it.
-        // The bar is the primary URL editing surface; the popup below is an
-        // expanded view opened on demand (bar chevron / ⇧⌘E). Focusing the
-        // bar while the popup is open returns editing to the bar - the popup
-        // closes itself via the claim drop in onChange(of: urlPopupField).
         .onChange(of: urlFieldFocused) { _, focused in
             guard focused == .url else { return }
             isMethodMenuVisible = false
@@ -271,26 +251,12 @@ struct RequestEditorView: View {
                 keyboardMethod = nil
                 return
             }
-            // The two floating surfaces are mutually exclusive.
-            isURLPopupVisible = false
+            urlFieldFocused = nil
             hoveredMethod = nil
             keyboardMethod = nil
             methodFilter = ""
             // Postman drops you into the filter so typing narrows the list.
             DispatchQueue.main.async { methodFilterFieldFocused = true }
-        }
-        .onChange(of: urlPopupField) { _, focused in
-            if focused == .url {
-                // The popup editor owns the keystrokes now: drop the bar
-                // field's focus claim so the bar stops mirroring an editing
-                // session it no longer has.
-                urlFieldFocused = nil
-            } else {
-                isURLPopupVisible = false
-                // The takeover already consumed the mirrored bar caret;
-                // stale offsets must not leak into the next expansion.
-                urlBarCaret = nil
-            }
         }
         .onAppear {
             draft = request
@@ -358,6 +324,7 @@ struct RequestEditorView: View {
     /// unsaved changes.
     private var saveButton: some View {
         SaveChipButton(isDirty: isDirty, help: "Save Request (⌘S)") {
+            urlFieldFocused = nil
             store.savePendingChanges()
         }
     }
@@ -367,37 +334,19 @@ struct RequestEditorView: View {
     private var urlBar: some View {
         VStack(spacing: AppSpacing.xSmall) {
             HStack(spacing: AppSpacing.small) {
-                // Postman-style pair of fields: the method picker and the URL
-                // field are separate bordered fields with a small gap; each
-                // carries its own focus highlight - the picker's while its
-                // dropdown is open, the URL field's while it is being edited.
-                MethodPicker(
-                    selection: $draft.httpMethod,
-                    isExpanded: $isMethodMenuVisible
-                )
                 HStack(spacing: 0) {
-                    VariableHighlightEditor(
-                        text: urlBinding,
-                        variables: resolvedVariables,
-                        suggestions: requestSuggestions,
-                        font: .monoURLBar,
-                        placeholder: "https://api.example.com/users",
-                        focus: $urlFieldFocused,
-                        focusValue: .url,
-                        // The bar is the primary editing surface. Still no
-                        // update-driven focus grabs: force-focusing an
-                        // NSTextField mid-update restarts its editing
-                        // session - a fresh session selects all, so the next
-                        // character would overwrite the whole URL.
-                        autoFocusOnUpdate: false,
-                        onCaretChange: { urlBarCaret = $0 }
+                    MethodPicker(
+                        selection: $draft.httpMethod,
+                        isExpanded: $isMethodMenuVisible,
+                        onToggle: { urlFieldFocused = nil }
                     )
-                    expandURLButton
+                    Color.clear
+                        .frame(height: 30)
+                        .overlay(alignment: .topLeading) {
+                            urlEditor
+                        }
+                        .zIndex(1)
                 }
-                // Same 24pt content height as the method field, so the two
-                // fields read as one row.
-                .frame(height: 24)
-                .variableFieldBordered(isFocused: urlFieldFocused == .url, verticalPadding: 3)
 
                 // One morphing slot: Send becomes Cancel while a response is
                 // pending. A click meant for Cancel can land on the freshly
@@ -406,6 +355,7 @@ struct RequestEditorView: View {
                 // misfire never fires a brand-new request.
                 if store.isSending {
                     Button {
+                        urlFieldFocused = nil
                         store.cancelSend()
                     } label: {
                         Text("Cancel")
@@ -416,6 +366,7 @@ struct RequestEditorView: View {
                     .help("Cancel Request (⎋)")
                 } else {
                     Button {
+                        urlFieldFocused = nil
                         store.send(draft)
                     } label: {
                         // Lifts the label so the styled button lands on the
@@ -429,93 +380,54 @@ struct RequestEditorView: View {
                     .help("Send Request (⌘↩)")
                 }
             }
-            // The floating panels anchor to this row's bounds (resolved in
-            // the overlay's own geometry), so they always land just below
-            // the fields regardless of the layout above them.
-            .anchorPreference(key: BarRowAnchorKey.self, value: .bounds) { $0 }
+            .anchorPreference(key: MethodMenuAnchorKey.self, value: .bounds) { $0 }
         }
         .padding(.horizontal, AppSpacing.medium)
         .padding(.vertical, AppSpacing.small)
     }
 
-    // MARK: - URL popup
-
-    /// Closes the expanded URL editor and drops its focus claim (and the
-    /// consumed caret mirror with it).
-    private func closeURLPopup() {
-        urlPopupField = nil
-        isURLPopupVisible = false
-        urlBarCaret = nil
-    }
-
-    /// Expand/collapse toggle for the bar's trailing chevron (and ⇧⌘E):
-    /// long URLs are unwieldy in the single-line bar, so the popup shows the
-    /// whole value in a multi-line editor while it is open.
-    private func toggleURLPopup() {
-        if isURLPopupVisible || urlPopupField == .url {
-            closeURLPopup()
-        } else {
-            isMethodMenuVisible = false
-            isURLPopupVisible = true
-            // Hand focus to the popup's editor once it is inserted; it
-            // continues at the bar's last caret offset.
-            DispatchQueue.main.async { urlPopupField = .url }
+    private var urlEditor: some View {
+        let shape = UnevenRoundedRectangle(
+            topLeadingRadius: 0,
+            bottomLeadingRadius: 0,
+            bottomTrailingRadius: AppRadius.medium,
+            topTrailingRadius: AppRadius.medium
+        )
+        return VariableHighlightEditor(
+            text: urlBinding,
+            variables: resolvedVariables,
+            suggestions: requestSuggestions,
+            isSingleLine: false,
+            wrapsWhenFocused: true,
+            font: .monoURLBar,
+            placeholder: "https://api.example.com/users",
+            // Zero fragment padding in the bar (see `makeNSView`): the
+            // placeholder must start at the view edge like the text.
+            placeholderLeadingPadding: 0,
+            focus: $urlFieldFocused,
+            focusValue: .url,
+            autoFocusOnUpdate: false,
+            onCommit: { urlFieldFocused = nil }
+        )
+        .padding(.horizontal, AppSpacing.compact)
+        .padding(.vertical, 3)
+        .background(AppColor.codeBackground, in: shape)
+        .overlay {
+            if urlFieldFocused == .url {
+                shape.inset(by: -1.5)
+                    .stroke(AppColor.focusRing, lineWidth: 3)
+                    .allowsHitTesting(false)
+            } else {
+                shape.strokeBorder(AppColor.borderStrong, lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
         }
     }
 
-    /// Trailing chevron inside the bar: expands the URL into the multi-line
-    /// popup editor, toggles back on a second press.
-    private var expandURLButton: some View {
-        Button {
-            toggleURLPopup()
-        } label: {
-            Image(systemName: isURLPopupVisible ? "chevron.down.chevron" : "chevron.up.chevron")
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(isURLPopupVisible ? AppColor.accent : Color.secondary)
-                .frame(width: 20, height: 20)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .keyboardShortcut("e", modifiers: [.command, .shift])
-        .help(isURLPopupVisible ? "Collapse URL Editor (⇧⌘E)" : "Expand URL Editor (⇧⌘E)")
-        .padding(.trailing, AppSpacing.small)
-    }
-
-    /// Editing surface for long URLs: opened on demand from the bar's
-    /// chevron, a multi-line editor floats below the bar in a card. It is
-    /// an overlay - the bar's height and the section layout below never
-    /// change - and a click-outside catcher gives it popover dismissal
-    /// semantics (the first click outside closes it without activating what
-    /// is underneath).
-    /// is underneath). The GeometryReader resolves the bar row's anchor in
-    /// its own space - the same space the panels are positioned in - so the
-    /// panels' top edges land exactly one gap below the row's bottom edge.
-    private var urlPopupOverlay: some View {
+    private var methodMenuOverlay: some View {
         GeometryReader { proxy in
-            let rowBottom = barRowAnchor.map { proxy[$0].maxY } ?? 0
+            let rowBottom = methodMenuAnchor.map { proxy[$0].maxY } ?? 0
             ZStack(alignment: .topLeading) {
-                if isURLPopupVisible {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture { closeURLPopup() }
-                    // Escape also dismisses (cancelAction); the zero-size hidden
-                    // button keeps the shortcut registered.
-                    Button("Cancel Editing") { closeURLPopup() }
-                        .keyboardShortcut(.cancelAction)
-                        .frame(width: 0, height: 0)
-                        .opacity(0)
-                        .accessibilityHidden(true)
-                    urlPopup
-                        // Top edge tracks the bar row's resolved bottom, so
-                        // the card clears the fields by a small fixed gap no
-                        // matter what the layout above them looks like.
-                        .offset(y: rowBottom + AppSpacing.xSmall)
-                        // Left edge tracks the URL field: section padding + the
-                        // method field + the gap between the two fields.
-                        .padding(.leading, AppSpacing.medium + AppSize.methodPickerWidth + AppSpacing.xSmall)
-                        .padding(.trailing, AppSpacing.medium)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                }
                 if isMethodMenuVisible {
                     Color.clear
                         .contentShape(Rectangle())
@@ -619,50 +531,6 @@ struct RequestEditorView: View {
         .popupPanel()
     }
 
-    /// The floating multi-line URL editor: same two-way sync as the bar
-    /// field, auto-grows up to the editor's internal cap.
-    private var urlPopup: some View {
-        VariableHighlightEditor(
-            text: urlPopupBinding,
-            variables: resolvedVariables,
-            suggestions: requestSuggestions,
-            isSingleLine: false,
-            focus: $urlPopupField,
-            focusValue: .url,
-            // Return (with no completion popup open) commits and closes,
-            // like the newline handling in `urlPopupBinding` for pasted text.
-            onCommit: { closeURLPopup() },
-            incomingCaretLocation: urlBarCaret
-        )
-        .padding(.horizontal, AppSpacing.small)
-        .padding(.vertical, AppSpacing.xSmall)
-        .frame(minHeight: 56, alignment: .topLeading)
-        .popupPanel()
-    }
-
-    /// The popup editor's binding: mirrors `urlBinding`, but treats a line
-    /// break as "done editing" - URLs never contain raw newlines, so Return
-    /// commits and closes instead of inserting.
-    private var urlPopupBinding: Binding<String> {
-        Binding(
-            get: { urlText },
-            set: { newValue in
-                guard newValue.contains("\n") || newValue.contains("\r") else {
-                    urlText = newValue
-                    syncParamsFromURLText(newValue)
-                    return
-                }
-                let cleaned =
-                    newValue
-                    .replacingOccurrences(of: "\r", with: "")
-                    .replacingOccurrences(of: "\n", with: "")
-                urlText = cleaned
-                syncParamsFromURLText(cleaned)
-                isURLPopupVisible = false
-            }
-        )
-    }
-
     // MARK: - Section tabs
 
     private var sectionTabs: some View {
@@ -671,25 +539,37 @@ struct RequestEditorView: View {
                 title: RequestSection.params.rawValue,
                 count: enabledParamCount,
                 isSelected: section == .params,
-                action: { section = .params }
+                action: {
+                    urlFieldFocused = nil
+                    section = .params
+                }
             )
             UnderlineTab(
                 title: RequestSection.auth.rawValue,
                 count: isAuthConfigured ? 1 : nil,
                 isSelected: section == .auth,
-                action: { section = .auth }
+                action: {
+                    urlFieldFocused = nil
+                    section = .auth
+                }
             )
             UnderlineTab(
                 title: RequestSection.headers.rawValue,
                 count: enabledHeaderCount,
                 isSelected: section == .headers,
-                action: { section = .headers }
+                action: {
+                    urlFieldFocused = nil
+                    section = .headers
+                }
             )
             UnderlineTab(
                 title: RequestSection.body.rawValue,
                 count: bodyRowCount,
                 isSelected: section == .body,
-                action: { section = .body }
+                action: {
+                    urlFieldFocused = nil
+                    section = .body
+                }
             )
             Spacer()
         }
@@ -731,26 +611,30 @@ struct RequestEditorView: View {
 
 // MARK: - Method picker
 
-/// Preference carrying the URL bar row's bounds anchor. The floating method
-/// menu and URL popup resolve it against the overlay's own geometry, so they
-/// land just below the row without stacked-offset arithmetic.
-private struct BarRowAnchorKey: PreferenceKey {
+private struct MethodMenuAnchorKey: PreferenceKey {
     static let defaultValue: Anchor<CGRect>? = nil
     static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
         value = value ?? nextValue()
     }
 }
 
-/// Postman-style method field: a standalone bordered field left of the URL
-/// field - method name in its signature color plus a dropdown chevron.
-/// Clicking toggles the dropdown panel hosted in the window-level overlay;
-/// while open the field's own border wears the focus highlight.
 private struct MethodPicker: View {
     @Binding var selection: HTTPMethod
     @Binding var isExpanded: Bool
+    var onToggle: () -> Void
+
+    private var shape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+            topLeadingRadius: AppRadius.medium,
+            bottomLeadingRadius: AppRadius.medium,
+            bottomTrailingRadius: 0,
+            topTrailingRadius: 0
+        )
+    }
 
     var body: some View {
         Button {
+            onToggle()
             isExpanded.toggle()
         } label: {
             HStack(spacing: AppSpacing.xSmall) {
@@ -769,7 +653,15 @@ private struct MethodPicker: View {
         }
         .buttonStyle(.plain)
         .help("HTTP method")
-        .variableFieldBordered(isFocused: isExpanded, verticalPadding: 3)
+        .padding(.horizontal, AppSpacing.compact)
+        .padding(.vertical, 3)
+        .background(AppColor.fieldBackground, in: shape)
+        .overlay {
+            shape.strokeBorder(
+                isExpanded ? AppColor.accent : AppColor.borderStrong,
+                lineWidth: isExpanded ? 2 : 1
+            )
+        }
         .frame(width: AppSize.methodPickerWidth)
     }
 }

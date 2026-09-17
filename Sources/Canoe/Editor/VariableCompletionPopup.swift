@@ -109,6 +109,11 @@ final class VariableCompletionController: NSObject {
 
     var isVisible: Bool { session != nil }
 
+    /// The open suggestion panel, if any. Editors that watch for
+    /// click-outside-to-blur use it to exempt popup picks (a non-activating
+    /// panel never moves keyboard focus, so picking must not blur the field).
+    var popupWindow: NSWindow? { panel }
+
     // MARK: - Input from the editors
 
     /// Replaces the candidate universe (parents re-render on every keystroke)
