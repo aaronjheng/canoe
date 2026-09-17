@@ -82,7 +82,6 @@ private struct WorkspaceSwitcher: View {
                 Button(workspace.name) { store.setActiveWorkspace(workspace.id) }
             }
             Divider()
-            Button("New Workspace", systemImage: "plus") { store.addWorkspace() }
             Button("Workspace Variables", systemImage: "curlybraces.square") {
                 if let active = store.activeWorkspace {
                     store.openWorkspaceVariables(active.id)
@@ -90,9 +89,10 @@ private struct WorkspaceSwitcher: View {
             }
             .disabled(store.activeWorkspace == nil)
             .help("Edit the active workspace's variables")
-            // Postman-style footer: the full management screen lives here,
-            // below the per-workspace actions.
             Divider()
+            // Postman-style footer: workspace management lives here - create
+            // and browse together, apart from the active-workspace actions.
+            Button("New Workspace", systemImage: "plus") { store.addWorkspace() }
             Button("View all workspaces", systemImage: "square.stack.3d.up") {
                 store.enterWorkspacesManager()
             }
