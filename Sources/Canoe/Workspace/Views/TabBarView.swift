@@ -5,6 +5,7 @@ import SwiftUI
 struct TabBarView: View {
     @Environment(AppStore.self) private var store
     @State private var availableWidth: CGFloat = 0
+    @State private var isDrawerShown = false
 
     var body: some View {
         HStack(spacing: AppSpacing.xSmall) {
@@ -20,6 +21,14 @@ struct TabBarView: View {
                             )
                             .id(tab)
                         }
+                        // Postman-style: the "+" rides inline after the
+                        // last tab (inside the scroll area) instead of
+                        // camping on the trailing controls.
+                        Button("New Request Tab", systemImage: "plus") {
+                            store.addRequest()
+                        }
+                        .buttonStyle(ToolbarButtonStyle())
+                        .help("New Request (⌘N)")
                     }
                     .padding(.horizontal, AppSpacing.small)
                     .padding(.vertical, AppSpacing.xSmall)
@@ -40,11 +49,22 @@ struct TabBarView: View {
             } action: { width in
                 availableWidth = width
             }
-            Button("New Request Tab", systemImage: "plus") {
-                store.addRequest()
+
+            // The tab drawer belongs to the tab side of the strip: it sits
+            // left of the divider separating tabs from the environment and
+            // inspector controls.
+            ToolbarToggleButton(
+                systemImage: "chevron.down",
+                isOn: isDrawerShown,
+                help: "Browse open tabs"
+            ) {
+                isDrawerShown.toggle()
             }
-            .buttonStyle(ToolbarButtonStyle())
-            .help("New Request (⌘N)")
+            .popover(isPresented: $isDrawerShown, arrowEdge: .top) {
+                TabDrawer {
+                    isDrawerShown = false
+                }
+            }
 
             // Postman keeps the environment selector and inspector toggles in
             // the tab row; the window's dedicated toolbar row was removed.
@@ -118,13 +138,21 @@ struct TabBarView: View {
 
     /// Postman-style tab sizing: tabs share the strip width equally. They cap
     /// at `tabMaxWidth` when there are few and shrink to `tabMinWidth` when
-    /// crowded; horizontal scrolling only takes over beyond that floor.
+    /// crowded; horizontal scrolling only takes over beyond that floor. The
+    /// inline "+" after the last tab reserves a share of the same width.
     private var tabWidth: CGFloat? {
         let count = store.visibleOpenTabs.count
         guard count > 0, availableWidth > 0 else { return nil }
-        let gaps = AppSpacing.xSmall * CGFloat(count - 1)
-        let usable = availableWidth - AppSpacing.small * 2 - gaps
+        // One gap between each pair of tabs plus one before the "+" button.
+        let gaps = AppSpacing.xSmall * CGFloat(count)
+        let usable = availableWidth - AppSpacing.small * 2 - gaps - newTabButtonWidth
         return min(AppSize.tabMaxWidth, max(AppSize.tabMinWidth, usable / CGFloat(count)))
+    }
+
+    /// The inline "+" button's footprint inside the scroll area (icon plus
+    /// the toolbar style's padding).
+    private var newTabButtonWidth: CGFloat {
+        AppSpacing.small * 2 + 14
     }
 }
 
@@ -168,7 +196,7 @@ private struct TabPill: View {
             store.selectedTab = tab
         } label: {
             HStack(spacing: AppSpacing.xSmall) {
-                tabIcon
+                TabItemIcon(tab: tab)
                 tabTitle
             }
             .padding(.horizontal, AppSpacing.small)
@@ -288,47 +316,7 @@ private struct TabPill: View {
     /// Whether the tab's request, environment, collection, or workspace
     /// variables have unsaved modifications.
     private var isDirty: Bool {
-        switch tab {
-        case .request(let id):
-            return store.hasPendingChanges(for: id)
-        case .environment(let id):
-            return store.hasPendingEnvironmentChanges(for: id)
-        case .collection(let id):
-            return store.hasPendingCollectionChanges(for: id)
-        case .workspaceVariables(let id):
-            return store.hasPendingWorkspaceVariables(for: id)
-        default:
-            return false
-        }
-    }
-
-    @ViewBuilder
-    private var tabIcon: some View {
-        switch tab {
-        case .request(let id):
-            if let request = store.vault.collections.flatMap(\.requests).first(where: { $0.id == id }) {
-                MethodTag(method: request.httpMethod)
-            } else {
-                Image(systemName: "doc.text")
-                    .foregroundStyle(.secondary)
-            }
-        case .environment:
-            Image(systemName: "globe")
-                .font(.caption)
-                .foregroundStyle(AppColor.accent)
-        case .collection:
-            Image(systemName: "folder.fill")
-                .font(.caption)
-                .foregroundStyle(AppColor.accent)
-        case .workspace:
-            Image(systemName: "square.stack.3d.up.fill")
-                .font(.caption)
-                .foregroundStyle(AppColor.accent)
-        case .workspaceVariables:
-            Image(systemName: "curlybraces")
-                .font(.caption)
-                .foregroundStyle(AppColor.accent)
-        }
+        isTabDirty(tab, store: store)
     }
 
     @ViewBuilder
@@ -374,5 +362,146 @@ private struct TabPill: View {
                     .help("\(workspace.name) - workspace variables")
             }
         }
+    }
+}
+
+// MARK: - Tab drawer
+
+/// Whether the tab's underlying entity has unsaved modifications. Shared by
+/// the tab pill's dirty dot and the drawer's rows.
+@MainActor
+private func isTabDirty(_ tab: OpenTab, store: AppStore) -> Bool {
+    switch tab {
+    case .request(let id):
+        return store.hasPendingChanges(for: id)
+    case .environment(let id):
+        return store.hasPendingEnvironmentChanges(for: id)
+    case .collection(let id):
+        return store.hasPendingCollectionChanges(for: id)
+    case .workspaceVariables(let id):
+        return store.hasPendingWorkspaceVariables(for: id)
+    default:
+        return false
+    }
+}
+
+/// A tab's leading icon (method tag for requests, scope glyph otherwise).
+/// Shared by the tab pill and the drawer rows.
+private struct TabItemIcon: View {
+    @Environment(AppStore.self) private var store
+    let tab: OpenTab
+
+    var body: some View {
+        switch tab {
+        case .request(let id):
+            if let request = store.vault.collections.flatMap(\.requests).first(where: { $0.id == id }) {
+                MethodTag(method: request.httpMethod)
+            } else {
+                Image(systemName: "doc.text")
+                    .foregroundStyle(.secondary)
+            }
+        case .environment:
+            Image(systemName: "globe")
+                .font(.caption)
+                .foregroundStyle(AppColor.accent)
+        case .collection:
+            Image(systemName: "folder.fill")
+                .font(.caption)
+                .foregroundStyle(AppColor.accent)
+        case .workspace:
+            Image(systemName: "square.stack.3d.up.fill")
+                .font(.caption)
+                .foregroundStyle(AppColor.accent)
+        case .workspaceVariables:
+            Image(systemName: "curlybraces")
+                .font(.caption)
+                .foregroundStyle(AppColor.accent)
+        }
+    }
+}
+
+/// Postman-style tab drawer: a searchable list of every open tab. Selecting
+/// a row focuses that tab; dirty rows carry the same orange dot as the pill.
+private struct TabDrawer: View {
+    @Environment(AppStore.self) private var store
+    let onSelect: () -> Void
+    @State private var search = ""
+    @FocusState private var searchFocused: Bool
+
+    private var matchingTabs: [OpenTab] {
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return store.visibleOpenTabs }
+        return store.visibleOpenTabs.filter {
+            store.tabDisplayName($0).localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            TextField("Search tabs", text: $search)
+                .textFieldStyle(.plain)
+                .focused($searchFocused)
+                .variableFieldBordered()
+                .padding(AppSpacing.small)
+            Divider()
+            if matchingTabs.isEmpty {
+                VStack(spacing: AppSpacing.xSmall) {
+                    Text("No Matching Tabs")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, AppSpacing.large)
+            } else {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(matchingTabs) { tab in
+                            TabDrawerRow(tab: tab, onSelect: onSelect)
+                            Divider()
+                        }
+                    }
+                }
+                .frame(maxHeight: 320)
+            }
+        }
+        .frame(width: 360)
+        .onAppear { searchFocused = true }
+    }
+}
+
+private struct TabDrawerRow: View {
+    @Environment(AppStore.self) private var store
+    let tab: OpenTab
+    let onSelect: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button {
+            store.selectedTab = tab
+            onSelect()
+        } label: {
+            HStack(spacing: AppSpacing.xSmall) {
+                TabItemIcon(tab: tab)
+                Text(store.tabDisplayName(tab))
+                    .font(.subheadline)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if isTabDirty(tab, store: store) {
+                    Circle()
+                        .fill(AppColor.warning)
+                        .frame(width: 8, height: 8)
+                }
+            }
+            .padding(.horizontal, AppSpacing.small)
+            .frame(height: AppSize.toolbarHeight)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                    .fill(isHovering ? AppColor.subtleBackground : .clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .help(store.tabDisplayName(tab))
     }
 }
