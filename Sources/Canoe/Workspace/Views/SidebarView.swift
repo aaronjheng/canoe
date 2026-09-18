@@ -78,7 +78,6 @@ private struct ItemsView: View {
                             .help("Add collection or request")
                         }
                     )
-                    .padding(.leading, AppSpacing.medium)
                     .padding(.top, AppSpacing.xSmall)
                     .padding(.bottom, AppSpacing.xxSmall)
                     if store.isCollectionsSectionExpanded {
@@ -102,7 +101,6 @@ private struct ItemsView: View {
                             .help("Add environment")
                         }
                     )
-                    .padding(.leading, AppSpacing.medium)
                     .padding(.top, AppSpacing.xSmall)
                     .padding(.bottom, AppSpacing.xxSmall)
                     if store.isEnvironmentsSectionExpanded {
@@ -134,19 +132,22 @@ private struct ItemsView: View {
     }
 }
 
-/// A collapsible `> COLLECTIONS (3)  +` group header.
+/// A collapsible `> COLLECTIONS (3)  +` group header. The whole row toggles
+/// the section (Postman-style) and lights up on hover like the tree rows
+/// below it; the trailing actions stay clickable inside the row.
 private struct GroupHeader<Actions: View>: View {
     let title: String
     let count: Int
     let isExpanded: Bool
     let onToggle: () -> Void
     @ViewBuilder let actions: () -> Actions
+    @State private var isHovering = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            Button {
-                onToggle()
-            } label: {
+        Button {
+            onToggle()
+        } label: {
+            HStack(spacing: 0) {
                 HStack(spacing: 0) {
                     Image(systemName: "chevron.right")
                         .font(.footnote.weight(.semibold))
@@ -166,13 +167,25 @@ private struct GroupHeader<Actions: View>: View {
                         .foregroundStyle(.secondary)
                         .padding(.leading, AppSpacing.xSmall)
                 }
-                .contentShape(Rectangle())
+                // The label keeps the header's old x position; the hover
+                // fill extends further left so it lines up with the row
+                // hovers below.
+                .padding(.leading, AppSpacing.medium)
+                .padding(.vertical, AppSpacing.xSmall)
+                Spacer(minLength: 0)
+                actions()
+                    .padding(.trailing, AppSpacing.xSmall)
             }
-            .buttonStyle(.plain)
-            .help(isExpanded ? "Collapse \(title)" : "Expand \(title)")
-            Spacer(minLength: 0)
-            actions()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                    .fill(isHovering ? AppColor.subtleBackground : .clear)
+            )
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .help(isExpanded ? "Collapse \(title)" : "Expand \(title)")
     }
 }
 

@@ -661,6 +661,7 @@ private struct MethodPicker: View {
     @Binding var selection: HTTPMethod
     @Binding var isExpanded: Bool
     var onToggle: () -> Void
+    @State private var isHovering = false
 
     private var shape: UnevenRoundedRectangle {
         UnevenRoundedRectangle(
@@ -691,10 +692,11 @@ private struct MethodPicker: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
         .help("HTTP method")
         .padding(.horizontal, AppSpacing.compact)
         .padding(.vertical, 3)
-        .background(AppColor.fieldBackground, in: shape)
+        .background(isHovering && !isExpanded ? AppColor.subtleBackground : AppColor.fieldBackground, in: shape)
         .overlay {
             shape.strokeBorder(
                 isExpanded ? AppColor.accent : AppColor.borderStrong,

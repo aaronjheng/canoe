@@ -187,7 +187,7 @@ private struct FormDataEditor: View {
                     } label: {
                         Image(systemName: "trash")
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(IconButtonStyle())
                     .foregroundStyle(.secondary)
                     .help("Remove row")
                 }
@@ -198,7 +198,7 @@ private struct FormDataEditor: View {
                 Label("Add Row", systemImage: "plus")
                     .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(IconButtonStyle())
         }
     }
 

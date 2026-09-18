@@ -222,15 +222,55 @@ struct PrimaryButtonStyle: ButtonStyle {
 }
 
 struct ToolbarButtonStyle: ButtonStyle {
+    @State private var isHovering = false
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .labelStyle(.iconOnly)
             .font(.body)
-            .foregroundStyle(configuration.isPressed ? .primary : .secondary)
+            .foregroundStyle(configuration.isPressed || isHovering ? .primary : .secondary)
             .padding(AppSpacing.small - AppSpacing.xxSmall)
-            .background(configuration.isPressed ? AppColor.border : .clear)
-            .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                    .fill(
+                        configuration.isPressed
+                            ? AppColor.border
+                            : (isHovering ? AppColor.tabHoverBackground : .clear)
+                    )
+            )
             .contentShape(Rectangle())
+            .onHover { isHovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: isHovering)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+/// Inline icon-button feedback (response body tools, console actions,
+/// snippet copy, row trash): hover paints the shared light fill, press
+/// deepens it. Deliberately does not touch the label's own foreground so
+/// callers keep custom tints (accent toggles, success checkmarks). Same
+/// hover family as `ToolbarToggleButton` and the tree rows. Disabled
+/// buttons get no hover fill - a control that cannot act must not pretend
+/// it is interactive.
+struct IconButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(AppSpacing.compact - AppSpacing.xxSmall)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                    .fill(
+                        configuration.isPressed
+                            ? AppColor.border
+                            : (isEnabled && isHovering ? AppColor.tabHoverBackground : .clear)
+                    )
+            )
+            .contentShape(Rectangle())
+            .onHover { isHovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: isHovering)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
@@ -308,6 +348,7 @@ struct UnderlineTab: View {
     let count: Int?
     let isSelected: Bool
     let action: () -> Void
+    @State private var isHovering = false
 
     var body: some View {
         Button(action: action) {
@@ -322,7 +363,9 @@ struct UnderlineTab: View {
                     .overlay {
                         Text(title)
                             .font(.subheadline.weight(isSelected ? .semibold : .regular))
-                            .foregroundStyle(isSelected ? .primary : .secondary)
+                            // Hover lifts an unselected tab's label to primary
+                            // so the row reads as interactive before the click.
+                            .foregroundStyle(isSelected || isHovering ? .primary : .secondary)
                     }
                 if let count, count > 0 {
                     Text("\(count)")
@@ -345,6 +388,7 @@ struct UnderlineTab: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
     }
 }
 
@@ -402,6 +446,7 @@ struct SaveChipButton: View {
     let isDirty: Bool
     let help: String
     let action: () -> Void
+    @State private var isHovering = false
 
     var body: some View {
         Button(action: action) {
@@ -415,10 +460,15 @@ struct SaveChipButton: View {
             .padding(.vertical, AppSpacing.xxSmall)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                    .fill(isDirty ? AppColor.subtleBackground : .clear)
+                    .fill(
+                        isDirty
+                            ? (isHovering ? AppColor.tabHoverBackground : AppColor.subtleBackground)
+                            : .clear
+                    )
             )
         }
         .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
         .disabled(!isDirty)
         .help(help)
     }

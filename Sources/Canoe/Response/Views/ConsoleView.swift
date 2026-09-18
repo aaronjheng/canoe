@@ -61,9 +61,12 @@ struct ConsoleView: View {
                 store.clearConsole()
             }
             .labelStyle(.iconOnly)
-            .buttonStyle(.borderless)
+            .buttonStyle(IconButtonStyle())
             .foregroundStyle(.secondary)
-            .disabled(store.consoleEntries.isEmpty)
+            // Clear wipes everything, not just the filtered view: with the
+            // Errors filter on, an empty visible list must not enable the
+            // destruction of the hidden successful entries.
+            .disabled(visibleEntries.isEmpty)
             .help("Clear console")
         }
         .padding(.horizontal, AppSpacing.medium)
@@ -142,11 +145,22 @@ private struct ConsoleEntryRow: View {
     let onToggle: () -> Void
     let onCopyRaw: () -> Void
 
+    @State private var isHovering = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             summaryRow
                 .contentShape(Rectangle())
+                // Hover feedback for the whole clickable summary row; the
+                // translucent fill sits on top of the error tint and merely
+                // mutes it a little, so error rows keep their identity.
+                .background(AppColor.subtleBackground.opacity(isHovering ? 1 : 0))
                 .onTapGesture { onToggle() }
+                .onHover { isHovering = $0 }
+                // LazyVStack recycling does not guarantee an onHover(false)
+                // when a hovered row scrolls away - clear it so the fill
+                // never reappears stuck on without the pointer.
+                .onDisappear { isHovering = false }
             if isExpanded {
                 ConsoleEntryDetail(entry: entry, copied: copied, onCopyRaw: onCopyRaw)
             }

@@ -70,7 +70,7 @@ struct CodeSnippetSidebarView: View {
                 .font(.subheadline)
                 .foregroundStyle(copied ? AppColor.success : .secondary)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(IconButtonStyle())
         .disabled(copied)
         .help("Copy snippet to the clipboard")
     }

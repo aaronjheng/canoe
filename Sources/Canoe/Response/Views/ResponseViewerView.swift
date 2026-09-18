@@ -233,20 +233,20 @@ struct ResponseViewerView: View {
                     wordWrap.toggle()
                 }
                 .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
+                .buttonStyle(IconButtonStyle())
                 .foregroundStyle(wordWrap ? AppColor.accent : .secondary)
                 .help(wordWrap ? "Disable word wrap" : "Enable word wrap")
                 Button("Copy Body", systemImage: "doc.on.doc") {
                     copyToPasteboard(bodyText)
                 }
                 .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
+                .buttonStyle(IconButtonStyle())
                 .help("Copy response body")
                 Button("Save Response", systemImage: "square.and.arrow.down") {
                     saveResponse(response)
                 }
                 .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
+                .buttonStyle(IconButtonStyle())
                 .help("Save response body to a file…")
             }
         }

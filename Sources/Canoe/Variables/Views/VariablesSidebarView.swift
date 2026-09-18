@@ -517,6 +517,10 @@ private struct VariableRow: View {
             }
             .font(.caption)
             .opacity(isHovering || focusedAction != nil ? 1 : 0)
+            // The buttons fade with the row hover; an invisible button must
+            // not keep hit-testing (stray clicks could reveal a secret or
+            // overwrite the pasteboard with no visible control).
+            .allowsHitTesting(isHovering || focusedAction != nil)
         }
         .padding(.leading, AppSpacing.large)
         .padding(.trailing, AppSpacing.medium)

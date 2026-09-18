@@ -202,7 +202,7 @@ struct AuthorizationForm: View {
                                     .font(.subheadline)
                             }
                         )
-                        .buttonStyle(.plain)
+                        .buttonStyle(IconButtonStyle())
                         .foregroundStyle(AppColor.accent)
                         .help(source.isFolder ? "Open this folder's settings" : "Open the collection editor")
                     }
