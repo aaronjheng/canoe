@@ -90,6 +90,17 @@ struct RequestEditorView: View {
     /// The dropdown's type-to-filter query.
     @State private var methodFilter = ""
     @FocusState private var methodFilterFieldFocused: Bool
+    /// Inline request-name editing (Postman-style): hover pill + focus ring.
+    @FocusState private var isNameFieldFocused: Bool
+    @State private var isNameHovered = false
+    /// Name at focus time; Esc restores it (commit happens on blur/Enter).
+    @State private var nameEditBaseline = ""
+    /// The name field's frame in window coordinates - the click-away
+    /// monitor needs it to spare clicks inside the field.
+    @State private var nameFieldFrame: CGRect = .zero
+    /// Local left-mouse-down monitor that ends name editing when a click
+    /// lands outside the field. Installed while the editor is on screen.
+    @State private var nameDismissMonitor: Any?
 
     /// Methods matching the dropdown's filter (empty shows all).
     private var filteredMethods: [HTTPMethod] {
@@ -238,6 +249,12 @@ struct RequestEditorView: View {
             sectionContent
         }
         .background(.background)
+        // Click-anywhere-to-blur for the name field is driven by an NSEvent
+        // monitor (see installNameDismissMonitor) - deliberately NOT a
+        // SwiftUI tap gesture: a root gesture delays primary mouse events
+        // and races the field editor's mouseDown, which makes clicking into
+        // the name field itself fail most of the time.
+        .onPreferenceChange(RequestNameFrameKey.self) { nameFieldFrame = $0 }
         .overlay { methodMenuOverlay }
         .onPreferenceChange(MethodMenuAnchorKey.self) { methodMenuAnchor = $0 }
         .onChange(of: draft) { _, newDraft in
@@ -251,6 +268,7 @@ struct RequestEditorView: View {
         .onChange(of: request.id) { _, _ in
             urlFieldFocused = nil
             isMethodMenuVisible = false
+            isNameFieldFocused = false
             draft = request
             urlText = composedURLText(base: request.urlString, params: request.params)
             section = .params
@@ -276,6 +294,10 @@ struct RequestEditorView: View {
             urlText = composedURLText(base: request.urlString, params: request.params)
         }
         .onChange(of: urlFieldFocused) { _, focused in
+            // The URL bar (and the method dropdown over it) are AppKit-owned
+            // fields: claiming them must visibly end name editing even when
+            // the SwiftUI focus state lags behind the responder switch.
+            if focused != nil { isNameFieldFocused = false }
             guard focused == .url else { return }
             isMethodMenuVisible = false
         }
@@ -298,7 +320,9 @@ struct RequestEditorView: View {
         .onAppear {
             draft = request
             urlText = composedURLText(base: draft.urlString, params: draft.params)
+            installNameDismissMonitor()
         }
+        .onDisappear { removeNameDismissMonitor() }
     }
 
     // MARK: - Name bar
@@ -338,15 +362,7 @@ struct RequestEditorView: View {
             // The HTTP method joins the editable name, mirroring the sidebar
             // rows (`GET New Request`); it is changed from the URL bar.
             MethodTag(method: draft.httpMethod)
-            TextField("Request Name", text: $draft.name)
-                .font(.subheadline.weight(.semibold))
-                .textFieldStyle(.plain)
-                // NO layoutPriority here: a priority-1 plain TextField claims
-                // the whole row and squeezes the breadcrumb Text to zero
-                // width (the original "collection name never shows" bug).
-                // At equal priority the less-flexible Text keeps its ideal
-                // width and the flexible TextField takes the remainder.
-                .frame(minWidth: 120)
+            requestNameField
             Spacer(minLength: AppSpacing.medium)
             saveButton
         }
@@ -357,11 +373,88 @@ struct RequestEditorView: View {
         .frame(height: AppSize.toolbarHeight)
     }
 
+    /// Postman-style inline request name: quiet heading at rest, light pill
+    /// on hover, accent-ring field on focus. The field hugs its text so the
+    /// chrome never reads as a wide empty input; a very long name falls back
+    /// to the row remainder and scrolls inside while focused. One persistent
+    /// TextField per branch - no view swap on state change - so caret, undo,
+    /// and the draft push behave like every other field.
+    private var requestNameField: some View {
+        ViewThatFits(in: .horizontal) {
+            requestNameFieldBody
+                .fixedSize()
+            requestNameFieldBody
+        }
+        .onHover { isNameHovered = $0 }
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: RequestNameFrameKey.self,
+                    value: geo.frame(in: .global))
+            }
+        )
+        .onChange(of: isNameFieldFocused) { _, focused in
+            if focused { nameEditBaseline = draft.name }
+        }
+    }
+
+    private var requestNameFieldBody: some View {
+        TextField("Request Name", text: $draft.name)
+            .font(.subheadline.weight(.semibold))
+            .textFieldStyle(.plain)
+            .focused($isNameFieldFocused)
+            .padding(.horizontal, AppSpacing.small - AppSpacing.xxSmall)
+            .padding(.vertical, AppSpacing.xSmall)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                    .fill(
+                        isNameFieldFocused
+                            ? AppColor.fieldBackground
+                            : (isNameHovered ? AppColor.subtleBackground : .clear)
+                    )
+            )
+            .overlay {
+                if isNameFieldFocused {
+                    RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                        .strokeBorder(AppColor.accent, lineWidth: 2)
+                }
+            }
+            .onSubmit { isNameFieldFocused = false }
+            .onKeyPress(.escape) {
+                draft.name = nameEditBaseline
+                isNameFieldFocused = false
+                return .handled
+            }
+    }
+
+    /// Ends name editing when a click lands outside the field. A local
+    /// NSEvent monitor observes without consuming, so TextField clicks are
+    /// never delayed or stolen (a SwiftUI root gesture would race the field
+    /// editor's mouseDown and break focus-by-click). Clicks anywhere else -
+    /// chrome, other editors, buttons - read as blur and drop the ring.
+    private func installNameDismissMonitor() {
+        guard nameDismissMonitor == nil else { return }
+        nameDismissMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
+            if isNameFieldFocused, !nameFieldFrame.contains(event.locationInWindow) {
+                isNameFieldFocused = false
+            }
+            return event
+        }
+    }
+
+    private func removeNameDismissMonitor() {
+        if let monitor = nameDismissMonitor {
+            NSEvent.removeMonitor(monitor)
+            nameDismissMonitor = nil
+        }
+    }
+
     /// Postman-style Save: shared chip, enabled while the request has
     /// unsaved changes.
     private var saveButton: some View {
         SaveChipButton(isDirty: isDirty, help: "Save Request (⌘S)") {
             urlFieldFocused = nil
+            isNameFieldFocused = false
             store.savePendingChanges()
         }
     }
@@ -375,7 +468,10 @@ struct RequestEditorView: View {
                     MethodPicker(
                         selection: $draft.httpMethod,
                         isExpanded: $isMethodMenuVisible,
-                        onToggle: { urlFieldFocused = nil }
+                        onToggle: {
+                            urlFieldFocused = nil
+                            isNameFieldFocused = false
+                        }
                     )
                     Color.clear
                         .frame(height: 30)
@@ -654,6 +750,15 @@ private struct MethodMenuAnchorKey: PreferenceKey {
     static let defaultValue: Anchor<CGRect>? = nil
     static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
         value = value ?? nextValue()
+    }
+}
+
+/// Tracks the inline request-name field's frame so the editor's spatial
+/// tap-to-dismiss can spare clicks inside the field.
+private struct RequestNameFrameKey: PreferenceKey {
+    static let defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        value = nextValue()
     }
 }
 
