@@ -136,6 +136,7 @@ struct CollectionDetailView: View {
                     valueHeader: "Value",
                     secretKeyPath: \.isSecret
                 )
+                .id(draft.id)
             }
         }
     }

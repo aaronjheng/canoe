@@ -3,7 +3,7 @@ import Observation
 import SwiftUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let appStore = AppStore()
     private var window: NSWindow?
     private var settingsWindow: NSWindow?
@@ -149,6 +149,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func openSettings() {
         if let settingsWindow {
+            // Re-apply the current appearance: the window may have been
+            // created before a menu-driven theme change while it was closed.
+            (AppAppearance(rawValue: SettingsStore.shared.settings.appearance) ?? .system)
+                .applyToWindow(settingsWindow)
             settingsWindow.makeKeyAndOrderFront(nil)
             NSApp.activate()
             return
@@ -174,8 +178,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.center()
         (AppAppearance(rawValue: SettingsStore.shared.settings.appearance) ?? .system)
             .applyToWindow(window)
+        window.delegate = self
         settingsWindow = window
         window.makeKeyAndOrderFront(nil)
+    }
+
+    // MARK: - NSWindowDelegate
+
+    /// Releases the Settings window (and its split/toolbar controllers) on
+    /// close instead of holding a hidden zombie: reopening builds a fresh
+    /// window instead of reusing stale navigation state.
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window == settingsWindow else { return }
+        settingsWindow = nil
+        settingsToolbarController = nil
     }
 
     // MARK: - Inspectors

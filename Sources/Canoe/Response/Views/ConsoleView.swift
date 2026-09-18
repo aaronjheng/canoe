@@ -41,13 +41,12 @@ struct ConsoleView: View {
             Text("Console")
                 .font(AppFont.panelTitle)
             if errorCount > 0 {
-                Label("\(errorCount)", systemImage: "exclamationmark.triangle.fill")
-                    .labelStyle(.titleAndIcon)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(AppColor.error)
-                    .padding(.horizontal, AppSpacing.small - AppSpacing.xxSmall)
-                    .padding(.vertical, AppSpacing.xxSmall)
-                    .background(Capsule().fill(AppColor.badgeBackground(AppColor.error)))
+                Badge(
+                    text: "\(errorCount)",
+                    systemImage: "exclamationmark.triangle.fill",
+                    foregroundColor: AppColor.error,
+                    backgroundColor: AppColor.badgeBackground(AppColor.error)
+                )
             }
             Spacer(minLength: 0)
             Picker("Filter", selection: $errorsOnly) {

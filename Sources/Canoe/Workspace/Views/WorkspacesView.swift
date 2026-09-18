@@ -96,12 +96,12 @@ struct WorkspacesView: View {
                 Image(systemName: "square")
                     .foregroundStyle(.secondary)
                     .background {
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(Color(nsColor: .textBackgroundColor))
+                        RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                            .fill(AppColor.codeBackground)
                     }
             }
         }
-        .font(.system(size: 16))
+        .font(.system(size: AppSize.compactControl))
     }
 
     var body: some View {
@@ -194,7 +194,7 @@ struct WorkspacesView: View {
                 } else if someVisibleChecked {
                     Image(systemName: "minus.square.fill")
                         .symbolRenderingMode(.multicolor)
-                        .font(.system(size: 16))
+                        .font(.system(size: AppSize.compactControl))
                 } else {
                     checkmarkImage(isOn: false)
                 }

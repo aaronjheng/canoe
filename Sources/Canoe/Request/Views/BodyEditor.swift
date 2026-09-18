@@ -111,6 +111,7 @@ struct BodyEditor: View {
                 keyPlaceholder: "key",
                 valuePlaceholder: "value"
             )
+            .id(request.id)
         case .raw:
             rawEditor
         case .binary:
@@ -211,15 +212,13 @@ private struct FormDataEditor: View {
                 .truncationMode(.middle)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .helpIf(!field.value.isEmpty, field.value)
-            Button("Browse…") {
+            LinkButton("Browse…") {
                 if let url = openFilePanel() {
                     if let index = fields.firstIndex(where: { $0.id == field.id }) {
                         fields[index].value = url.path
                     }
                 }
             }
-            .buttonStyle(.link)
-            .font(.subheadline)
             .help("Choose a file to upload")
         }
         .padding(.horizontal, AppSpacing.small)
@@ -271,8 +270,7 @@ private struct BinaryFileEditor: View {
                 }
                 .help("Choose a file to send as the body")
                 if !path.isEmpty {
-                    Button("Clear", role: .destructive) { path = "" }
-                        .buttonStyle(.link)
+                    LinkButton("Clear", isDestructive: true) { path = "" }
                         .help("Remove the selected file")
                 }
             }

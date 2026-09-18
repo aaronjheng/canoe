@@ -128,19 +128,11 @@ struct CodeSnippetSidebarView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: AppSpacing.small) {
-            Image(systemName: "chevron.left.forwardslash.chevron.right")
-                .font(.system(size: 36, weight: .light))
-                .foregroundStyle(.secondary)
-            Text("No Request Selected")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            Text("Open a request to generate its code snippet.")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 220)
-        }
+        ContentUnavailableView(
+            "No Request Selected",
+            systemImage: "chevron.left.forwardslash.chevron.right",
+            description: Text("Open a request to generate its code snippet.")
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 

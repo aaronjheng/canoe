@@ -728,6 +728,9 @@ struct RequestEditorView: View {
                 valuePlaceholder: "value",
                 allowsReorder: true
             )
+            // Fresh table state per request: the editor holds ghost-row and
+            // focus state internally, which must not leak across requests.
+            .id(draft.id)
         case .headers:
             KeyValueEditor(
                 items: $draft.headers,
@@ -739,6 +742,7 @@ struct RequestEditorView: View {
                 valuePlaceholder: "value",
                 allowsReorder: true
             )
+            .id(draft.id)
         case .auth:
             AuthEditor(request: $draft)
         case .body:

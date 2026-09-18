@@ -280,7 +280,8 @@ private enum VariablePlaceholderStyling {
     }
 
     static func tint(_ name: String, in variables: [String: String]) -> NSColor {
-        NSColor(variables[name] != nil ? AppColor.success : AppColor.warning).withAlphaComponent(0.22)
+        NSColor(variables[name] != nil ? AppColor.success : AppColor.warning)
+            .withAlphaComponent(AppOpacity.variableHighlight)
     }
 
     /// Fresh paragraph style carrying a line break mode (see `attributed`).
@@ -1241,12 +1242,9 @@ extension View {
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                     .fill(AppColor.fieldBackground)
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                    .strokeBorder(
-                        isFocused ? AppColor.accent : AppColor.borderStrong,
-                        lineWidth: isFocused ? 2 : 1
-                    )
-            )
+            // Shared focus-border language (see focusRingBorder): the URL
+            // bar and method picker keep bespoke overlays only because
+            // their spliced UnevenRoundedRectangle shape differs.
+            .focusRingBorder(isFocused: isFocused)
     }
 }

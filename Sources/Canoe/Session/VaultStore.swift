@@ -53,6 +53,11 @@ final class VaultStore {
     var vaultURL: URL?
     var isReady = false
     var loadError: String?
+    /// Files that failed to decode on the last load (skipped individually so
+    /// one bad file cannot wipe out its section). Surfaced in the UI instead
+    /// of vanishing silently - the files stay on disk for manual recovery.
+    var corruptFileCount = 0
+    var corruptFileNames: [String] = []
     /// Set when the vault runs somewhere other than requested: iCloud Drive
     /// unavailable at launch, or lost at runtime (signed out, disabled).
     /// Unlike `loadError`, `loadAll` never clears this - it stays until sync
@@ -212,6 +217,8 @@ final class VaultStore {
             stopWatching()
         }
         guard let vaultURL else { return }
+        corruptFileCount = 0
+        corruptFileNames = []
         do {
             try await ensureDirectoryStructure(at: vaultURL)
 
@@ -221,6 +228,12 @@ final class VaultStore {
                     config = try JSONDecoder.iso.decode(VaultConfig.self, from: data)
                 } catch {
                     AppLogger.error("Failed to decode vault config, using defaults: \(error)", category: "Vault")
+                    // Back up the undecodable file before any later
+                    // persistConfig overwrites it, so a manual recovery stays
+                    // possible instead of a silent destructive reset.
+                    let backup = vaultURL.appendingPathComponent(
+                        "vault.json.corrupt-\(Int(Date().timeIntervalSince1970))")
+                    try? data.write(to: backup, options: .atomic)
                 }
             }
 
@@ -237,15 +250,26 @@ final class VaultStore {
             let (loadedWorkspaces, loadedCollections, loadedEnvironments) = await (
                 loadedWorkspacesTask, loadedCollectionsTask, loadedEnvironmentsTask
             )
+            // Corrupt files are skipped per-file above; surface how many (and
+            // which) so the UI can say so instead of silently dropping them.
+            let failedNames = loadedWorkspaces.failed + loadedCollections.failed + loadedEnvironments.failed
+            corruptFileCount = failedNames.count
+            corruptFileNames = failedNames.sorted()
+            if !failedNames.isEmpty {
+                AppLogger.error(
+                    "Skipped \(failedNames.count) corrupt vault file(s)",
+                    category: "Vault",
+                    fields: ["files": failedNames.joined(separator: ", ")])
+            }
             // The id tiebreaker keeps the order deterministic when two files
             // share an orderIndex (legacy files, same-second iCloud copies).
-            workspaces = loadedWorkspaces.sorted {
+            workspaces = loadedWorkspaces.items.sorted {
                 ($0.orderIndex, $0.id.uuidString) < ($1.orderIndex, $1.id.uuidString)
             }
-            collections = loadedCollections.sorted {
+            collections = loadedCollections.items.sorted {
                 ($0.orderIndex, $0.id.uuidString) < ($1.orderIndex, $1.id.uuidString)
             }
-            environments = loadedEnvironments.sorted {
+            environments = loadedEnvironments.items.sorted {
                 ($0.orderIndex, $0.id.uuidString) < ($1.orderIndex, $1.id.uuidString)
             }
 
@@ -282,18 +306,28 @@ final class VaultStore {
     }
 
     /// Decodes a batch of JSON files concurrently. Corrupt files are skipped
-    /// individually so one bad file cannot wipe out the whole section.
-    private nonisolated func loadItems<T: Decodable & Sendable>(_ type: T.Type, from files: [URL]) async -> [T] {
-        await withTaskGroup(of: T?.self, returning: [T].self) { group in
+    /// individually so one bad file cannot wipe out the whole section; their
+    /// names are returned alongside so callers can surface the count.
+    private nonisolated func loadItems<T: Decodable & Sendable>(
+        _ type: T.Type, from files: [URL]
+    ) async -> (items: [T], failed: [String]) {
+        await withTaskGroup(of: (T?, String).self, returning: ([T], [String]).self) { group in
             for file in files {
-                group.addTask { try? await FileStore.read(T.self, at: file) }
+                group.addTask {
+                    do {
+                        return (try await FileStore.read(T.self, at: file), file.lastPathComponent)
+                    } catch {
+                        return (nil, file.lastPathComponent)
+                    }
+                }
             }
             var items: [T] = []
+            var failed: [String] = []
             items.reserveCapacity(files.count)
-            for await item in group {
-                if let item { items.append(item) }
+            for await (item, name) in group {
+                if let item { items.append(item) } else { failed.append(name) }
             }
-            return items
+            return (items, failed)
         }
     }
 

@@ -186,12 +186,7 @@ struct AuthorizationForm: View {
                 HStack(spacing: AppSpacing.small) {
                     Text(source.authorization.type.label)
                         .font(AppFont.panelTitle)
-                    Text("Inherited")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, AppSpacing.compact)
-                        .padding(.vertical, AppSpacing.xxSmall)
-                        .background(Capsule().fill(AppColor.subtleBackground))
+                    Badge(text: "Inherited")
                     Spacer(minLength: 0)
                     if onEditInParent != nil {
                         Button(

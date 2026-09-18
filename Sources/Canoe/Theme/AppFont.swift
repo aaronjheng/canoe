@@ -25,4 +25,14 @@ enum AppFont {
     /// Key/value cell text in tables. Alias of `monoSubheadline`; use
     /// `monoSubheadline` for new code.
     static let cellText = monoSubheadline
+
+    // MARK: - Badges and compact labels (one scale, not scattered sizes)
+
+    /// HTTP method tags in the sidebar/history (was a scattered size 9).
+    static let methodTag = Font.system(size: 9, weight: .bold)
+    /// Protocol badge in the breadcrumb row (was a scattered size 10).
+    static let requestTypeBadge = Font.system(size: 10, weight: .bold)
+    /// Tiny completion-popup metadata (was scattered sizes 8/9).
+    static let completionMeta = Font.system(size: 9)
+    static let completionMetaSmall = Font.system(size: 8)
 }

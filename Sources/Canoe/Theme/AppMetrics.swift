@@ -28,6 +28,10 @@ enum AppOpacity {
     static let disabled: CGFloat = 0.45
     static let badgeBackground: CGFloat = 0.12
     static let errorBackground: CGFloat = 0.10
+    /// `{{variable}}` highlight wash inside editors (tints the syntax color).
+    static let variableHighlight: CGFloat = 0.22
+    /// Soft accent shadow for the welcome mark.
+    static let markShadow: CGFloat = 0.3
 }
 
 enum AppSize {
@@ -62,6 +66,13 @@ enum AppSize {
     static let tabHeight: CGFloat = 28
     /// Vertical divider inside the tab strip (environment picker separator).
     static let tabStripDividerHeight: CGFloat = 18
+    /// Compact 16px control box in tab pills (spinner, close button) and the
+    /// sidebar tree icons.
+    static let compactControl: CGFloat = 16
+    /// Dirty-dot diameter in tab pills and the tab-switcher rows.
+    static let dirtyDot: CGFloat = 8
+    /// Tab-switcher search popup width (matches the sidebar max width).
+    static let tabSearchWidth: CGFloat = 360
     /// Disclosure-chevron column in sidebar tree rows - the 16px codicon box
     /// VS Code uses for its tree twisties.
     static let treeChevronWidth: CGFloat = 16

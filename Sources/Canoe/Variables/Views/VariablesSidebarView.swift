@@ -368,13 +368,7 @@ private struct ScopeSection: View {
     }
 
     private func linkButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(AppColor.accent)
-                .underline()
-        }
-        .buttonStyle(.plain)
+        LinkButton(title, font: .caption.weight(.medium), action: action)
     }
 }
 

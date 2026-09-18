@@ -282,7 +282,7 @@ private struct TabPill: View {
         if isSending {
             ProgressView()
                 .controlSize(.mini)
-                .frame(width: 16, height: 16)
+                .frame(width: AppSize.compactControl, height: AppSize.compactControl)
                 .padding(.trailing, AppSpacing.compact)
         } else if isHovering || (isSelected && !isDirty) {
             Button {
@@ -291,7 +291,7 @@ private struct TabPill: View {
                 Image(systemName: "xmark")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .frame(width: 16, height: 16)
+                    .frame(width: AppSize.compactControl, height: AppSize.compactControl)
                     // No resting fill - the circle only appears while the
                     // pointer is over the button, marking it as clickable.
                     .background {
@@ -308,7 +308,7 @@ private struct TabPill: View {
             // close button sits; hovering swaps it back to the × above.
             Circle()
                 .fill(AppColor.warning)
-                .frame(width: 8, height: 8)
+                .frame(width: AppSize.dirtyDot, height: AppSize.dirtyDot)
                 .padding(.trailing, AppSpacing.compact)
         }
     }
@@ -464,7 +464,7 @@ private struct TabDrawer: View {
                 .frame(maxHeight: 320)
             }
         }
-        .frame(width: 360)
+        .frame(width: AppSize.tabSearchWidth)
         .onAppear { searchFocused = true }
     }
 }
@@ -489,7 +489,7 @@ private struct TabDrawerRow: View {
                 if isTabDirty(tab, store: store) {
                     Circle()
                         .fill(AppColor.warning)
-                        .frame(width: 8, height: 8)
+                        .frame(width: AppSize.dirtyDot, height: AppSize.dirtyDot)
                 }
             }
             .padding(.horizontal, AppSpacing.small)

@@ -36,7 +36,8 @@ struct EnvironmentDetailView: View {
             KeyValueEditor(
                 items: $draft.variables,
                 makeNew: Variable.init,
-                variables: draft.variables.resolvingDictionary(),
+                variables: resolvedVariables,
+                suggestions: suggestions,
                 keyHeader: "Variable",
                 valueHeader: "Value",
                 secretKeyPath: \.isSecret,
@@ -44,6 +45,7 @@ struct EnvironmentDetailView: View {
                 // this order, so no auto-sort may rewrite it.
                 allowsReorder: true
             )
+            .id(draft.id)
         }
         .onChange(of: draft) { _, newValue in
             // Memory-only + dirty mark; the drafts mirror inside the store
@@ -66,6 +68,43 @@ struct EnvironmentDetailView: View {
     /// editor's id (see the adoption `onChange` above).
     private var liveEnvironment: EnvProfile? {
         store.vault.environments.first(where: { $0.id == draft.id })
+    }
+
+    /// The workspace owning this environment (for scope merging below).
+    private var draftWorkspace: Workspace? {
+        draft.workspaceID.flatMap { id in store.vault.workspaces.first(where: { $0.id == id }) }
+    }
+
+    // MARK: - Variable scope for {{placeholder}} highlighting
+
+    /// Workspace scope first, then this environment's own values (matching
+    /// send-time resolution order). Previously only self-values were passed,
+    /// so workspace variables rendered as unresolved here.
+    private var resolvedVariables: [String: String] {
+        var merged: [String: String] = [:]
+        if let workspace = draftWorkspace {
+            merged = workspace.variables.resolvingDictionary(into: merged)
+        }
+        return draft.variables.resolvingDictionary(into: merged)
+    }
+
+    private var suggestions: [VariableSuggestion] {
+        var scopes: [RequestVariableScope] = []
+        if let workspace = draftWorkspace {
+            scopes.append(
+                RequestVariableScope(
+                    kind: .workspace, ownerID: workspace.id,
+                    ownerName: workspace.name, variables: workspace.variables
+                )
+            )
+        }
+        scopes.append(
+            RequestVariableScope(
+                kind: .environment, ownerID: draft.id,
+                ownerName: draft.name, variables: draft.variables
+            )
+        )
+        return VariableSuggestion.suggestions(from: scopes)
     }
 
     /// Postman-style Save: shared chip, enabled while dirty.

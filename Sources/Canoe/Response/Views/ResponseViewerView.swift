@@ -13,6 +13,7 @@ struct ResponseViewerView: View {
     @State private var bodyRenderKey = ""
     @State private var bodyRenderDisplay = BodyDisplay(text: "", totalCount: nil, isJSON: false)
     @State private var bodyRenderText = Text("")
+    @State private var saveError: String?
 
     /// Max characters rendered in the body pane. Beyond this a single SwiftUI
     /// `Text` becomes sluggish, so the view shows a prefix plus a notice.
@@ -126,8 +127,7 @@ struct ResponseViewerView: View {
     // MARK: - Response detail (Headers | Body tab bar)
 
     private func responseDetail(_ response: ResponseModel) -> some View {
-        let key = "\(response.id)-\(bodyMode)"
-        // Cache hit: reuse the rendered Text. Miss (a fresh response or mode
+        let key = "\(response.id)-\(bodyMode)"  // Cache hit: reuse the rendered Text. Miss (a fresh response or mode
         // switch): compute synchronously for this frame so the first paint is
         // correct; the task below warms the cache so later renders
         // (header-filter keystrokes, tab switches) reuse it. State is only
@@ -145,6 +145,13 @@ struct ResponseViewerView: View {
         }
         .task(id: key) {
             updateBodyRenderCache(response, key: key)
+        }
+        // A header search typed for one response must not leak into the next:
+        // without this a stale filter renders "No Matching Headers" for a
+        // response that does have headers.
+        .onChange(of: response.id) { _, _ in
+            headerFilter = ""
+            saveError = nil
         }
     }
 
@@ -205,7 +212,12 @@ struct ResponseViewerView: View {
                 )
             } else {
                 VStack(spacing: 0) {
-                    bodyToolbar(response, display.text)
+                    if let saveError {
+                        ErrorBanner(message: saveError) { self.saveError = nil }
+                            .padding(.horizontal, AppSpacing.medium)
+                            .padding(.top, AppSpacing.xSmall)
+                    }
+                    bodyToolbar(response, display: display)
                     Divider()
                     bodyScroll(display, rendered: rendered)
                 }
@@ -216,8 +228,9 @@ struct ResponseViewerView: View {
 
     /// Body tools inside the content area (not on the tab row): the format
     /// switcher leads, per-body actions trail. Hidden for an empty body -
-    /// the tools have nothing to act on.
-    private func bodyToolbar(_ response: ResponseModel, _ bodyText: String) -> some View {
+    /// the tools have nothing to act on. Copy writes the full body (not the
+    /// truncated preview); Save writes the full bytes to a file.
+    private func bodyToolbar(_ response: ResponseModel, display: BodyDisplay) -> some View {
         HStack(spacing: AppSpacing.small) {
             Picker("Body Mode", selection: $bodyMode) {
                 ForEach(BodyMode.allCases) { mode in
@@ -237,11 +250,11 @@ struct ResponseViewerView: View {
                 .foregroundStyle(wordWrap ? AppColor.accent : .secondary)
                 .help(wordWrap ? "Disable word wrap" : "Enable word wrap")
                 Button("Copy Body", systemImage: "doc.on.doc") {
-                    copyToPasteboard(bodyText)
+                    copyToPasteboard(fullBodyText(response, display: display))
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(IconButtonStyle())
-                .help("Copy response body")
+                .help("Copy full response body")
                 Button("Save Response", systemImage: "square.and.arrow.down") {
                     saveResponse(response)
                 }
@@ -262,7 +275,7 @@ struct ResponseViewerView: View {
                 HStack {
                     Image(systemName: "info.circle")
                         .font(.caption2)
-                    Text("Showing the first \(shown) of \(total) characters. Copy the body to see it all.")
+                    Text("Showing the first \(shown) of \(total) characters. Save the body to keep it all.")
                         .font(.caption2)
                 }
                 .foregroundStyle(.secondary)
@@ -345,6 +358,10 @@ struct ResponseViewerView: View {
                         }
                     }
                     .contextMenu {
+                        Button("Copy All as Text") {
+                            copyToPasteboard(
+                                matches.map { "\($0.key): \($0.value)" }.joined(separator: "\n"))
+                        }
                         if let selected = matches.first(where: { $0.id == headerSelection }) {
                             Button("Copy Value") { copyToPasteboard(selected.value) }
                             Button("Copy Header") { copyToPasteboard("\(selected.key): \(selected.value)") }
@@ -362,11 +379,22 @@ struct ResponseViewerView: View {
         NSPasteboard.general.setString(string, forType: .string)
     }
 
+    /// The full body text for the current mode (not the truncated preview):
+    /// Copy and Save both act on everything the server returned.
+    private func fullBodyText(_ response: ResponseModel, display: BodyDisplay) -> String {
+        if display.totalCount == nil { return display.text }
+        switch bodyMode {
+        case .pretty: return response.prettyBodyString
+        case .raw: return response.bodyString
+        }
+    }
+
     /// Saves the full (untruncated) response body to a file, like Postman's
     /// "Save Response". The suggested extension follows the response MIME.
     /// The id suffix keeps two saves within the same second from suggesting
     /// the same filename and silently overwriting each other.
     private func saveResponse(_ response: ResponseModel) {
+        saveError = nil
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
         let timestamp = Int(response.timestamp.timeIntervalSince1970)
@@ -376,8 +404,10 @@ struct ResponseViewerView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try response.body.write(to: url)
+            saveError = nil
         } catch {
             AppLogger.error("Failed to save response body: \(error)", category: "Response")
+            saveError = "Could not save the response body: \(error.localizedDescription)"
         }
     }
 

@@ -518,7 +518,7 @@ private struct FolderTree: View {
                     HStack(spacing: AppSpacing.xSmall) {
                         ExpanderChevron(isExpanded: isExpanded)
                         Image(systemName: "folder")
-                            .font(.system(size: 16))  // VS Code uses 16px tree icons
+                            .font(.system(size: AppSize.compactControl))  // VS Code uses 16px tree icons
                             .foregroundStyle(.secondary)
                         Text(folder.name)
                             .font(AppFont.sidebarRow)
@@ -600,6 +600,8 @@ private struct RequestRow: View {
     let request: RequestItem
     let depth: Int
     @State private var isHovering = false
+    @State private var isRenaming = false
+    @State private var renameDraft = ""
     @State private var showDeleteConfirm = false
 
     private var isSelected: Bool { store.selectedTab == .request(request.id) }
@@ -638,6 +640,10 @@ private struct RequestRow: View {
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         .contextMenu {
+            Button("Rename") {
+                renameDraft = request.name
+                isRenaming = true
+            }
             Button("Duplicate") {
                 store.duplicateRequest(request.id)
             }
@@ -647,6 +653,11 @@ private struct RequestRow: View {
             }
         }
         .help(request.name)
+        .alert("Rename Request", isPresented: $isRenaming) {
+            TextField("Request Name", text: $renameDraft)
+            Button("Rename") { store.renameRequest(request.id, to: renameDraft) }
+            Button("Cancel", role: .cancel) {}
+        }
         .confirmationDialog(
             "Delete request \"\(request.name)\"",
             isPresented: $showDeleteConfirm,

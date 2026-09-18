@@ -41,10 +41,12 @@ struct WorkspaceVariablesView: View {
                 items: $draft.variables,
                 makeNew: Variable.init,
                 variables: draft.variables.resolvingDictionary(),
+                suggestions: suggestions,
                 keyHeader: "Variable",
                 valueHeader: "Value",
                 secretKeyPath: \.isSecret
             )
+            .id(draft.id)
         }
         // Keep rows ordered by name (see EnvironmentDetailView).
         .onChange(of: draft.variables.map(\.key)) { _, _ in
@@ -73,6 +75,19 @@ struct WorkspaceVariablesView: View {
     /// this editor's id (see the adoption `onChange` above).
     private var liveWorkspaceVariables: [Variable]? {
         store.vault.workspaces.first(where: { $0.id == draft.id })?.variables
+    }
+
+    /// Completion candidates with scope metadata. Workspace is the widest
+    /// scope (nothing above it), so this is the single scope - but with
+    /// metadata, so completions show scope/secret markers instead of the
+    /// names-only fallback.
+    private var suggestions: [VariableSuggestion] {
+        VariableSuggestion.suggestions(from: [
+            RequestVariableScope(
+                kind: .workspace, ownerID: draft.id,
+                ownerName: draft.name, variables: draft.variables
+            )
+        ])
     }
 
     /// Postman-style Save: shared chip, enabled while dirty.

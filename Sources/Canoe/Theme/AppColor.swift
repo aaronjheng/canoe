@@ -39,6 +39,9 @@ enum AppColor {
     static let neutral = dynamic(light: RGB(red: 89, green: 99, blue: 110), dark: RGB(red: 129, green: 139, blue: 152))
 
     static let info: Color = accent
+    /// Content drawn on the brand accent (button labels, badges): always
+    /// white in both appearances so accent fills stay readable.
+    static let onAccent = Color.white
 
     // MARK: - Syntax highlighting (JSON first, more languages later)
 

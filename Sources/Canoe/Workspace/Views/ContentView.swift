@@ -13,6 +13,8 @@ struct ContentView: View {
             Group {
                 if !store.vault.isReady {
                     VaultLoadingView()
+                } else if let loadError = store.vault.loadError {
+                    VaultErrorView(message: loadError)
                 } else if store.vault.workspaces.isEmpty {
                     WelcomeView()
                 } else if store.activeWorkspace == nil {
@@ -53,7 +55,16 @@ struct ContentView: View {
                         maxWidth: store.showSidebar ? AppSize.sidebarMaxWidth : 0
                     )
                     .clipped()
-                detailPane
+                VStack(spacing: 0) {
+                    // Corrupt files are skipped per-file on load: say so here
+                    // instead of letting collections silently vanish. The
+                    // files stay on disk for manual recovery.
+                    if store.vault.loadError == nil, store.vault.corruptFileCount > 0 {
+                        corruptFilesBanner
+                        Divider()
+                    }
+                    detailPane
+                }
             }
             if store.showVariablesSidebar {
                 Divider()
@@ -76,6 +87,33 @@ struct ContentView: View {
             detailContent
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Warning shown when per-file skips happened on load: names the count
+    /// so missing collections read as known damage, not mystery.
+    private var corruptFilesBanner: some View {
+        HStack(spacing: AppSpacing.small) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(AppColor.warning)
+            Text(corruptFilesMessage)
+                .font(.callout)
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+            Spacer(minLength: 0)
+            LinkButton("Reveal Vault") { store.vault.revealInFinder() }
+        }
+        .padding(.horizontal, AppSpacing.medium)
+        .padding(.vertical, AppSpacing.small)
+        .background(AppColor.warning.opacity(AppOpacity.errorBackground))
+    }
+
+    private var corruptFilesMessage: String {
+        if store.vault.corruptFileCount == 1 {
+            let name = store.vault.corruptFileNames.first ?? "unknown"
+            return "1 vault file could not be read and was skipped (\(name)). It is still on disk."
+        }
+        return
+            "\(store.vault.corruptFileCount) vault files could not be read and were skipped. They are still on disk."
     }
 
     @ViewBuilder
@@ -152,6 +190,39 @@ struct EmptyStateView: View {
             .buttonStyle(SendButtonStyle())
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// Full-window error shown when the vault itself fails to load: previously
+/// this state fell through to the welcome screen, inviting the user to create
+/// a workspace whose saves would then silently no-op.
+private struct VaultErrorView: View {
+    @Environment(AppStore.self) private var store
+    let message: String
+    @State private var isRetrying = false
+
+    var body: some View {
+        ContentUnavailableView(
+            "Could Not Load Vault",
+            systemImage: "exclamationmark.triangle",
+            description: Text(message)
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .bottom) {
+            HStack(spacing: AppSpacing.medium) {
+                Button(isRetrying ? "Retrying…" : "Retry") {
+                    isRetrying = true
+                    Task {
+                        await store.retryVaultLoad()
+                        isRetrying = false
+                    }
+                }
+                .buttonStyle(SendButtonStyle())
+                .disabled(isRetrying)
+                LinkButton("Reveal Vault in Finder") { store.vault.revealInFinder() }
+            }
+            .padding(.bottom, AppSpacing.xLarge)
+        }
     }
 }
 

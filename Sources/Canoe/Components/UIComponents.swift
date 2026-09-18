@@ -33,7 +33,7 @@ struct MethodTag: View {
 
     var body: some View {
         Text(method.rawValue)
-            .font(.system(size: 9, weight: .bold))
+            .font(AppFont.methodTag)
             .foregroundStyle(method.color)
     }
 }
@@ -46,9 +46,9 @@ struct RequestTypeBadge: View {
 
     var body: some View {
         Text(type.label)
-            .font(.system(size: 10, weight: .bold))
+            .font(AppFont.requestTypeBadge)
             .monospaced()
-            .foregroundStyle(.white)
+            .foregroundStyle(AppColor.onAccent)
             .padding(.horizontal, AppSpacing.small - AppSpacing.xxSmall)
             .frame(height: 16)
             .background(AppColor.accent)
@@ -186,7 +186,7 @@ struct SendButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.body.weight(.semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(AppColor.onAccent)
             .padding(.horizontal, AppSpacing.large)
             .padding(.vertical, AppSpacing.xSmall)
             .background(AppColor.accent)
@@ -200,26 +200,9 @@ struct SendButtonStyle: ButtonStyle {
     }
 }
 
-struct PrimaryButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
-    @State private var isHovering = false
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .padding(.horizontal, AppSpacing.medium)
-            .padding(.vertical, AppSpacing.small - AppSpacing.xxSmall)
-            .font(.system(.body, design: .default))
-            .foregroundStyle(.white)
-            .background(AppColor.accent)
-            .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
-            .brightness(configuration.isPressed ? -0.08 : (isHovering ? 0.08 : 0))
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .opacity(isEnabled ? 1 : AppOpacity.disabled)
-            .onHover { isHovering = $0 }
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
-            .animation(.easeOut(duration: 0.12), value: isHovering)
-    }
-}
+/// Alias kept for the one call site outside the request editor: every
+/// primary action uses the same style.
+typealias PrimaryButtonStyle = SendButtonStyle
 
 struct ToolbarButtonStyle: ButtonStyle {
     @State private var isHovering = false
@@ -303,6 +286,36 @@ struct ToolbarToggleButton: View {
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         .help(help)
+    }
+}
+
+// MARK: - Link button
+
+/// The single text-link language (Postman-style inline actions): app accent,
+/// underlined, plain chrome. Replaces scattered `.buttonStyle(.link)` uses,
+/// which render the *system* accent and drift from `AppColor.accent` whenever
+/// the user recolors their system accent.
+struct LinkButton: View {
+    let title: String
+    var font: Font = .subheadline
+    var isDestructive: Bool = false
+    let action: () -> Void
+
+    init(_ title: String, font: Font = .subheadline, isDestructive: Bool = false, action: @escaping () -> Void) {
+        self.title = title
+        self.font = font
+        self.isDestructive = isDestructive
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(font)
+                .foregroundStyle(isDestructive ? AppColor.error : AppColor.accent)
+                .underline()
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -432,7 +445,7 @@ struct CanoeMarkView: View {
             .frame(width: size, height: size)
             .clipShape(RoundedRectangle(cornerRadius: size * 0.23, style: .continuous))
             .shadow(
-                color: showsShadow ? AppColor.accent.opacity(0.3) : .clear,
+                color: showsShadow ? AppColor.accent.opacity(AppOpacity.markShadow) : .clear,
                 radius: showsShadow ? 20 : 0, y: showsShadow ? 8 : 0
             )
     }
@@ -502,6 +515,23 @@ struct PopupPanelModifier: ViewModifier {
     }
 }
 
+/// Focus-border language for bordered fields (see `focusRingBorder`):
+/// rest state is the strong border, focused state is the accent at 2pt.
+/// The URL bar and method picker keep bespoke overlays only because their
+/// spliced UnevenRoundedRectangle shape differs - same widths, same colors.
+struct FocusRingBorderModifier: ViewModifier {
+    let isFocused: Bool
+
+    func body(content: Content) -> some View {
+        content.overlay(
+            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                .strokeBorder(
+                    isFocused ? AppColor.accent : AppColor.borderStrong,
+                    lineWidth: isFocused ? 2 : 1)
+        )
+    }
+}
+
 extension View {
     func panelToolbar(horizontalPadding: CGFloat = AppSpacing.large) -> some View {
         modifier(PanelToolbarModifier(horizontalPadding: horizontalPadding))
@@ -509,6 +539,12 @@ extension View {
 
     func popupPanel() -> some View {
         modifier(PopupPanelModifier())
+    }
+
+    /// Single focus-border language for bordered fields: rest state is the
+    /// strong border, focused state is the accent at 2pt.
+    func focusRingBorder(isFocused: Bool) -> some View {
+        modifier(FocusRingBorderModifier(isFocused: isFocused))
     }
 
     /// Applies `help` only when `condition` holds; otherwise leaves the view

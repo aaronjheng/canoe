@@ -52,7 +52,7 @@ struct VariableSuggestionList: View {
                 .truncationMode(.tail)
             if suggestion.isSecret {
                 Image(systemName: "key.fill")
-                    .font(.system(size: 9))
+                    .font(AppFont.completionMeta)
                     .foregroundStyle(AppColor.warning)
                     .help("Secret variable")
             }
@@ -60,7 +60,7 @@ struct VariableSuggestionList: View {
             if let kind = suggestion.scopeKind {
                 HStack(spacing: AppSpacing.xxSmall) {
                     Image(systemName: kind.systemImage)
-                        .font(.system(size: 8))
+                        .font(AppFont.completionMetaSmall)
                     Text(kind.rawValue)
                         .font(.caption2)
                 }

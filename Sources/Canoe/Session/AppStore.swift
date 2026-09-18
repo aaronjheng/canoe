@@ -935,7 +935,10 @@ final class AppStore {
             persistedWorkspaceVariableBaselines[id] = vault.workspaces.first(where: { $0.id == id })?.variables
         }
         guard let idx = vault.workspaces.firstIndex(where: { $0.id == id }) else { return }
-        guard vault.workspaces[idx].variables != variables else { return }
+        // The workspace/collection tables keep rows sorted by name while the
+        // vault file may store them in any order: compare canonically so
+        // merely opening the editor does not light the Save marker.
+        guard canonicalVariables(vault.workspaces[idx].variables) != canonicalVariables(variables) else { return }
         vault.workspaces[idx].variables = variables
         pendingWorkspaceVariables[id] = variables
         scheduleDraftPersistence()
@@ -945,7 +948,7 @@ final class AppStore {
     func hasPendingWorkspaceVariables(for workspaceID: UUID) -> Bool {
         guard let pending = pendingWorkspaceVariables[workspaceID] else { return false }
         guard let baseline = persistedWorkspaceVariableBaselines[workspaceID] else { return true }
-        return pending != baseline
+        return canonicalVariables(pending) != canonicalVariables(baseline)
     }
 
     // MARK: - Collections
@@ -1009,7 +1012,7 @@ final class AppStore {
             persistedCollectionVariableBaselines[id] = vault.collections.first(where: { $0.id == id })?.variables
         }
         guard let idx = vault.collections.firstIndex(where: { $0.id == id }) else { return }
-        guard vault.collections[idx].variables != variables else { return }
+        guard canonicalVariables(vault.collections[idx].variables) != canonicalVariables(variables) else { return }
         vault.collections[idx].variables = variables
         pendingCollectionVariables[id] = variables
         scheduleDraftPersistence()
@@ -1055,7 +1058,16 @@ final class AppStore {
     func hasPendingCollectionVariables(for collectionID: UUID) -> Bool {
         guard let pending = pendingCollectionVariables[collectionID] else { return false }
         guard let baseline = persistedCollectionVariableBaselines[collectionID] else { return true }
-        return pending != baseline
+        return canonicalVariables(pending) != canonicalVariables(baseline)
+    }
+
+    /// Name-sorted canonical form for the workspace/collection tables (which
+    /// keep rows sorted by name): order-only differences are not edits.
+    /// Environments stay order-sensitive (manual Postman-style order).
+    private func canonicalVariables(_ variables: [Variable]) -> [Variable] {
+        var copy = variables
+        copy.sortByName()
+        return copy
     }
 
     /// Renames a collection (sidebar has no inline editor, so this backs the
@@ -1199,6 +1211,29 @@ final class AppStore {
             let toSave = persistable(updated)
             Task { await vault.writeCollection(toSave) }
             openRequest(copy.id)
+            return
+        }
+    }
+
+    /// Renames a request (sidebar context menu): structural save that keeps
+    /// an open editor's draft and baseline in step so the next keystroke
+    /// does not push the stale name back.
+    func renameRequest(_ id: UUID, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        for collection in vault.collections where collection.requests.contains(where: { $0.id == id }) {
+            guard let requestIdx = collection.requests.firstIndex(where: { $0.id == id }) else { return }
+            guard collection.requests[requestIdx].name != trimmed else { return }
+            var updated = collection
+            updated.requests[requestIdx].name = trimmed
+            updated.requests[requestIdx].updatedAt = Date()
+            if let idx = vault.collections.firstIndex(where: { $0.id == collection.id }) {
+                vault.collections[idx] = updated
+            }
+            pendingRequestSnapshots[id]?.name = trimmed
+            persistedRequestBaselines[id]?.name = trimmed
+            let toSave = persistable(updated)
+            Task { await vault.writeCollection(toSave) }
             return
         }
     }
@@ -1383,6 +1418,17 @@ final class AppStore {
         rebasePendingSnapshotsOntoLoadedVault()
         pruneDanglingTabs()
         return nil
+    }
+
+    /// Retries a failed vault load from the error screen (see ContentView):
+    /// reloads files, rebases drafts, and prunes dangling state, mirroring
+    /// the post-load steps of `prepare` without re-resolving the location.
+    func retryVaultLoad() async {
+        await vault.loadAll()
+        guard vault.loadError == nil else { return }
+        rebasePendingSnapshotsOntoLoadedVault()
+        pruneSidebarExpansionState()
+        pruneDanglingTabs()
     }
 
     /// Reloads saved files changed on disk (another device via iCloud Drive)
