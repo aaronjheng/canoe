@@ -35,8 +35,6 @@ struct SidebarView: View {
 
 private struct ItemsView: View {
     @Environment(AppStore.self) private var store
-    @State private var collectionsExpanded = true
-    @State private var environmentsExpanded = true
 
     private var filteredEnvironments: [EnvProfile] {
         let query = store.sidebarFilter.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -66,8 +64,8 @@ private struct ItemsView: View {
                         // Matches the rows below, which render the filtered
                         // list (identical to the total when no filter is set).
                         count: store.filteredCollections.count,
-                        isExpanded: collectionsExpanded,
-                        onToggle: { collectionsExpanded.toggle() },
+                        isExpanded: store.isCollectionsSectionExpanded,
+                        onToggle: { store.toggleCollectionsSection() },
                         actions: {
                             Menu("Add", systemImage: "plus") {
                                 Button("New Collection") { store.addCollection() }
@@ -83,7 +81,7 @@ private struct ItemsView: View {
                     .padding(.leading, AppSpacing.medium)
                     .padding(.top, AppSpacing.xSmall)
                     .padding(.bottom, AppSpacing.xxSmall)
-                    if collectionsExpanded {
+                    if store.isCollectionsSectionExpanded {
                         ForEach(store.filteredCollections) { collection in
                             CollectionTree(collection: collection)
                         }
@@ -92,8 +90,8 @@ private struct ItemsView: View {
                         title: "Environments",
                         // Matches the rows below (see Collections above).
                         count: filteredEnvironments.count,
-                        isExpanded: environmentsExpanded,
-                        onToggle: { environmentsExpanded.toggle() },
+                        isExpanded: store.isEnvironmentsSectionExpanded,
+                        onToggle: { store.toggleEnvironmentsSection() },
                         actions: {
                             Button("Add Environment", systemImage: "plus") {
                                 store.addEnvironment()
@@ -107,7 +105,7 @@ private struct ItemsView: View {
                     .padding(.leading, AppSpacing.medium)
                     .padding(.top, AppSpacing.xSmall)
                     .padding(.bottom, AppSpacing.xxSmall)
-                    if environmentsExpanded {
+                    if store.isEnvironmentsSectionExpanded {
                         ForEach(filteredEnvironments) { env in
                             EnvironmentRow(env: env)
                         }
@@ -345,11 +343,15 @@ private struct ExpanderChevron: View {
 private struct CollectionTree: View {
     @Environment(AppStore.self) private var store
     let collection: Collection
-    @State private var isExpanded = true
     @State private var isHoveringHeader = false
     @State private var isRenaming = false
     @State private var renameDraft = ""
     @State private var showDeleteConfirm = false
+
+    /// Expansion is remembered across launches in the store (VS Code-style
+    /// view state): unrecorded nodes render collapsed, and while the sidebar
+    /// filter is active the store forces expansion so matches stay visible.
+    private var isExpanded: Bool { store.isSidebarNodeExpanded(collection.id) }
 
     private var isFiltering: Bool {
         !store.sidebarFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -378,11 +380,11 @@ private struct CollectionTree: View {
             // inner button alone, anywhere else opens the page.
             Button {
                 store.openTab(.collection(collection.id))
-                isExpanded = true
+                store.setSidebarNodeExpanded(collection.id, true)
             } label: {
                 HStack(spacing: AppSpacing.xSmall) {
                     Button {
-                        isExpanded.toggle()
+                        store.toggleSidebarNode(collection.id)
                     } label: {
                         ExpanderChevron(isExpanded: isExpanded)
                             .padding(.vertical, AppSpacing.xSmall)
@@ -411,11 +413,11 @@ private struct CollectionTree: View {
             .contextMenu {
                 Button("Add Request", systemImage: "plus") {
                     store.addRequest(in: collection.id)
-                    isExpanded = true
+                    store.setSidebarNodeExpanded(collection.id, true)
                 }
                 Button("Add Folder", systemImage: "folder.badge.plus") {
                     store.addFolder(in: collection.id, parentFolderID: nil)
-                    isExpanded = true
+                    store.setSidebarNodeExpanded(collection.id, true)
                 }
                 Divider()
                 Button("Edit Collection", systemImage: "folder.badge.gearshape") {
@@ -454,11 +456,6 @@ private struct CollectionTree: View {
         } message: {
             Text("Its folders and requests will be permanently deleted.")
         }
-        .onChange(of: store.sidebarFilter) { _, newValue in
-            if !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                isExpanded = true
-            }
-        }
     }
 }
 
@@ -469,12 +466,14 @@ private struct FolderTree: View {
     let folder: Folder
     let collection: Collection
     let depth: Int
-    @State private var isExpanded = true
     @State private var isHoveringHeader = false
     @State private var isRenaming = false
     @State private var renameDraft = ""
     @State private var showDeleteConfirm = false
     @State private var showEditSheet = false
+
+    /// Remembered expansion, same as collections (see above).
+    private var isExpanded: Bool { store.isSidebarNodeExpanded(folder.id) }
 
     private var isFiltering: Bool {
         !store.sidebarFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -495,7 +494,7 @@ private struct FolderTree: View {
     var body: some View {
         Group {
             Button {
-                isExpanded.toggle()
+                store.toggleSidebarNode(folder.id)
             } label: {
                 HStack(spacing: 0) {
                     // The chevron sits one tree step per level right of the
@@ -532,11 +531,11 @@ private struct FolderTree: View {
             .contextMenu {
                 Button("Add Request", systemImage: "plus") {
                     store.addRequest(in: collection.id, folderID: folder.id)
-                    isExpanded = true
+                    store.setSidebarNodeExpanded(folder.id, true)
                 }
                 Button("Add Subfolder", systemImage: "folder.badge.plus") {
                     store.addFolder(in: collection.id, parentFolderID: folder.id)
-                    isExpanded = true
+                    store.setSidebarNodeExpanded(folder.id, true)
                 }
                 Divider()
                 Button("Edit Folder", systemImage: "folder.badge.gearshape") {
@@ -577,11 +576,6 @@ private struct FolderTree: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Requests inside move to the collection root; the folder itself is permanently deleted.")
-        }
-        .onChange(of: store.sidebarFilter) { _, newValue in
-            if !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                isExpanded = true
-            }
         }
     }
 }

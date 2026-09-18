@@ -13,6 +13,49 @@ final class AppStore {
     var sidebarFilter: String = ""
     var sidebarTab = SidebarTab.items
 
+    // MARK: - Sidebar expansion state
+
+    /// Sidebar tree expansion remembered across launches, like VS Code's
+    /// explorer view state (`workbench.explorer.treeViewState`): a set of
+    /// the ids currently expanded, saved on every toggle, restored on
+    /// launch. Anything absent renders collapsed, so fresh collections land
+    /// folded instead of splaying open. Keyed by node id, so each
+    /// workspace's tree state is separate; stored in UserDefaults (the
+    /// app's machine-local key-value store - UI state is never synced).
+    ///
+    /// Sizing note / upgrade path if this ever outgrows UserDefaults:
+    /// cfprefsd coalesces writes but flushes by rewriting the whole domain
+    /// plist, so keep this to small values written at human frequency (a
+    /// few dozen keys, ~KB). If UI state ever grows past that - large
+    /// blobs, programmatic write bursts, or data that must survive a
+    /// crash - switch to a SQLite key-value table like VS Code's
+    /// `state.vscdb` ItemTable (row-level upserts, ~100 ms write
+    /// coalescing, backup on close).
+    private(set) var sidebarExpandedNodeIDs: Set<UUID> = []
+    private(set) var isCollectionsSectionExpanded = true
+    private(set) var isEnvironmentsSectionExpanded = true
+
+    private enum SidebarStateKeys {
+        static let expandedNodeIDs = "sidebarExpandedNodeIDs"
+        static let collectionsSectionExpanded = "sidebarCollectionsSectionExpanded"
+        static let environmentsSectionExpanded = "sidebarEnvironmentsSectionExpanded"
+    }
+
+    init() {
+        let defaults = UserDefaults.standard
+        if let ids = defaults.stringArray(forKey: SidebarStateKeys.expandedNodeIDs) {
+            sidebarExpandedNodeIDs = Set(ids.compactMap(UUID.init(uuidString:)))
+        }
+        // Sections default to open, but a stored false must be honored, so
+        // only fall back when the key was never written.
+        if defaults.object(forKey: SidebarStateKeys.collectionsSectionExpanded) != nil {
+            isCollectionsSectionExpanded = defaults.bool(forKey: SidebarStateKeys.collectionsSectionExpanded)
+        }
+        if defaults.object(forKey: SidebarStateKeys.environmentsSectionExpanded) != nil {
+            isEnvironmentsSectionExpanded = defaults.bool(forKey: SidebarStateKeys.environmentsSectionExpanded)
+        }
+    }
+
     /// Whether the left sidebar (collections/history) is shown. Toggled from
     /// the status bar, Postman-style.
     var showSidebar = true
@@ -1140,7 +1183,68 @@ final class AppStore {
         applyWorkspaceVariableDrafts(drafts.workspaceVariables)
         applyCollectionVariableDrafts(drafts.collectionVariables)
         applyCollectionAuthorizationDrafts(drafts.collectionAuthorizations)
+        pruneSidebarExpansionState()
         await migrateRequestAuthInheritanceIfNeeded()
+    }
+
+    /// Drops remembered expansion ids whose collection/folder no longer
+    /// exists (deleted here or vanished via sync). Unlike VS Code's
+    /// workspace-scoped storage, one shared key means stale ids would
+    /// otherwise pile up forever. Skipped when the vault failed to load -
+    /// an empty in-memory vault must not erase the remembered state.
+    private func pruneSidebarExpansionState() {
+        guard vault.loadError == nil else { return }
+        let existingIDs = Set(vault.collections.map(\.id))
+            .union(vault.collections.flatMap { $0.folders.map(\.id) })
+        sidebarExpandedNodeIDs.formIntersection(existingIDs)
+        persistSidebarState()
+    }
+
+    /// Whether a collection/folder row renders expanded. While the sidebar
+    /// filter is active the tree expands to reveal matches wherever they sit
+    /// (display-only: the remembered state resumes when the filter clears).
+    func isSidebarNodeExpanded(_ id: UUID) -> Bool {
+        !sidebarFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || sidebarExpandedNodeIDs.contains(id)
+    }
+
+    /// Chevron toggles: flips the node's remembered expansion and saves it.
+    func toggleSidebarNode(_ id: UUID) {
+        setSidebarNodeExpanded(id, !sidebarExpandedNodeIDs.contains(id))
+    }
+
+    /// Expands/collapses a node as part of another action (opening its page,
+    /// adding into it) and saves the change.
+    func setSidebarNodeExpanded(_ id: UUID, _ expanded: Bool) {
+        guard sidebarExpandedNodeIDs.contains(id) != expanded else { return }
+        if expanded {
+            sidebarExpandedNodeIDs.insert(id)
+        } else {
+            sidebarExpandedNodeIDs.remove(id)
+        }
+        persistSidebarState()
+    }
+
+    func toggleCollectionsSection() {
+        isCollectionsSectionExpanded.toggle()
+        persistSidebarState()
+    }
+
+    func toggleEnvironmentsSection() {
+        isEnvironmentsSectionExpanded.toggle()
+        persistSidebarState()
+    }
+
+    /// Saves the expansion immediately on every change, mirroring VS Code's
+    /// explorer (store on collapse/expand, not just on quit). UserDefaults
+    /// coalesces the disk write, so this stays cheap.
+    private func persistSidebarState() {
+        let defaults = UserDefaults.standard
+        defaults.set(
+            sidebarExpandedNodeIDs.map(\.uuidString).sorted(),
+            forKey: SidebarStateKeys.expandedNodeIDs)
+        defaults.set(isCollectionsSectionExpanded, forKey: SidebarStateKeys.collectionsSectionExpanded)
+        defaults.set(isEnvironmentsSectionExpanded, forKey: SidebarStateKeys.environmentsSectionExpanded)
     }
 
     /// One-time migration: requests saved before the inherit Authorization
@@ -1405,6 +1509,8 @@ final class AppStore {
     /// Quit path: waits for an in-flight Save-all to land, then flushes the
     /// draft mirror and calls `completion`. Drafts are flushed last so the
     /// mirror reflects the post-save state (empty when everything saved).
+    /// (Sidebar expansion state needs no flush: it is written through to
+    /// UserDefaults on every toggle.)
     func flushAllWritesForQuit(completion: @escaping () -> Void) {
         draftSaveTask?.cancel()
         draftSaveTask = nil
