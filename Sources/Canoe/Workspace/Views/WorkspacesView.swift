@@ -239,6 +239,7 @@ struct WorkspacesView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Select \(workspace.name)")
+            .help(checked.contains(workspace.id) ? "Deselect workspace" : "Select workspace")
             .frame(width: ColumnWidth.check, alignment: .center)
             .padding(.leading, AppSpacing.medium)
             HStack(spacing: AppSpacing.xSmall) {

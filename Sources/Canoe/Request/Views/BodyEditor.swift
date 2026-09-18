@@ -155,6 +155,7 @@ private struct FormDataEditor: View {
                         .toggleStyle(.checkbox)
                         .controlSize(.small)
                         .frame(width: 32)
+                        .help(field.isEnabled ? "Disable row" : "Enable row")
                     VariableHighlightEditor(
                         text: $field.key,
                         variables: variables,

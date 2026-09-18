@@ -448,6 +448,7 @@ private struct KVRow: View {
                 .controlSize(.small)
                 .disabled(isGhostRow)
                 .frame(width: toggleColumnWidth)
+                .helpIf(!isGhostRow, isEnabled ? "Disable row" : "Enable row")
             verticalRule
             cell {
                 VariableHighlightEditor(

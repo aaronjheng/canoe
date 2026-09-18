@@ -171,6 +171,7 @@ private struct GroupHeader<Actions: View>: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .help(isExpanded ? "Collapse \(title)" : "Expand \(title)")
             Spacer(minLength: 0)
             actions()
         }
@@ -527,6 +528,7 @@ private struct FolderTree: View {
             }
             .buttonStyle(.plain)
             .onHover { isHoveringHeader = $0 }
+            .help(isExpanded ? "Collapse folder" : "Expand folder")
             .contextMenu {
                 Button("Add Request", systemImage: "plus") {
                     store.addRequest(in: collection.id, folderID: folder.id)
