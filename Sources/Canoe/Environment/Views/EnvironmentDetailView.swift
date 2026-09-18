@@ -50,11 +50,22 @@ struct EnvironmentDetailView: View {
             // is debounced, so no per-keystroke disk write happens here.
             store.updateEnvironment(newValue)
         }
-        .onDisappear {
-            // Keep the edits alive across tab close: they stay in memory and
-            // the drafts mirror, ready to be restored on the next open.
-            store.updateEnvironment(draft)
+        // Adopt vault-side content while the editor is clean (external
+        // reload); a dirty editor's live copy already equals its draft, so
+        // this no-ops for it. Without this, the stale draft would revert the
+        // external edit and mark it dirty on the next keystroke.
+        .onChange(of: liveEnvironment) { _, newEnvironment in
+            guard let newEnvironment, !store.hasPendingEnvironmentChanges(for: draft.id),
+                newEnvironment != draft
+            else { return }
+            draft = newEnvironment
         }
+    }
+
+    /// The live environment: what the vault holds right now for this
+    /// editor's id (see the adoption `onChange` above).
+    private var liveEnvironment: EnvProfile? {
+        store.vault.environments.first(where: { $0.id == draft.id })
     }
 
     /// Postman-style Save: shared chip, enabled while dirty.

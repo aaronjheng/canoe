@@ -120,7 +120,7 @@ struct RequestEditorView: View {
         let query =
             params
             .filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-            .map { "\($0.key)=\($0.value)" }
+            .map { "\(urlQueryEncoded($0.key))=\(urlQueryEncoded($0.value))" }
             .joined(separator: "&")
         guard !query.isEmpty else { return base }
         // A #fragment stays at the very end: the query goes before it.
@@ -130,6 +130,18 @@ struct RequestEditorView: View {
             return before + (before.contains("?") ? "&" : "?") + query + fragment
         }
         return base.contains("?") ? base + "&" + query : base + "?" + query
+    }
+
+    /// Percent-encodes one query key/value for the URL bar, keeping compose
+    /// and parse symmetric: the bar's parser splits on `&` and `#` and
+    /// percent-decodes, so a raw `&` inside a value would come back as
+    /// phantom rows, a raw `#` would land in the fragment, and a raw `%`
+    /// could decode into different characters. `urlQueryAllowed` still
+    /// admits `&`, `=`, and `#`, so those are reserved explicitly.
+    private func urlQueryEncoded(_ raw: String) -> String {
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&=#")
+        return raw.addingPercentEncoding(withAllowedCharacters: allowed) ?? raw
     }
 
     /// URL bar edits drive the params table: the query part is parsed into
@@ -150,7 +162,12 @@ struct RequestEditorView: View {
         let newBase = String(parts[0]) + fragment
         guard parts.count > 1 else {
             if draft.urlString != newBase { draft.urlString = newBase }
-            if !draft.params.isEmpty { draft.params = [] }
+            // Only the rows the bar showed (enabled, non-blank key) came
+            // from the query; disabled and blank-key rows were never part
+            // of it and must survive, matching the merge branch below.
+            draft.params = draft.params.filter {
+                !$0.isEnabled || $0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
             return
         }
         let pairs: [(key: String, value: String)] = parts[1]
@@ -237,6 +254,26 @@ struct RequestEditorView: View {
             draft = request
             urlText = composedURLText(base: request.urlString, params: request.params)
             section = .params
+        }
+        .onChange(of: request.folderID) { _, newFolderID in
+            // Vault-side folder moves (deleteFolder) must reach the local
+            // draft: the editor only fully re-syncs on id changes, and a
+            // stale folderID would resurrect the deleted folder on the next
+            // keystroke, orphaning the request out of the tree.
+            guard draft.folderID != newFolderID else { return }
+            draft.folderID = newFolderID
+        }
+        .onChange(of: request.updatedAt) { _, _ in
+            // External reloads replace clean editors' requests in place; a
+            // dirty editor keeps its draft (rebasing re-applies the pending
+            // snapshot, which carries the draft's own updatedAt, so this
+            // parameter never changes for it). Adopt the fresh content so
+            // the next keystroke cannot revert the external edit and mark
+            // it dirty. Our own saves bump updatedAt too, but then the
+            // content is equal and the guard skips the swap.
+            guard !store.hasPendingChanges(for: draft.id), !request.isContentEqual(to: draft) else { return }
+            draft = request
+            urlText = composedURLText(base: request.urlString, params: request.params)
         }
         .onChange(of: urlFieldFocused) { _, focused in
             guard focused == .url else { return }

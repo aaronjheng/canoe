@@ -55,11 +55,24 @@ struct WorkspaceVariablesView: View {
             // is debounced, so no per-keystroke disk write happens here.
             store.updateWorkspaceVariables(newValue.id, variables: newValue.variables)
         }
-        .onDisappear {
-            // Keep the edits alive across tab close: they stay in memory and
-            // the drafts mirror, ready to be restored on the next open.
-            store.updateWorkspaceVariables(draft.id, variables: draft.variables)
+        // Adopt vault-side content while the editor is clean (external
+        // reload); a dirty editor's live copy already equals its draft, so
+        // this no-ops for it. Without this, the stale draft would revert the
+        // external edit and mark it dirty on the next keystroke.
+        .onChange(of: liveWorkspaceVariables) { _, newVariables in
+            guard let newVariables, !store.hasPendingWorkspaceVariables(for: draft.id),
+                newVariables != draft.variables
+            else { return }
+            var adopted = newVariables
+            adopted.sortByName()
+            draft.variables = adopted
         }
+    }
+
+    /// The live workspace's variables: what the vault holds right now for
+    /// this editor's id (see the adoption `onChange` above).
+    private var liveWorkspaceVariables: [Variable]? {
+        store.vault.workspaces.first(where: { $0.id == draft.id })?.variables
     }
 
     /// Postman-style Save: shared chip, enabled while dirty.

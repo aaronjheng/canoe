@@ -895,6 +895,18 @@ private struct WrappingURLField<FocusValue: Hashable>: NSViewRepresentable {
                 onCommit()
                 return true
             }
+            // A plain NSTextView (not a field editor) would otherwise insert
+            // a literal tab into the URL text; route Tab/Backtab to key-view
+            // traversal so keyboard users can leave the bar. The completion
+            // popup above already claims Tab while a session is open.
+            if commandSelector == #selector(NSResponder.insertTab(_:)) {
+                textView.window?.selectNextKeyView(nil)
+                return true
+            }
+            if commandSelector == #selector(NSResponder.insertBacktab(_:)) {
+                textView.window?.selectPreviousKeyView(nil)
+                return true
+            }
             return false
         }
 

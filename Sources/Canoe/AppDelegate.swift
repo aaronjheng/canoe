@@ -11,6 +11,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var variablesMenuItem: NSMenuItem?
     private var fullScreenMenuItem: NSMenuItem?
     private var appearanceMenuItems: [NSMenuItem] = []
+    // File-menu items that only make sense with an active workspace; their
+    // enabled state tracks the store (see refreshWorkspaceMenuItems).
+    private var newRequestMenuItem: NSMenuItem?
+    private var newCollectionMenuItem: NSMenuItem?
+    private var newEnvironmentMenuItem: NSMenuItem?
+    private var saveMenuItem: NSMenuItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -44,8 +50,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         (AppAppearance(rawValue: SettingsStore.shared.settings.appearance) ?? .system)
             .applyToWindow(mainWindow)
         window = mainWindow
+        refreshWorkspaceMenuItems()
         observeEnvironmentChanges()
         observeSettingsChanges()
+        observeWorkspaceChanges()
         observeFullScreenChanges()
 
         Task {
@@ -224,6 +232,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// File-menu items that create or persist workspace content are only
+    /// enabled with an active workspace: firing them in the workspaces
+    /// manager would land data where nobody can see it (the tab strip is
+    /// not rendered there), and on the welcome screen it would create
+    /// workspaceless data no workspace can ever display.
+    private func refreshWorkspaceMenuItems() {
+        let enabled = appStore.activeWorkspace != nil
+        newRequestMenuItem?.isEnabled = enabled
+        newCollectionMenuItem?.isEnabled = enabled
+        newEnvironmentMenuItem?.isEnabled = enabled
+        saveMenuItem?.isEnabled = enabled
+    }
+
+    private func observeWorkspaceChanges() {
+        withObservationTracking {
+            _ = appStore.activeWorkspace
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.refreshWorkspaceMenuItems()
+                self?.observeWorkspaceChanges()
+            }
+        }
+    }
+
     /// Swaps the Full Screen menu title with the window state (macOS
     /// standard behavior lost by using a custom menu item).
     private func observeFullScreenChanges() {
@@ -273,26 +305,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let fileMenuItem = NSMenuItem()
         mainMenu.addItem(fileMenuItem)
         let fileMenu = NSMenu(title: "File")
-        fileMenu.addItem(
-            withTitle: "New Request",
+        // Manual enable/disable for the workspace-bound items below; with
+        // auto-validation the menu would leave them enabled in the
+        // workspaces manager and on the welcome screen.
+        fileMenu.autoenablesItems = false
+        let newRequestItem = NSMenuItem(
+            title: "New Request",
             action: #selector(newRequest),
             keyEquivalent: "n")
-        fileMenu.addItem(
-            withTitle: "New Collection",
+        newRequestMenuItem = newRequestItem
+        fileMenu.addItem(newRequestItem)
+        let newCollectionItem = NSMenuItem(
+            title: "New Collection",
             action: #selector(newCollection),
             keyEquivalent: "N")
+        newCollectionMenuItem = newCollectionItem
+        fileMenu.addItem(newCollectionItem)
         fileMenu.addItem(
             withTitle: "New Workspace",
             action: #selector(newWorkspace),
             keyEquivalent: "")
-        fileMenu.addItem(
-            withTitle: "New Environment",
+        let newEnvironmentItem = NSMenuItem(
+            title: "New Environment",
             action: #selector(newEnvironment),
             keyEquivalent: "e")
-        fileMenu.addItem(
-            withTitle: "Save",
+        newEnvironmentMenuItem = newEnvironmentItem
+        fileMenu.addItem(newEnvironmentItem)
+        let saveItem = NSMenuItem(
+            title: "Save",
             action: #selector(saveRequest),
             keyEquivalent: "s")
+        saveMenuItem = saveItem
+        fileMenu.addItem(saveItem)
         fileMenu.addItem(.separator())
         fileMenu.addItem(
             withTitle: "Close Tab",

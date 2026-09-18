@@ -339,12 +339,30 @@ final class VaultStore {
 
     // MARK: - Collection persistence
 
+    /// Saves a collection file and reconciles the in-memory vault with it.
+    /// Callers that only want the file rewritten with a `persistable` (draft-
+    /// rewound) copy must use `writeCollection` instead: upserting the
+    /// rewound copy here would clobber the in-memory drafts.
     func saveCollection(_ collection: Collection) async {
         guard let collectionsDirectory else { return }
         let file = collectionsDirectory.appendingPathComponent("\(collection.id.uuidString).json")
         do {
             try await FileStore.write(collection, to: file)
             upsert(collection, in: &collections)
+        } catch {
+            AppLogger.error("Failed to save collection: \(error)", category: "Vault")
+        }
+    }
+
+    /// Rewrites a collection's file without touching the in-memory vault:
+    /// structural saves and request saves pass a `persistable` (draft-
+    /// rewound) copy so disk gets the baselines while memory keeps the
+    /// unsaved drafts.
+    func writeCollection(_ collection: Collection) async {
+        guard let collectionsDirectory else { return }
+        let file = collectionsDirectory.appendingPathComponent("\(collection.id.uuidString).json")
+        do {
+            try await FileStore.write(collection, to: file)
         } catch {
             AppLogger.error("Failed to save collection: \(error)", category: "Vault")
         }

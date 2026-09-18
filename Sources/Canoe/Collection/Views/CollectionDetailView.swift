@@ -32,6 +32,66 @@ struct CollectionDetailView: View {
     }
 
     var body: some View {
+        editorContent
+            // Keep rows ordered by name (see EnvironmentDetailView).
+            .onChange(of: draft.variables.map(\.key)) { _, _ in
+                draft.variables.sortByName()
+            }
+            .onAppear { applyRequestedSection() }
+            .onChange(of: store.selectedTab) { _, _ in applyRequestedSection() }
+            // The deep link also lands while this tab is already frontmost (the
+            // variables inspector's "Edit" with the collection tab open):
+            // selectedTab does not change then, so watch the store's request
+            // value directly or it would linger and fire on a later appear.
+            .onChange(of: store.detailSectionRequests[draft.id]) { _, requested in
+                if requested != nil { applyRequestedSection() }
+            }
+            .onChange(of: draft) { _, newValue in
+                // Memory-only + dirty mark; the drafts mirror inside the store
+                // is debounced, so no per-keystroke disk write happens here.
+                // Each tracker diffs its own piece, so untouched parts stay out
+                // of the pending set.
+                store.updateCollectionVariables(newValue.id, variables: newValue.variables)
+                store.updateCollectionAuthorization(newValue.id, authorization: newValue.authorization)
+            }
+            // Adopt vault-side content while the editor is clean: external
+            // reloads (iCloud sync) replace clean entities in place, while a
+            // dirty editor's live copy already equals its draft (rebasing
+            // re-applies pending snapshots), so this is a no-op for it. Without
+            // the adoption the stale draft would revert the external edit and
+            // mark it dirty on the next keystroke.
+            .onChange(of: liveCollectionVariables) { _, newVariables in
+                guard let newVariables, !store.hasPendingCollectionVariables(for: draft.id),
+                    newVariables != draft.variables
+                else { return }
+                var adopted = newVariables
+                adopted.sortByName()
+                draft.variables = adopted
+            }
+            .onChange(of: liveCollectionAuthorization) { _, newAuthorization in
+                guard let newAuthorization, !store.hasPendingCollectionAuthorization(for: draft.id),
+                    newAuthorization != draft.authorization
+                else { return }
+                draft.authorization = newAuthorization
+            }
+    }
+
+    /// The vault's current variables/Authorization for this collection id
+    /// (nil when the collection is gone) - what the adoption `onChange`s
+    /// watch. `liveCollection` serves the overview stats.
+    private var liveCollectionVariables: [Variable]? {
+        store.vault.collections.first(where: { $0.id == draft.id })?.variables
+    }
+
+    private var liveCollectionAuthorization: RequestAuthorization? {
+        store.vault.collections.first(where: { $0.id == draft.id })?.authorization
+    }
+
+    // MARK: - Section tabs
+
+    /// The editor layout, split out of `body` so the modifier chain stays
+    /// within the type-checker's budget.
+    private var editorContent: some View {
         VStack(spacing: 0) {
             HStack(spacing: AppSpacing.small) {
                 Image(systemName: "folder.fill")
@@ -78,29 +138,7 @@ struct CollectionDetailView: View {
                 )
             }
         }
-        // Keep rows ordered by name (see EnvironmentDetailView).
-        .onChange(of: draft.variables.map(\.key)) { _, _ in
-            draft.variables.sortByName()
-        }
-        .onAppear { applyRequestedSection() }
-        .onChange(of: store.selectedTab) { _, _ in applyRequestedSection() }
-        .onChange(of: draft) { _, newValue in
-            // Memory-only + dirty mark; the drafts mirror inside the store
-            // is debounced, so no per-keystroke disk write happens here.
-            // Each tracker diffs its own piece, so untouched parts stay out
-            // of the pending set.
-            store.updateCollectionVariables(newValue.id, variables: newValue.variables)
-            store.updateCollectionAuthorization(newValue.id, authorization: newValue.authorization)
-        }
-        .onDisappear {
-            // Keep the edits alive across tab close: they stay in memory and
-            // the drafts mirror, ready to be restored on the next open.
-            store.updateCollectionVariables(draft.id, variables: draft.variables)
-            store.updateCollectionAuthorization(draft.id, authorization: draft.authorization)
-        }
     }
-
-    // MARK: - Section tabs
 
     /// Applies a one-shot deep-link from the variables inspector:
     /// "Add Variables" / "Edit" land on Variables.

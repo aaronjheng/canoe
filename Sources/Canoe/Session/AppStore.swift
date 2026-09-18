@@ -41,6 +41,11 @@ final class AppStore {
         static let environmentsSectionExpanded = "sidebarEnvironmentsSectionExpanded"
     }
 
+    private enum OpenTabStateKeys {
+        static let openTabs = "openTabs"
+        static let selectedTab = "selectedTab"
+    }
+
     init() {
         let defaults = UserDefaults.standard
         if let ids = defaults.stringArray(forKey: SidebarStateKeys.expandedNodeIDs) {
@@ -53,6 +58,18 @@ final class AppStore {
         }
         if defaults.object(forKey: SidebarStateKeys.environmentsSectionExpanded) != nil {
             isEnvironmentsSectionExpanded = defaults.bool(forKey: SidebarStateKeys.environmentsSectionExpanded)
+        }
+        // Restores the last session's tab strip (same machine-local UI-state
+        // store as the sidebar expansion); tabs referencing entities that no
+        // longer exist are pruned once the vault loads.
+        if let data = defaults.data(forKey: OpenTabStateKeys.openTabs) {
+            openTabs = (try? JSONDecoder().decode([OpenTab].self, from: data)) ?? []
+        }
+        if let data = defaults.data(forKey: OpenTabStateKeys.selectedTab) {
+            let tab = try? JSONDecoder().decode(OpenTab.self, from: data)
+            if let tab, openTabs.contains(tab) {
+                selectedTab = tab
+            }
         }
     }
 
@@ -356,7 +373,7 @@ final class AppStore {
         guard vault.collections[ci].folders[fi].authorization != authorization else { return }
         vault.collections[ci].folders[fi].authorization = authorization
         let updated = vault.collections[ci]
-        Task { await vault.saveCollection(updated) }
+        Task { await vault.writeCollection(persistable(updated)) }
     }
 
     func variablesForRequest(_ request: RequestItem) -> [String: String] {
@@ -504,6 +521,7 @@ final class AppStore {
     func openTab(_ tab: OpenTab) {
         if !openTabs.contains(tab) { openTabs.append(tab) }
         selectedTab = tab
+        persistOpenTabs()
     }
 
     /// One-shot section deep-link for the collection detail tab. Set when
@@ -570,6 +588,7 @@ final class AppStore {
                 selectedTab = openTabs[0]
             }
         }
+        persistOpenTabs()
     }
 
     func closeSelectedTab() {
@@ -741,6 +760,7 @@ final class AppStore {
     func closeOtherTabs(except tab: OpenTab) {
         for other in openTabs where other != tab { closeTab(other) }
         selectedTab = tab
+        persistOpenTabs()
     }
 
     /// Drops tabs whose request/collection/workspace/environment no longer
@@ -773,6 +793,7 @@ final class AppStore {
         if let selected = selectedTab, !open.contains(selected) {
             selectedTab = openTabs.last
         }
+        persistOpenTabs()
     }
 
     // MARK: - Workspaces
@@ -872,6 +893,21 @@ final class AppStore {
         viewingHistoryIndexByTab = [:]
         openTabs = []
         selectedTab = nil
+        persistOpenTabs()
+    }
+
+    /// Persists the open tabs and selection (machine-local UI state, like
+    /// the sidebar expansion state) so the tab strip survives relaunches.
+    /// Workspace switches deliberately clear it: each session's strip is the
+    /// active workspace's working set.
+    private func persistOpenTabs() {
+        let defaults = UserDefaults.standard
+        defaults.set(try? JSONEncoder().encode(openTabs), forKey: OpenTabStateKeys.openTabs)
+        if let selected = selectedTab, let data = try? JSONEncoder().encode(selected) {
+            defaults.set(data, forKey: OpenTabStateKeys.selectedTab)
+        } else {
+            defaults.removeObject(forKey: OpenTabStateKeys.selectedTab)
+        }
     }
 
     /// Latest request activity in a workspace (for management sorting and
@@ -915,7 +951,11 @@ final class AppStore {
     // MARK: - Collections
 
     func addCollection() {
-        let workspaceID = activeWorkspace?.id ?? vault.workspaces.first?.id
+        // New items always land in the ACTIVE workspace: the menu actions
+        // are disabled without one, and a first-workspace fallback would
+        // create invisible data in the manager - or, on the welcome screen,
+        // workspaceless data no workspace can ever display.
+        guard let workspaceID = activeWorkspace?.id else { return }
         // Max + 1, not count (see addEnvironment): deletions leave gaps.
         let collection = Collection(
             workspaceID: workspaceID,
@@ -923,7 +963,7 @@ final class AppStore {
             orderIndex: (visibleCollections.map(\.orderIndex).max() ?? -1) + 1
         )
         vault.collections.append(collection)
-        Task { await vault.saveCollection(collection) }
+        Task { await vault.writeCollection(persistable(collection)) }
     }
 
     func deleteCollection(_ id: UUID) {
@@ -988,6 +1028,29 @@ final class AppStore {
         return pending != baseline
     }
 
+    /// Rewinds a collection copy's draft-owned fields (variables,
+    /// Authorization) to their persisted baselines, so structural saves
+    /// (rename, add/delete folder or request) and request saves never leak
+    /// unsaved edits into the collection file - the "nothing is written
+    /// until Save (⌘S / Save button)" contract. Baselines are only read for
+    /// entities that actually have a pending draft: rebasing keeps them
+    /// fresh for those, while a stale baseline for a clean entity must not
+    /// overwrite external content.
+    private func persistable(_ collection: Collection) -> Collection {
+        var collection = collection
+        if pendingCollectionVariables[collection.id] != nil {
+            if let baseline = persistedCollectionVariableBaselines[collection.id] {
+                collection.variables = baseline
+            }
+        }
+        if pendingCollectionAuthorizations[collection.id] != nil {
+            if let baseline = persistedCollectionAuthorizationBaselines[collection.id] {
+                collection.authorization = baseline
+            }
+        }
+        return collection
+    }
+
     /// Whether the collection's variables have unsaved modifications.
     func hasPendingCollectionVariables(for collectionID: UUID) -> Bool {
         guard let pending = pendingCollectionVariables[collectionID] else { return false }
@@ -1004,7 +1067,7 @@ final class AppStore {
         guard vault.collections[idx].name != trimmed else { return }
         vault.collections[idx].name = trimmed
         let updated = vault.collections[idx]
-        Task { await vault.saveCollection(updated) }
+        Task { await vault.writeCollection(persistable(updated)) }
     }
 
     // MARK: - Folders
@@ -1022,7 +1085,7 @@ final class AppStore {
         )
         collection.folders.append(folder)
         vault.collections[idx] = collection
-        Task { await vault.saveCollection(collection) }
+        Task { await vault.writeCollection(persistable(collection)) }
     }
 
     func deleteFolder(_ folderID: UUID, in collectionID: UUID) {
@@ -1043,9 +1106,16 @@ final class AppStore {
         for requestIndex in collection.requests.indices {
             guard let folder = collection.requests[requestIndex].folderID, toDelete.contains(folder) else { continue }
             collection.requests[requestIndex].folderID = nil
+            // Keep any open editor's draft and its baseline in step: both
+            // must adopt the move, or the next keystroke pushes the stale
+            // folderID back and the request orphans (invisible in the tree).
+            let movedID = collection.requests[requestIndex].id
+            pendingRequestSnapshots[movedID]?.folderID = nil
+            persistedRequestBaselines[movedID]?.folderID = nil
         }
         vault.collections[idx] = collection
-        Task { await vault.saveCollection(collection) }
+        let toSave = persistable(collection)
+        Task { await vault.writeCollection(toSave) }
     }
 
     /// Renames a folder inside a collection.
@@ -1057,13 +1127,15 @@ final class AppStore {
         guard vault.collections[idx].folders[folderIdx].name != trimmed else { return }
         vault.collections[idx].folders[folderIdx].name = trimmed
         let updated = vault.collections[idx]
-        Task { await vault.saveCollection(updated) }
+        Task { await vault.writeCollection(persistable(updated)) }
     }
 
     // MARK: - Requests
 
     func addRequest(in collectionID: UUID? = nil, folderID: UUID? = nil) {
-        let workspaceID = activeWorkspace?.id ?? vault.workspaces.first?.id
+        // Same active-workspace rule as addCollection: no silent first-
+        // workspace fallback that would land requests where nobody looks.
+        guard let workspaceID = activeWorkspace?.id else { return }
         var collection: Collection
         let existing = collectionID.flatMap { id in vault.collections.first(where: { $0.id == id }) }
         if let existing {
@@ -1102,8 +1174,8 @@ final class AppStore {
             vault.collections[idx] = collection
         }
 
-        let toSave = collection
-        Task { await vault.saveCollection(toSave) }
+        let toSave = persistable(collection)
+        Task { await vault.writeCollection(toSave) }
         openRequest(request.id)
     }
 
@@ -1124,8 +1196,8 @@ final class AppStore {
             if let idx = vault.collections.firstIndex(where: { $0.id == collection.id }) {
                 vault.collections[idx] = updated
             }
-            let toSave = updated
-            Task { await vault.saveCollection(toSave) }
+            let toSave = persistable(updated)
+            Task { await vault.writeCollection(toSave) }
             openRequest(copy.id)
             return
         }
@@ -1141,7 +1213,7 @@ final class AppStore {
             if let idx = vault.collections.firstIndex(where: { $0.id == collection.id }) {
                 vault.collections[idx] = updated
             }
-            Task { await vault.saveCollection(updated) }
+            Task { await vault.writeCollection(persistable(updated)) }
             break
         }
     }
@@ -1157,6 +1229,9 @@ final class AppStore {
         if persistedRequestBaselines[request.id] == nil, let current {
             persistedRequestBaselines[request.id] = current
         }
+        // No-op pushes (vault-side adoptions, edits undone back to the saved
+        // content) must not create pending snapshots or draft-mirror entries.
+        if let current, current.isContentEqual(to: request) { return }
 
         for index in vault.collections.indices {
             if let requestIndex = vault.collections[index].requests.firstIndex(where: { $0.id == request.id }) {
@@ -1184,6 +1259,15 @@ final class AppStore {
         applyCollectionVariableDrafts(drafts.collectionVariables)
         applyCollectionAuthorizationDrafts(drafts.collectionAuthorizations)
         pruneSidebarExpansionState()
+        // Drop restored tabs whose entities no longer exist (deleted here or
+        // on another device) and persist the pruned set back.
+        pruneDanglingTabs()
+        // Launching into the workspaces manager (no active workspace) means
+        // no tab strip is rendered: clear the restored strip so entering a
+        // workspace never resurrects tabs from a dead session.
+        if vault.activeWorkspace == nil {
+            closeAllTabs()
+        }
         await migrateRequestAuthInheritanceIfNeeded()
     }
 
@@ -1281,7 +1365,7 @@ final class AppStore {
         }
 
         for collection in touchedCollections {
-            await vault.saveCollection(collection)
+            await vault.writeCollection(persistable(collection))
         }
         await vault.persistConfig()
     }
@@ -1589,13 +1673,12 @@ final class AppStore {
     }
 
     private func persistRequest(_ request: RequestItem) async {
-        for collection in vault.collections where collection.requests.contains(where: { $0.id == request.id }) {
-            var updated = collection
-            guard let idx = updated.requests.firstIndex(where: { $0.id == request.id }) else { return }
+        for ci in vault.collections.indices {
+            guard let ri = vault.collections[ci].requests.firstIndex(where: { $0.id == request.id }) else { continue }
             // Compare against the last persisted content, not the in-memory
             // copy - updateRequest already applied the edit to the vault, so
             // comparing against it would skip every write.
-            let baseline = persistedRequestBaselines[request.id] ?? updated.requests[idx]
+            let baseline = persistedRequestBaselines[request.id] ?? vault.collections[ci].requests[ri]
             if request.isContentEqual(to: baseline) {
                 persistedRequestBaselines[request.id] = request
                 return
@@ -1608,9 +1691,12 @@ final class AppStore {
             copy.headers = copy.headers.filter { !isBlankRow($0.key, $0.value) }
             copy.formFields = copy.formFields.filter { !isBlankRow($0.key, $0.value) }
             copy.urlEncodedFields = copy.urlEncodedFields.filter { !isBlankRow($0.key, $0.value) }
-            updated.requests[idx] = copy
+            // Memory syncs to the persisted copy in place; the file write is
+            // rewound to the baselines so in-flight variable/Authorization
+            // drafts are not persisted by a request save.
+            vault.collections[ci].requests[ri] = copy
             persistedRequestBaselines[request.id] = copy
-            await vault.saveCollection(updated)
+            await vault.writeCollection(persistable(vault.collections[ci]))
             return
         }
         // The request vanished (deleted while a save was in flight).
@@ -1690,9 +1776,9 @@ final class AppStore {
     // MARK: - Environments
 
     func addEnvironment() {
-        // New environments always land in a workspace - the active one, or
-        // the first when called before any workspace is active.
-        let workspaceID = vault.activeWorkspace?.id ?? vault.workspaces.first?.id
+        // New environments always land in a workspace - the active one (the
+        // menu action is disabled without one, see addCollection).
+        guard let workspaceID = activeWorkspace?.id else { return }
         // Max + 1 within the workspace, not count: deleted environments leave
         // orderIndex gaps, and count would collide with an existing value on
         // the first add after a deletion (two environments tying in the
@@ -1753,9 +1839,12 @@ final class AppStore {
         if persistedEnvironmentBaselines[environment.id] == nil {
             persistedEnvironmentBaselines[environment.id] = vault.environments.first(where: { $0.id == environment.id })
         }
-        if let idx = vault.environments.firstIndex(where: { $0.id == environment.id }) {
-            vault.environments[idx] = environment
-        }
+        guard let idx = vault.environments.firstIndex(where: { $0.id == environment.id }) else { return }
+        // No-op pushes (adoptions of vault-side changes, edits undone back
+        // to the saved content) must not create pending snapshots or
+        // draft-mirror entries.
+        guard vault.environments[idx] != environment else { return }
+        vault.environments[idx] = environment
         pendingEnvironmentSnapshots[environment.id] = environment
         scheduleDraftPersistence()
     }

@@ -5,8 +5,9 @@ import Foundation
 /// A single open tab in the workspace detail area. Request tabs hold the
 /// request editor; environment and workspace-variables tabs hold standalone
 /// variables editors; the workspace tab is the workspace's Overview (stats),
-/// opened only from the workspaces management list.
-enum OpenTab: Hashable, Identifiable, Sendable {
+/// opened only from the workspaces management list. Codable so the tab strip
+/// survives relaunches (machine-local UI state in UserDefaults).
+enum OpenTab: Hashable, Identifiable, Sendable, Codable {
     case request(UUID)
     case environment(UUID)
     case collection(UUID)
