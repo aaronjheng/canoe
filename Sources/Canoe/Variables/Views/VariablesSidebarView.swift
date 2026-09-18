@@ -8,7 +8,9 @@ import SwiftUI
 /// so higher-precedence variables appear at the top. Disabled rows are
 /// excluded from resolution, overridden rows are annotated with the scope
 /// that wins, secrets are masked, and placeholders the request references but
-/// no scope defines are flagged as unresolved.
+/// no scope defines are flagged as unresolved; keys that do resolve are
+/// flattened into a "Resolved Variables" summary of the values the wire will
+/// carry.
 ///
 /// Without a request it falls back to Postman's "All variables" view: the
 /// workspace- and environment-level scopes with actionable empty states, so
@@ -66,8 +68,15 @@ struct VariablesSidebarView: View {
         let unresolved = query.isEmpty ? unresolvedAll : unresolvedAll.filter { $0.localizedCaseInsensitiveContains(query) }
         // Placeholders that resolve toward a reference cycle: defined, so
         // not "unresolved", but the wire still carries literal `{{...}}`.
-        let blockedAll = VariableResolver.keysBlockedByCycle(used: usedKeys, variables: resolvedVars).sorted()
+        let blockedSet = VariableResolver.keysBlockedByCycle(used: usedKeys, variables: resolvedVars)
+        let blockedAll = blockedSet.sorted()
         let blocked = query.isEmpty ? blockedAll : blockedAll.filter { $0.localizedCaseInsensitiveContains(query) }
+        // Used keys that do resolve, flattened to the winning value per key.
+        let resolvedAll = resolvedEntries(usedKeys: usedKeys, resolvedVars: resolvedVars, blocked: blockedSet, scopes: scopes)
+        let resolved =
+            query.isEmpty
+            ? resolvedAll
+            : resolvedAll.filter { $0.key.localizedCaseInsensitiveContains(query) || $0.value.localizedCaseInsensitiveContains(query) }
         return VStack(spacing: 0) {
             filterField
             Divider()
@@ -83,13 +92,16 @@ struct VariablesSidebarView: View {
                             onEdit: { openEditor(for: scope) }
                         )
                     }
+                    if !resolved.isEmpty {
+                        ResolvedSection(entries: resolved, revealedSecrets: $revealedSecrets)
+                    }
                     if !unresolved.isEmpty || !blocked.isEmpty {
                         UnresolvedSection(keys: unresolved, cyclicKeys: Set(blocked))
                     }
                 }
             }
             .overlay {
-                if !query.isEmpty && totalVisibleRows(in: scopes) == 0 && unresolved.isEmpty && blocked.isEmpty {
+                if !query.isEmpty && totalVisibleRows(in: scopes) == 0 && unresolved.isEmpty && blocked.isEmpty && resolved.isEmpty {
                     ContentUnavailableView(
                         "No Results",
                         systemImage: "magnifyingglass",
@@ -161,10 +173,50 @@ struct VariablesSidebarView: View {
         }
     }
 
+    /// The flattened resolution outcome for keys the request references:
+    /// per key the variable that wins and its scope, ordered by key. Scopes
+    /// arrive lowest-first, so within a scope the last enabled definition
+    /// wins and across scopes the later (higher) scope does - matching
+    /// `variablesForRequest`. Cyclic keys are excluded (defined, but they
+    /// never expand), and `source` is only set when several scopes define
+    /// the key, when knowing which one wins is the point.
+    private func resolvedEntries(
+        usedKeys: Set<String>,
+        resolvedVars: [String: String],
+        blocked: Set<String>,
+        scopes: [RequestVariableScope]
+    ) -> [ResolvedEntry] {
+        var winners: [String: (variable: Variable, source: RequestVariableScope.Kind)] = [:]
+        var definitionCounts: [String: Int] = [:]
+        for scope in scopes.reversed() {
+            var scopeWinners: [String: Variable] = [:]
+            for variable in scope.variables where variable.isEnabled {
+                let key = variable.key.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard usedKeys.contains(key), resolvedVars[key] != nil, !blocked.contains(key) else { continue }
+                scopeWinners[key] = variable
+                definitionCounts[key, default: 0] += 1
+            }
+            for (key, variable) in scopeWinners where winners[key] == nil {
+                winners[key] = (variable, scope.kind)
+            }
+        }
+        return
+            winners
+            .map { key, winner in
+                ResolvedEntry(
+                    key: key,
+                    value: resolvedVars[key] ?? "",
+                    variable: winner.variable,
+                    source: (definitionCounts[key] ?? 0) > 1 ? winner.source : nil
+                )
+            }
+            .sorted { $0.key < $1.key }
+    }
+
     private func totalVisibleRows(in scopes: [RequestVariableScope]) -> Int {
         guard !query.isEmpty else { return 0 }
         return scopes.reduce(0) { count, scope in
-            guard scope.ownerName != nil else { return count }
+            guard scope.ownerID != nil else { return count }
             return count + scope.variables.filter { variableMatchesFilter($0, query: query) }.count
         }
     }
@@ -179,8 +231,8 @@ private func variableMatchesFilter(_ variable: Variable, query: String) -> Bool 
 
 // MARK: - Scope section
 
-/// One scope (workspace, collection, or environment): header with the owner's
-/// name and an edit shortcut, then its rows or a Postman-style hint with an
+/// One scope (workspace, collection, or environment): header with the scope
+/// label and an edit shortcut, then its rows or a Postman-style hint with an
 /// actionable link.
 private struct ScopeSection: View {
     @Environment(AppStore.self) private var store
@@ -250,14 +302,9 @@ private struct ScopeSection: View {
             Image(systemName: scope.kind.systemImage)
                 .font(.caption)
                 .foregroundStyle(AppColor.accent)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(scope.kind.rawValue.uppercased())
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text(scope.ownerName ?? "None")
-                    .font(.subheadline)
-                    .lineLimit(1)
-            }
+            Text(scope.kind.rawValue.uppercased())
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
             Spacer(minLength: 0)
             if scope.ownerID != nil {
                 Button("Edit", systemImage: "square.and.pencil") {
@@ -276,7 +323,7 @@ private struct ScopeSection: View {
         .padding(.leading, AppSpacing.medium)
         .padding(.trailing, AppSpacing.medium)
         .padding(.top, AppSpacing.small)
-        .padding(.bottom, AppSpacing.xSmall)
+        .padding(.bottom, AppSpacing.small)
     }
 
     private var rows: some View {
@@ -373,6 +420,12 @@ private struct VariableRow: View {
     let variable: Variable
     let isUsed: Bool
     let overriddenBy: String?
+    /// Value the row shows and copies - defaults to the variable's raw
+    /// value; the resolved section passes the fully expanded value instead.
+    var displayValue: String?
+    /// Optional badge next to the key (the resolved section names the scope
+    /// that wins when several define the key).
+    var sourceLabel: String?
     @Binding var revealedSecrets: Set<UUID>
     @State private var isHovering = false
     /// Which hover action owns keyboard focus, if any. The actions stay
@@ -387,6 +440,10 @@ private struct VariableRow: View {
 
     private var trimmedKey: String {
         variable.key.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var shownValue: String {
+        displayValue ?? variable.value
     }
 
     private var isRevealed: Bool {
@@ -413,6 +470,9 @@ private struct VariableRow: View {
                         .textSelection(.enabled)
                     if !variable.isEnabled {
                         Badge(text: "Disabled")
+                    }
+                    if let sourceLabel {
+                        Badge(text: sourceLabel)
                     }
                 }
                 valueText
@@ -444,7 +504,7 @@ private struct VariableRow: View {
                 Button {
                     let pasteboard = NSPasteboard.general
                     pasteboard.clearContents()
-                    pasteboard.setString(variable.value, forType: .string)
+                    pasteboard.setString(shownValue, forType: .string)
                 } label: {
                     Image(systemName: "doc.on.doc")
                 }
@@ -468,7 +528,7 @@ private struct VariableRow: View {
             if isMasked {
                 Text("••••••••")
             } else {
-                Text(variable.value)
+                Text(shownValue)
             }
         }
         .font(AppFont.monoCaption)
@@ -483,9 +543,56 @@ private struct VariableRow: View {
     }
 }
 
-// MARK: - Unresolved placeholders
+// MARK: - Resolved variables
 
-/// Placeholders the request references but no enabled variable in any scope
+/// One flattened resolution outcome: a key the request references, the final
+/// value the wire will carry, the winning variable (its identity drives
+/// secret masking and reveal), and - when several scopes define the key -
+/// the scope that wins.
+private struct ResolvedEntry: Identifiable {
+    let key: String
+    let value: String
+    let variable: Variable
+    let source: RequestVariableScope.Kind?
+
+    var id: String { key }
+}
+
+/// The counterpart of the unresolved section: keys the request references
+/// that do resolve, shown with the value they expand to at send time.
+/// Hidden entirely when the request references nothing that resolves.
+private struct ResolvedSection: View {
+    let entries: [ResolvedEntry]
+    @Binding var revealedSecrets: Set<UUID>
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Label("Resolved Variables", systemImage: "checkmark.circle.fill")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(AppColor.success)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, AppSpacing.medium)
+                .padding(.top, AppSpacing.small)
+            ForEach(entries) { entry in
+                VariableRow(
+                    variable: entry.variable,
+                    isUsed: true,
+                    overriddenBy: nil,
+                    displayValue: entry.value,
+                    sourceLabel: entry.source.map { "From \($0.rawValue)" },
+                    revealedSecrets: $revealedSecrets
+                )
+            }
+            Divider()
+        }
+        .padding(.bottom, AppSpacing.small)
+        .help("The values these placeholders expand to at send time; secrets stay masked until revealed.")
+    }
+}
+
+// MARK: - Unresolved variables
+
+/// Keys the request references but no enabled variable in any scope
 /// defines - they will be sent literally instead of substituted - plus
 /// placeholders stuck in a variable reference cycle, which also arrive on
 /// the wire unsubstituted.
@@ -502,12 +609,12 @@ private struct UnresolvedSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
-            Label("Unresolved Placeholders", systemImage: "exclamationmark.triangle.fill")
+            Label("Unresolved Variables", systemImage: "exclamationmark.triangle.fill")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(AppColor.warning)
             ForEach(orderedKeys, id: \.self) { key in
                 HStack(spacing: AppSpacing.xSmall) {
-                    Text("{{\(key)}}")
+                    Text(key)
                         .font(AppFont.monoCaption)
                         .foregroundStyle(.primary)
                         .lineLimit(1)
@@ -528,6 +635,6 @@ private struct UnresolvedSection: View {
         }
         .padding(.horizontal, AppSpacing.medium)
         .padding(.vertical, AppSpacing.small)
-        .help("These placeholders are undefined or resolve toward a variable cycle, and will be sent literally.")
+        .help("These variables are undefined or resolve toward a reference cycle, and will be sent literally.")
     }
 }

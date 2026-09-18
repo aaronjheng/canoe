@@ -32,7 +32,7 @@ enum VariableEditorFont {
 
 /// A text editor that highlights `{{variable}}` placeholders: green
 /// background when the variable resolves in scope, amber when it does not
-/// (matching the inspector's "Unresolved Placeholders" warning), and
+/// (matching the inspector's "Unresolved Variables" warning), and
 /// completes variable names while typing: `{{` opens a suggestion popup
 /// below the caret, arrow keys navigate, Return/Tab insert, Escape dismisses.
 ///
