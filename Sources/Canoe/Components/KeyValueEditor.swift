@@ -77,12 +77,15 @@ struct KeyValueEditor<T: KVItem>: View {
         suggestions ?? VariableSuggestion.suggestions(from: variables)
     }
 
-    /// Fixed widths for the two non-text columns; Key and Value split the
-    /// remaining width equally, matching the header labels above.
+    /// Fixed widths for the non-text columns; Key and Value split the
+    /// remaining width equally, matching the header labels above. Reorder
+    /// tables merge the drag grip and the checkbox into one leading column
+    /// (two icons, one cell) so the grid carries one hairline fewer.
     private let toggleColumnWidth: CGFloat = 32
+    private let gripGlyphWidth: CGFloat = 14
     private let deleteColumnWidth: CGFloat = 26
-    private let gripColumnWidth: CGFloat = 22
     private var secretColumnWidth: CGFloat { secretKeyPath == nil ? 0 : 26 }
+    private var leadingColumnWidth: CGFloat { allowsReorder ? 38 : toggleColumnWidth }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -135,9 +138,8 @@ struct KeyValueEditor<T: KVItem>: View {
                     focus: $focusedCell,
                     keyFocus: .key(item.id),
                     valueFocus: .value(item.id),
-                    toggleColumnWidth: toggleColumnWidth,
+                    leadingColumnWidth: leadingColumnWidth,
                     deleteColumnWidth: deleteColumnWidth,
-                    gripColumnWidth: gripColumnWidth,
                     onDelete: { [id = item.id] in
                         items.removeAll { $0.id == id }
                         if ghost?.id == id { ghost = nil }
@@ -171,9 +173,8 @@ struct KeyValueEditor<T: KVItem>: View {
                 focus: $focusedCell,
                 keyFocus: .ghostKey,
                 valueFocus: .ghostValue,
-                toggleColumnWidth: toggleColumnWidth,
+                leadingColumnWidth: leadingColumnWidth,
                 deleteColumnWidth: deleteColumnWidth,
-                gripColumnWidth: gripColumnWidth,
                 onEditingEnded: { ghost = nil },
                 allowsReorder: allowsReorder
             )
@@ -197,7 +198,7 @@ struct KeyValueEditor<T: KVItem>: View {
     }
 
     private var headerRow: some View {
-        // Icon columns (grip, checkbox, secret, delete) get no header
+        // Icon columns (leading checkbox/grip, secret, delete) get no header
         // cells: empty ruled boxes read as missing labels. A single indent
         // keeps the text labels over their columns instead.
         HStack(spacing: 0) {
@@ -210,10 +211,10 @@ struct KeyValueEditor<T: KVItem>: View {
         .frame(height: AppSize.tabHeight)
     }
 
-    /// Indent matching the body rows' leading icon columns (including their
-    /// 1pt hairlines) so the text labels land exactly over the cells.
+    /// Indent matching the body rows' leading icon column (including its
+    /// 1pt hairline) so the text labels land exactly over the cells.
     private var leadingIconWidth: CGFloat {
-        (allowsReorder ? gripColumnWidth + 1 : 0) + toggleColumnWidth + 1
+        leadingColumnWidth + 1
     }
 
     /// Reserve the same trailing columns and hairlines as the body so Key
@@ -385,9 +386,11 @@ private struct KVRow: View {
     let focus: Binding<CellFocus?>
     let keyFocus: CellFocus
     let valueFocus: CellFocus
-    let toggleColumnWidth: CGFloat
+    /// Width of the merged leading column: drag grip (when reorder is on)
+    /// plus the enabled checkbox share one cell and one hairline.
+    let leadingColumnWidth: CGFloat
     let deleteColumnWidth: CGFloat
-    var gripColumnWidth: CGFloat = 0
+    private let gripGlyphWidth: CGFloat = 14
     /// nil for real rows; the trailing ghost row reports its editing session's
     /// end through this so the table can reset the ghost buffer.
     var onEditingEnded: (() -> Void)?
@@ -418,37 +421,48 @@ private struct KVRow: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            if allowsReorder {
-                // Grip-only dragging: dragging the whole row would fight
-                // text selection inside the cells. The trailing ghost row
-                // keeps just the empty slot - nothing to drag yet.
-                if isGhostRow {
-                    Color.clear
-                        .frame(width: gripColumnWidth)
-                } else {
-                    Image(systemName: "line.3.horizontal")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(width: gripColumnWidth, alignment: .center)
-                        .frame(maxHeight: .infinity)
-                        .contentShape(Rectangle())
-                        .opacity(isHovering || isDragging ? 1 : 0)
-                        .onDrag {
-                            guard let onGripDrag else { return NSItemProvider() }
-                            return onGripDrag()
-                        }
+            // One merged leading cell: drag grip (pointer-only, on hover)
+            // and the enabled checkbox share a single column and hairline.
+            // The frame centers the icon group so the grip's left inset
+            // mirrors the checkbox's right inset. The trailing ghost row
+            // keeps an empty grip slot - nothing to drag yet - so its
+            // checkbox lines up with the real rows.
+            HStack(spacing: AppSpacing.xxSmall) {
+                if allowsReorder {
+                    if isGhostRow {
+                        Color.clear
+                            .frame(width: gripGlyphWidth)
+                    } else {
+                        Image(systemName: "line.3.horizontal")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(width: gripGlyphWidth)
+                            .frame(maxHeight: .infinity)
+                            .contentShape(Rectangle())
+                            .opacity(isHovering || isDragging ? 1 : 0)
+                            .onDrag {
+                                guard let onGripDrag else { return NSItemProvider() }
+                                return onGripDrag()
+                            }
+                            .onHover { hovering in
+                                // The grip drags the row: swap in the hand
+                                // cursor while the pointer is over it.
+                                if hovering {
+                                    NSCursor.pointingHand.push()
+                                } else {
+                                    NSCursor.pop()
+                                }
+                            }
+                    }
                 }
-                verticalRule
+                Toggle("", isOn: isGhostRow ? .constant(false) : $isEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.checkbox)
+                    .controlSize(.small)
+                    .disabled(isGhostRow)
+                    .helpIf(!isGhostRow, isEnabled ? "Disable row" : "Enable row")
             }
-            // The trailing ghost row shows an unchecked, inert checkbox: it
-            // only becomes a real (checked) row once the user types into it.
-            Toggle("", isOn: isGhostRow ? .constant(false) : $isEnabled)
-                .labelsHidden()
-                .toggleStyle(.checkbox)
-                .controlSize(.small)
-                .disabled(isGhostRow)
-                .frame(width: toggleColumnWidth)
-                .helpIf(!isGhostRow, isEnabled ? "Disable row" : "Enable row")
+            .frame(width: leadingColumnWidth)
             verticalRule
             cell {
                 VariableHighlightEditor(
