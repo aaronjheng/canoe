@@ -1217,8 +1217,12 @@ extension View {
     /// field chrome (a match of `.textFieldStyle(.roundedBorder)`).
     /// Focused fields swap the hairline for a thicker solid accent border so
     /// the focused surface is unmistakable.
+    /// The plain style is forced here so native `TextField`/`SecureField`
+    /// wrapped by this chrome don't draw their own system bezel inside it -
+    /// that double border is exactly what this modifier exists to replace.
     func variableFieldBordered(isFocused: Bool = false, verticalPadding: CGFloat = AppSpacing.xxSmall) -> some View {
         self
+            .textFieldStyle(.plain)
             .padding(.horizontal, AppSpacing.small - AppSpacing.xxSmall)
             .padding(.vertical, verticalPadding)
             .background(

@@ -220,7 +220,12 @@ struct AuthorizationForm: View {
                             )
                         }
                     }
-                    echoRow("Password") { echoField { SecureField("Password", text: .constant(source.authorization.password)) } }
+                    echoRow("Password") {
+                        echoField {
+                            SecureField("Password", text: .constant(source.authorization.password))
+                                .textFieldStyle(.plain)
+                        }
+                    }
                 case .bearer:
                     echoRow("Auth type") { echoField { Text(RequestAuthType.bearer.label) } }
                     echoRow("Token") {
