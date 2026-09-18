@@ -46,6 +46,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainWindow.tabbingMode = .disallowed
         mainWindow.tabbingIdentifier = "Canoe"
         mainWindow.collectionBehavior.insert(.fullScreenPrimary)
+        // Enforce the minimum interactively: the SwiftUI frame(minWidth:)
+        // modifier does not propagate to the NSWindow, and a restored frame
+        // must be clamped too (see the autosave name below).
+        mainWindow.minSize = NSSize(width: 980, height: 620)
+        // Remember the window frame across launches (AppKit-managed UI state
+        // in UserDefaults, like the window toggles): reopening opens at the
+        // size and position the user left. No saved frame yet - first run -
+        // keeps the contentRect above.
+        mainWindow.setFrameAutosaveName("Canoe Main Window")
         mainWindow.makeKeyAndOrderFront(nil)
         (AppAppearance(rawValue: SettingsStore.shared.settings.appearance) ?? .system)
             .applyToWindow(mainWindow)
