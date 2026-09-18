@@ -86,46 +86,44 @@ struct CodeSnippetSidebarView: View {
     }
 
     /// Postman-style code pane with a line-number gutter. Lines render as
-    /// individual rows so the gutter stays aligned (no wrapping; long lines
-    /// scroll horizontally, like Postman).
+    /// individual rows so the gutter stays aligned; long lines wrap at the
+    /// pane width, with the row number on the first visual line.
     private var codeArea: some View {
-        // Nested single-axis scroll views: a bidirectional ScrollView centers
-        // content smaller than the viewport, while single-axis ones always
-        // lead/top-align - which is what the code pane needs.
         ScrollView(.vertical) {
-            ScrollView(.horizontal) {
-                VStack(alignment: .leading, spacing: 0) {
-                    // Computed once: `code` regenerates the whole snippet, so
-                    // evaluating it per line below would redo it N+1 times.
-                    let snippet = code
-                    let lines = snippet.components(separatedBy: "\n")
-                    // For the raw HTTP format, headers run until the first
-                    // blank line; everything after it is body.
-                    let httpBlank = language == .http ? lines.firstIndex(where: { $0.isEmpty }) : nil
-                    ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
-                        let isBody = httpBlank.map { index > $0 } ?? false
-                        HStack(alignment: .firstTextBaseline, spacing: AppSpacing.medium) {
-                            Text("\(index + 1)")
-                                .font(AppFont.monoCaption)
-                                .monospacedDigit()
-                                .foregroundStyle(.tertiary)
-                                .frame(minWidth: 18, alignment: .trailing)
-                            Text(
-                                SnippetHighlighter.attributedLine(
-                                    line,
-                                    language: language,
-                                    isFirstLine: index == 0,
-                                    isBody: isBody
-                                )
+            VStack(alignment: .leading, spacing: 0) {
+                // Computed once: `code` regenerates the whole snippet, so
+                // evaluating it per line below would redo it N+1 times.
+                let snippet = code
+                let lines = snippet.components(separatedBy: "\n")
+                // For the raw HTTP format, headers run until the first
+                // blank line; everything after it is body.
+                let httpBlank = language == .http ? lines.firstIndex(where: { $0.isEmpty }) : nil
+                ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                    let isBody = httpBlank.map { index > $0 } ?? false
+                    HStack(alignment: .firstTextBaseline, spacing: AppSpacing.medium) {
+                        Text("\(index + 1)")
+                            .font(AppFont.monoSubheadline)
+                            .monospacedDigit()
+                            .foregroundStyle(.tertiary)
+                            .frame(minWidth: 18, alignment: .trailing)
+                        Text(
+                            SnippetHighlighter.attributedLine(
+                                line,
+                                language: language,
+                                isFirstLine: index == 0,
+                                isBody: isBody
                             )
-                            .font(AppFont.monoCaption)
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: true, vertical: false)
-                        }
+                        )
+                        .font(AppFont.monoSubheadline)
+                        .textSelection(.enabled)
+                        // Wrap at the pane width instead of scrolling
+                        // horizontally; the gutter number stays on the
+                        // first visual line via the baseline alignment.
+                        .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .padding(AppSpacing.medium)
             }
+            .padding(AppSpacing.medium)
         }
     }
 
