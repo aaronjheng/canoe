@@ -9,18 +9,31 @@ struct TabBarView: View {
     var body: some View {
         HStack(spacing: AppSpacing.xSmall) {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: AppSpacing.xSmall) {
-                    ForEach(store.visibleOpenTabs) { tab in
-                        TabPill(
-                            tab: tab,
-                            width: tabWidth,
-                            isSelected: store.selectedTab == tab,
-                            isSending: store.sendingTabs.contains(tab)
-                        )
+                ScrollViewReader { proxy in
+                    HStack(spacing: AppSpacing.xSmall) {
+                        ForEach(store.visibleOpenTabs) { tab in
+                            TabPill(
+                                tab: tab,
+                                width: tabWidth,
+                                isSelected: store.selectedTab == tab,
+                                isSending: store.sendingTabs.contains(tab)
+                            )
+                            .id(tab)
+                        }
+                    }
+                    .padding(.horizontal, AppSpacing.small)
+                    .padding(.vertical, AppSpacing.xSmall)
+                    // Opening a tab (or switching to one parked off-screen)
+                    // must reveal it: scroll the minimum amount that brings
+                    // the selected pill fully into view. `initial: true`
+                    // also covers relaunches with restored tabs.
+                    .onChange(of: store.selectedTab, initial: true) { _, selected in
+                        guard let selected else { return }
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            proxy.scrollTo(selected, anchor: nil)
+                        }
                     }
                 }
-                .padding(.horizontal, AppSpacing.small)
-                .padding(.vertical, AppSpacing.xSmall)
             }
             .onGeometryChange(for: CGFloat.self) { proxy in
                 proxy.size.width
