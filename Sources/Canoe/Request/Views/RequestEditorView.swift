@@ -367,10 +367,13 @@ struct RequestEditorView: View {
             saveButton
         }
         .padding(.horizontal, AppSpacing.medium)
+        // A touch of extra air between the tab strip and this row: the top
+        // padding rides inside the pinned height, so nothing below shifts.
+        .padding(.top, AppSpacing.xSmall)
         // Fixed-height row: padding-driven heights let extra vertical space
         // (VSplitView panes, taller windows) inflate into blank bands above
         // and below the bar. Pin it like the other toolbar rows.
-        .frame(height: AppSize.toolbarHeight)
+        .frame(height: AppSize.toolbarHeight + AppSpacing.xSmall)
     }
 
     /// Postman-style inline request name: quiet heading at rest, light pill
