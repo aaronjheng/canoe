@@ -7,6 +7,10 @@ struct ContentView: View {
     /// off the tab strip clips it where it overflows the strip bounds.
     @State private var isEnvPickerShown = false
     @State private var envPickerAnchor: Anchor<CGRect>?
+    /// Whether the tab-row drawer is open. Owned here like the environment
+    /// panel: the drawer floats at window level too (see `tabDrawerOverlay`).
+    @State private var isTabDrawerShown = false
+    @State private var tabDrawerAnchor: Anchor<CGRect>?
 
     var body: some View {
         @Bindable var store = store
@@ -42,8 +46,10 @@ struct ContentView: View {
         // area inset - ignore it or the bar sinks 32pt below the traffic
         // lights, leaving a bare window-background band above it.
         .ignoresSafeArea()
+        .overlay { tabDrawerOverlay }
         .overlay { envPickerOverlay }
         .onPreferenceChange(EnvPickerAnchorKey.self) { envPickerAnchor = $0 }
+        .onPreferenceChange(TabDrawerAnchorKey.self) { tabDrawerAnchor = $0 }
     }
 
     /// Postman-style environment dropdown: no popover bubble or arrow, just
@@ -66,6 +72,38 @@ struct ContentView: View {
                         EnvironmentPickerPanel(onDismiss: { isEnvPickerShown = false })
                             .offset(
                                 x: button.maxX - EnvironmentPickerPanel.width,
+                                y: button.maxY + AppSpacing.xSmall)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Tab drawer: same window-level card hosting as the environment
+    /// dropdown (see `envPickerOverlay`) with the same anchor rule: the
+    /// card's trailing edge meets the trigger button's trailing edge and
+    /// the card hangs left. Where the window is too narrow to fit the full
+    /// 360pt left of the button, the card shrinks to the space available
+    /// (120pt floor) so the alignment stays exact.
+    private var tabDrawerOverlay: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                if isTabDrawerShown {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { isTabDrawerShown = false }
+                    Button("Close Tab Drawer") { isTabDrawerShown = false }
+                        .keyboardShortcut(.cancelAction)
+                        .frame(width: 0, height: 0)
+                        .opacity(0)
+                        .accessibilityHidden(true)
+                    if let anchor = tabDrawerAnchor {
+                        let button = proxy[anchor]
+                        let cardWidth = min(AppSize.tabSearchWidth, max(button.maxX, 120))
+                        TabDrawer(onDismiss: { isTabDrawerShown = false })
+                            .frame(width: cardWidth)
+                            .offset(
+                                x: max(button.maxX - cardWidth, 0),
                                 y: button.maxY + AppSpacing.xSmall)
                     }
                 }
@@ -115,7 +153,10 @@ struct ContentView: View {
     private var detailPane: some View {
         VStack(spacing: 0) {
             if !store.openTabs.isEmpty {
-                TabBarView(isEnvPickerShown: $isEnvPickerShown)
+                TabBarView(
+                    isDrawerShown: $isTabDrawerShown,
+                    isEnvPickerShown: $isEnvPickerShown
+                )
                 Divider()
             }
             detailContent

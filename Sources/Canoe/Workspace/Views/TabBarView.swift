@@ -5,10 +5,10 @@ import SwiftUI
 struct TabBarView: View {
     @Environment(AppStore.self) private var store
     @State private var availableWidth: CGFloat = 0
-    @State private var isDrawerShown = false
-    /// Whether the environment dropdown panel is open. Owned by ContentView:
-    /// the panel floats at window level (a strip-level overlay gets clipped
-    /// where it overflows the strip bounds).
+    /// Whether the tab drawer / environment dropdown panel is open. Owned by
+    /// ContentView: both float at window level (a strip-level overlay gets
+    /// clipped where it overflows the strip bounds).
+    @Binding var isDrawerShown: Bool
     @Binding var isEnvPickerShown: Bool
 
     var body: some View {
@@ -64,11 +64,7 @@ struct TabBarView: View {
             ) {
                 isDrawerShown.toggle()
             }
-            .popover(isPresented: $isDrawerShown, arrowEdge: .top) {
-                TabDrawer {
-                    isDrawerShown = false
-                }
-            }
+            .anchorPreference(key: TabDrawerAnchorKey.self, value: .bounds) { $0 }
 
             // Postman keeps the environment selector and inspector toggles in
             // the tab row; the window's dedicated toolbar row was removed.
@@ -165,6 +161,15 @@ struct TabBarView: View {
 /// Anchor of the tab-row picker button, read by ContentView's window-level
 /// dropdown overlay.
 struct EnvPickerAnchorKey: PreferenceKey {
+    static let defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+        value = value ?? nextValue()
+    }
+}
+
+/// Anchor of the tab-row drawer button, read by ContentView's window-level
+/// drawer overlay.
+struct TabDrawerAnchorKey: PreferenceKey {
     static let defaultValue: Anchor<CGRect>? = nil
     static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
         value = value ?? nextValue()
@@ -364,6 +369,11 @@ struct EnvironmentPickerPanel: View {
             }
         }
         .frame(width: Self.width)
+        // Panel height = content height, never the proposal: the overlay
+        // proposes the full window, and any sizeless child (Color, shape,
+        // ScrollView) would otherwise absorb it and blow the rows up - the
+        // exact bug class the checkmark placeholder already hit once.
+        .fixedSize(horizontal: false, vertical: true)
         .popupPanel()
         .onAppear { searchFocused = true }
         .onChange(of: store.activeWorkspaceEnvironments) { _, _ in
@@ -612,11 +622,24 @@ private struct TabItemIcon: View {
 
 /// Postman-style tab drawer: a searchable list of every open tab. Selecting
 /// a row focuses that tab; dirty rows carry the same orange dot as the pill.
-private struct TabDrawer: View {
+/// Same chrome as the environment dropdown (see `EnvironmentPickerPanel`):
+/// borderless floating card, plain toolbar-row search, hover + keyboard row
+/// selection, Return picks the highlighted (or first) row. Hosted by
+/// ContentView's window-level overlay (see `TabDrawerAnchorKey`).
+struct TabDrawer: View {
     @Environment(AppStore.self) private var store
-    let onSelect: () -> Void
+    var onDismiss: () -> Void
     @State private var search = ""
     @FocusState private var searchFocused: Bool
+    @State private var hovered: OpenTab?
+    @State private var keyboard: OpenTab?
+    /// Rendered height of the row list: the card hugs the rows up to the
+    /// scroll cap (a flexible maxHeight alone absorbs the overlay's
+    /// full-window height proposal, leaving a huge empty card).
+    @State private var listHeight: CGFloat = 0
+
+    /// Most rows the list shows before it starts scrolling.
+    private static let listHeightCap: CGFloat = 320
 
     private var matchingTabs: [OpenTab] {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -626,72 +649,121 @@ private struct TabDrawer: View {
         }
     }
 
+    /// Moves the keyboard selection, clamped to the matching tabs. With no
+    /// selection yet, the first arrow enters from the nearest edge.
+    private func moveKeyboard(by delta: Int) {
+        let tabs = matchingTabs
+        guard !tabs.isEmpty else { return }
+        let idx = keyboard.flatMap { tabs.firstIndex(of: $0) } ?? (delta > 0 ? -1 : tabs.count)
+        keyboard = tabs[min(max(idx + delta, 0), tabs.count - 1)]
+        hovered = nil
+    }
+
+    private func pick(_ tab: OpenTab) {
+        store.selectedTab = tab
+        onDismiss()
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            TextField("Search tabs", text: $search)
-                .textFieldStyle(.plain)
-                .focused($searchFocused)
-                .variableFieldBordered(isFocused: searchFocused)
-                .padding(AppSpacing.small)
-            Divider()
-            if matchingTabs.isEmpty {
-                VStack(spacing: AppSpacing.xSmall) {
-                    Text("No Matching Tabs")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, AppSpacing.large)
-            } else {
-                ScrollView {
-                    VStack(spacing: 0) {
-                        ForEach(matchingTabs) { tab in
-                            TabDrawerRow(tab: tab, onSelect: onSelect)
-                            Divider()
+            HStack(spacing: AppSpacing.small) {
+                TextField("Search tabs", text: $search)
+                    .textFieldStyle(.plain)
+                    .font(.subheadline)
+                    .focused($searchFocused)
+                    .onSubmit {
+                        if let tab = keyboard ?? matchingTabs.first {
+                            pick(tab)
                         }
                     }
-                }
-                .frame(maxHeight: 320)
-            }
-        }
-        .frame(width: AppSize.tabSearchWidth)
-        .onAppear { searchFocused = true }
-    }
-}
-
-private struct TabDrawerRow: View {
-    @Environment(AppStore.self) private var store
-    let tab: OpenTab
-    let onSelect: () -> Void
-    @State private var isHovering = false
-
-    var body: some View {
-        Button {
-            store.selectedTab = tab
-            onSelect()
-        } label: {
-            HStack(spacing: AppSpacing.xSmall) {
-                TabItemIcon(tab: tab)
-                Text(store.tabDisplayName(tab))
-                    .font(.subheadline)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                if isTabDirty(tab, store: store) {
-                    Circle()
-                        .fill(AppColor.warning)
-                        .frame(width: AppSize.dirtyDot, height: AppSize.dirtyDot)
-                }
+                    .onExitCommand(perform: onDismiss)
+                    .onKeyPress(.upArrow) {
+                        moveKeyboard(by: -1)
+                        return .handled
+                    }
+                    .onKeyPress(.downArrow) {
+                        moveKeyboard(by: 1)
+                        return .handled
+                    }
+                    .onChange(of: search) { _, _ in
+                        keyboard = nil
+                    }
             }
             .padding(.horizontal, AppSpacing.small)
-            .frame(height: AppSize.toolbarHeight)
-            .background(
-                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                    .fill(isHovering ? AppColor.subtleBackground : .clear)
-            )
-            .contentShape(Rectangle())
+            .frame(minHeight: AppSize.tabHeight)
+
+            Divider()
+
+            if matchingTabs.isEmpty {
+                Text("No Matching Tabs")
+                    .font(.callout)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, minHeight: AppSize.tabHeight)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        // ForEach needs an explicit stack: bare in a
+                        // ScrollView it has no layout of its own, and every
+                        // row composites on the same origin.
+                        VStack(spacing: 0) {
+                            ForEach(matchingTabs) { tab in
+                                HStack(spacing: AppSpacing.xSmall) {
+                                    TabItemIcon(tab: tab)
+                                    Text(store.tabDisplayName(tab))
+                                        .font(.subheadline)
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                    Spacer(minLength: 0)
+                                    if isTabDirty(tab, store: store) {
+                                        Circle()
+                                            .fill(AppColor.warning)
+                                            .frame(width: AppSize.dirtyDot, height: AppSize.dirtyDot)
+                                    }
+                                }
+                                .padding(.horizontal, AppSpacing.small)
+                                .frame(maxWidth: .infinity, minHeight: AppSize.tabHeight, alignment: .leading)
+                                .background(
+                                    RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                                        .fill(tab == hovered || tab == keyboard ? AppColor.subtleBackground : .clear)
+                                )
+                                .contentShape(Rectangle())
+                                .onHover { hovering in
+                                    hovered = hovering ? tab : nil
+                                    if hovering { keyboard = nil }
+                                }
+                                .onTapGesture { pick(tab) }
+                                .help(store.tabDisplayName(tab))
+                                .id(tab)
+                            }
+                        }
+                        .padding(.horizontal, AppSpacing.xSmall)
+                        .padding(.vertical, AppSpacing.xSmall)
+                        .onGeometryChange(for: CGFloat.self) { proxy in
+                            proxy.size.height
+                        } action: {
+                            listHeight = $0
+                        }
+                    }
+                    // Arrow-key selection must stay visible in a scrolled
+                    // list: follow the keyboard row as it moves.
+                    .onChange(of: keyboard) { _, tab in
+                        guard let tab else { return }
+                        proxy.scrollTo(tab)
+                    }
+                }
+                // Size to the rows up to the cap; scroll only once the rows
+                // exceed it. (fixedSize does not hug a ScrollView's content
+                // on macOS, hence the measured height.) Pinned to the top so
+                // short lists don't float to the viewport's center.
+                .defaultScrollAnchor(.top)
+                .frame(height: listHeight > 0 ? min(listHeight, Self.listHeightCap) : nil)
+            }
         }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
-        .help(store.tabDisplayName(tab))
+        // Width is owned by the hosting overlay (adaptive, see
+        // `tabDrawerOverlay`); only the vertical hug lives here.
+        .fixedSize(horizontal: false, vertical: true)
+        .popupPanel()
+        .onAppear { searchFocused = true }
     }
 }
