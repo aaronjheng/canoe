@@ -92,6 +92,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         appStore.addRequest()
     }
 
+    @objc func selectNextTab() {
+        guard !isSettingsWindowKey else { return }
+        appStore.selectNextTab()
+    }
+
+    @objc func selectPreviousTab() {
+        guard !isSettingsWindowKey else { return }
+        appStore.selectPreviousTab()
+    }
+
     @objc func newCollection() {
         guard !isSettingsWindowKey else { return }
         appStore.addCollection()
@@ -362,6 +372,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             keyEquivalent: "s")
         saveMenuItem = saveItem
         fileMenu.addItem(saveItem)
+        fileMenu.addItem(.separator())
+        // Tab cycling lives with the tab lifecycle commands; the actions
+        // no-op gracefully when the strip is empty.
+        let selectPreviousTabItem = NSMenuItem(
+            title: "Select Previous Tab",
+            action: #selector(selectPreviousTab),
+            keyEquivalent: "[")
+        selectPreviousTabItem.keyEquivalentModifierMask = [.command, .shift]
+        selectPreviousTabItem.target = self
+        fileMenu.addItem(selectPreviousTabItem)
+        let selectNextTabItem = NSMenuItem(
+            title: "Select Next Tab",
+            action: #selector(selectNextTab),
+            keyEquivalent: "]")
+        selectNextTabItem.keyEquivalentModifierMask = [.command, .shift]
+        selectNextTabItem.target = self
+        fileMenu.addItem(selectNextTabItem)
         fileMenu.addItem(.separator())
         fileMenu.addItem(
             withTitle: "Close Tab",

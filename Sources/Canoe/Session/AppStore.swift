@@ -595,12 +595,46 @@ final class AppStore {
         if let tab = selectedTab { requestCloseTab(tab) }
     }
 
+    /// Selects the tab `offset` positions from `current` in display order,
+    /// wrapping around the ends (the ⌘⇧[ / ⌘⇧] cycling). No-op with fewer
+    /// than two tabs.
+    func selectNeighborTab(of current: OpenTab?, offset: Int) {
+        let tabs = visibleOpenTabs
+        guard tabs.count > 1 else { return }
+        if let idx = current.flatMap({ tabs.firstIndex(of: $0) }) {
+            selectedTab = tabs[(idx + offset + tabs.count) % tabs.count]
+        } else {
+            selectedTab = offset >= 0 ? tabs[0] : tabs[tabs.count - 1]
+        }
+        persistOpenTabs()
+    }
+
+    /// ⌘⇧]: the next tab in display order, wrapping past the end.
+    func selectNextTab() {
+        selectNeighborTab(of: selectedTab, offset: 1)
+    }
+
+    /// ⌘⇧[: the previous tab in display order, wrapping past the start.
+    func selectPreviousTab() {
+        selectNeighborTab(of: selectedTab, offset: -1)
+    }
+
+    /// ⌘1-9: selects the Nth tab in display order (1-based); no-op when the
+    /// strip holds fewer tabs.
+    func selectTab(atPosition position: Int) {
+        let tabs = visibleOpenTabs
+        guard tabs.indices.contains(position - 1) else { return }
+        selectedTab = tabs[position - 1]
+        persistOpenTabs()
+    }
+
     /// A tab close awaiting confirmation because the tab is dirty. Rendered
     /// by the tab strip's confirmation dialog; clean tabs close immediately
     /// and never stage here.
     enum PendingClose: Hashable {
         case tab(OpenTab)
         case others(except: OpenTab)
+        case right(of: OpenTab)
     }
 
     var pendingClose: PendingClose?
@@ -658,6 +692,30 @@ final class AppStore {
         pendingClose = .others(except: tab)
     }
 
+    /// The open tabs positioned after `tab` (empty when it is not open).
+    private func tabsToTheRight(of tab: OpenTab) -> [OpenTab] {
+        guard let idx = openTabs.firstIndex(of: tab) else { return [] }
+        return Array(openTabs[(idx + 1)...])
+    }
+
+    /// User-initiated close of every tab right of `tab`: confirms once when
+    /// any of them is dirty, otherwise closes at once. No-op when `tab` is
+    /// the last tab.
+    func requestCloseTabsToTheRight(of tab: OpenTab) {
+        let right = tabsToTheRight(of: tab)
+        guard !right.isEmpty else { return }
+        guard right.contains(where: hasPendingEdits) else {
+            closeTabsToTheRight(of: tab)
+            return
+        }
+        pendingClose = .right(of: tab)
+    }
+
+    /// How many tabs right of `tab` are dirty (close-confirmation copy).
+    func dirtyTabsToTheRightCount(of tab: OpenTab) -> Int {
+        tabsToTheRight(of: tab).filter(hasPendingEdits).count
+    }
+
     /// How many of the other tabs (besides `tab`) are dirty. Drives the
     /// close-others confirmation copy.
     func dirtyOtherTabCount(except tab: OpenTab) -> Int {
@@ -678,6 +736,8 @@ final class AppStore {
             closeTab(tab)
         case .others(let except):
             closeOtherTabs(except: except)
+        case .right(of: let tab):
+            closeTabsToTheRight(of: tab)
         }
     }
 
@@ -760,6 +820,25 @@ final class AppStore {
     func closeOtherTabs(except tab: OpenTab) {
         for other in openTabs where other != tab { closeTab(other) }
         selectedTab = tab
+        persistOpenTabs()
+    }
+
+    /// Closes every tab right of `tab` without confirmation (the dirty
+    /// path stages in `pendingClose` first). No-op when `tab` is last.
+    func closeTabsToTheRight(of tab: OpenTab) {
+        for other in tabsToTheRight(of: tab) { closeTab(other) }
+    }
+
+    /// Moves `tab` to the given display slot (drag reorder), clamped to the
+    /// open tabs' range. The order is the openTabs array itself; the
+    /// selection is unaffected. No-op when the slot doesn't change, so drag
+    /// updates that don't cross a pill boundary cost nothing.
+    func moveTab(_ tab: OpenTab, to slot: Int) {
+        guard let from = openTabs.firstIndex(of: tab) else { return }
+        let clamped = max(0, min(slot, openTabs.count - 1))
+        guard clamped != from else { return }
+        openTabs.remove(at: from)
+        openTabs.insert(tab, at: clamped)
         persistOpenTabs()
     }
 

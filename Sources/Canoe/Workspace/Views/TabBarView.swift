@@ -8,6 +8,11 @@ struct TabBarView: View {
     /// Which pill the pointer is over, lifted here so the separators
     /// between pills can hide themselves around the hovered one.
     @State private var hoveredTab: OpenTab?
+    /// Which pill is being drag-reordered (see the per-pill onDrop).
+    @State private var draggingTab: OpenTab?
+    /// Reference geometry + hosting window for the double-click monitor.
+    @State private var stripGeometry = TabStripGeometryBox()
+    @State private var doubleClickMonitor: Any?
     /// Whether the tab drawer / environment dropdown panel is open. Owned by
     /// ContentView: both float at window level (a strip-level overlay gets
     /// clipped where it overflows the strip bounds).
@@ -32,6 +37,35 @@ struct TabBarView: View {
                                 onHover: { hoveredTab = $0 ? tab : nil }
                             )
                             .id(tab)
+                            // Manual drag reorder, not .onDrag: the system
+                            // item-drag delays every click on the pill
+                            // (NSItemProvider session setup), which read as
+                            // a huge lag on tab switching. A thresholded
+                            // DragGesture keeps clicks instant; crossing a
+                            // pill boundary slides the tab live.
+                            .gesture(
+                                DragGesture(minimumDistance: 8, coordinateSpace: .named(Self.pillSpace))
+                                    .onChanged { value in
+                                        guard let pillWidth = tabWidth else { return }
+                                        let tabs = store.visibleOpenTabs
+                                        guard tabs.count > 1 else { return }
+                                        if draggingTab == nil { draggingTab = tab }
+                                        // Slot the cursor is over: pill width
+                                        // plus the gap-separator-gap step.
+                                        let step = pillWidth + AppSpacing.xxSmall * 2 + 1
+                                        let slot = Int((value.location.x - AppSpacing.small) / step)
+                                        store.moveTab(tab, to: slot)
+                                    }
+                                    .onEnded { _ in draggingTab = nil }
+                            )
+                            .opacity(draggingTab == tab ? 0.6 : 1)
+                            // Global frame registry for the double-click
+                            // monitor (empty-strip hit test).
+                            .onGeometryChange(for: CGRect.self) { proxy in
+                                proxy.frame(in: .global)
+                            } action: { frame in
+                                stripGeometry.pillFrames[tab] = frame
+                            }
                             // Postman-style hairline between neighboring
                             // tabs; it vanishes once either side becomes
                             // the selected or hovered pill (its own fill
@@ -62,6 +96,8 @@ struct TabBarView: View {
                     }
                     .padding(.horizontal, AppSpacing.small)
                     .padding(.vertical, AppSpacing.xSmall)
+                    // Reference space for the drag-reorder slot math.
+                    .coordinateSpace(name: Self.pillSpace)
                     // Opening a tab (or switching to one parked off-screen)
                     // must reveal it: scroll the minimum amount that brings
                     // the selected pill fully into view. `initial: true`
@@ -78,6 +114,11 @@ struct TabBarView: View {
                 proxy.size.width
             } action: { width in
                 availableWidth = width
+            }
+            .onGeometryChange(for: CGRect.self) { proxy in
+                proxy.frame(in: .global)
+            } action: { frame in
+                stripGeometry.stripFrame = frame
             }
 
             // The tab drawer belongs to the tab side of the strip: it sits
@@ -113,12 +154,38 @@ struct TabBarView: View {
                 store.toggleCodeSnippetSidebar()
             }
             .padding(.trailing, AppSpacing.small)
+            // ⌘1-9: jump to the Nth tab. The shortcuts live on hidden
+            // buttons inside the strip, so they exist exactly while tabs
+            // are open (empty strip - no shortcuts to fight with).
+            ForEach(1...9, id: \.self) { position in
+                Button("Select Tab \(position)") {
+                    store.selectTab(atPosition: position)
+                }
+                .keyboardShortcut(KeyEquivalent(Character("\(position)")), modifiers: .command)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .accessibilityHidden(true)
+            }
         }
         // The ScrollView is vertically greedy - pin the strip to its content
         // height so it never squeezes the request editor below.
         .fixedSize(horizontal: false, vertical: true)
         .background(AppColor.controlBackground)
-        .onAppear { store.pruneDanglingTabs() }
+        .background(TabStripWindowCapture { stripGeometry.window = $0 })
+        .onAppear {
+            store.pruneDanglingTabs()
+            doubleClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { event in
+                var consumed = false
+                MainActor.assumeIsolated {
+                    consumed = handleDoubleClick(event)
+                }
+                return consumed ? nil : event
+            }
+        }
+        .onDisappear {
+            if let monitor = doubleClickMonitor { NSEvent.removeMonitor(monitor) }
+            doubleClickMonitor = nil
+        }
         .onChange(of: store.vault.collections) { _, _ in store.pruneDanglingTabs() }
         .onChange(of: store.vault.environments) { _, _ in store.pruneDanglingTabs() }
         .confirmationDialog(
@@ -150,17 +217,26 @@ struct TabBarView: View {
             } else {
                 return "Close \(count) tabs without saving"
             }
+        case .right(of: let anchor):
+            let count = store.dirtyTabsToTheRightCount(of: anchor)
+            if count == 1 {
+                return "Close 1 tab right of \"\(store.tabDisplayName(anchor))\" without saving"
+            } else {
+                return "Close \(count) tabs right of \"\(store.tabDisplayName(anchor))\" without saving"
+            }
         case nil:
             return "Close tab without saving"
         }
     }
 
     private var closeConfirmationSaveLabel: String {
-        if case .others = store.pendingClose { "Save All & Close" } else { "Save" }
+        // Only the single-tab close saves one tab's worth of edits; batch
+        // closes save everything (the copy says All).
+        if case .tab = store.pendingClose { "Save" } else { "Save All & Close" }
     }
 
     private var closeConfirmationDiscardLabel: String {
-        if case .others = store.pendingClose { "Discard All" } else { "Close Without Saving" }
+        if case .tab = store.pendingClose { "Close Without Saving" } else { "Discard All" }
     }
 
     /// Postman-style tab sizing: tabs share the strip width equally. They cap
@@ -183,6 +259,32 @@ struct TabBarView: View {
         AppSpacing.small * 2 + 14
     }
 
+    /// Named coordinate space the reorder drag measures its cursor slot in.
+    private static let pillSpace = "CanoeTabPills"
+
+    /// Chrome-style new tab on double-clicking the empty part of the strip.
+    /// Detected at the AppKit event level on purpose: a SwiftUI count-2 tap
+    /// on the scroll area holds every pill click for the double-click
+    /// interval, which read as a huge lag on tab switching. The point must
+    /// land inside the strip but outside every pill.
+    private func handleDoubleClick(_ event: NSEvent) -> Bool {
+        guard event.clickCount == 2, event.window === NSApp.mainWindow,
+            let window = event.window
+        else { return false }
+        // NSEvent lives in window-base (bottom-left) space; the registry
+        // stores SwiftUI .global frames (top-left screen). Convert via the
+        // screen's top edge.
+        let screenTop = NSScreen.screens.first?.frame.maxY ?? 0
+        let windowFrame = window.frame
+        let point = CGPoint(
+            x: windowFrame.origin.x + event.locationInWindow.x,
+            y: screenTop - windowFrame.origin.y - event.locationInWindow.y)
+        guard stripGeometry.stripFrame.contains(point) else { return false }
+        guard !stripGeometry.pillFrames.values.contains(where: { $0.contains(point) })
+        else { return false }
+        store.addRequest()
+        return true
+    }
 }
 
 /// Anchor of the tab-row picker button, read by ContentView's window-level
@@ -476,6 +578,7 @@ private struct TabPill: View {
         .contextMenu {
             Button("Close Tab") { store.requestCloseTab(tab) }
             Button("Close Other Tabs") { store.requestCloseOtherTabs(except: tab) }
+            Button("Close Tabs to the Right") { store.requestCloseTabsToTheRight(of: tab) }
         }
     }
 
@@ -656,6 +759,31 @@ private struct TabSeparator: View {
         Rectangle()
             .fill(isVisible ? AppColor.border : Color.clear)
             .frame(width: 1, height: 16)
+    }
+}
+
+/// Reference geometry + hosting window for the tab strip's double-click
+/// monitor (class, not state: updated per scroll frame without invalidating
+/// the view).
+private final class TabStripGeometryBox {
+    var window: NSWindow?
+    var stripFrame: CGRect = .zero
+    var pillFrames: [OpenTab: CGRect] = [:]
+}
+
+/// Captures the hosting window for the double-click monitor (the monitor
+/// must ignore events from other app windows, like Settings).
+private struct TabStripWindowCapture: NSViewRepresentable {
+    let onChange: (NSWindow?) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async { self.onChange(view.window) }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        onChange(nsView.window)
     }
 }
 
