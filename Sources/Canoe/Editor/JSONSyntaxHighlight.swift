@@ -31,18 +31,21 @@ enum SyntaxHighlight {
 
     /// Builds a syntax-colored view of a (pretty-printed) JSON document.
     static func highlightedText(_ source: String) -> Text {
-        guard let runs = highlightRuns(in: source) else { return Text(source) }
-        // `+` on Text is deprecated in macOS 26; interpolating Text values is
-        // the replacement.
-        var result = Text("")
+        Text(attributedText(source))
+    }
+
+    /// The same syntax-colored document as an attributed string: the
+    /// response body's find overlay layers match highlights on top of the
+    /// token colors, which needs attribute access a plain Text can't give.
+    static func attributedText(_ source: String) -> AttributedString {
+        guard let runs = highlightRuns(in: source) else { return AttributedString(source) }
+        var result = AttributedString("")
         for run in runs {
-            let piece: Text
+            var piece = AttributedString(run.text)
             if let color = run.color {
-                piece = Text(run.text).foregroundStyle(color)
-            } else {
-                piece = Text(run.text)
+                piece.foregroundColor = color
             }
-            result = Text("\(result)\(piece)")
+            result += piece
         }
         return result
     }

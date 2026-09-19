@@ -13,7 +13,22 @@ struct ResponseViewerView: View {
     @State private var bodyRenderKey = ""
     @State private var bodyRenderDisplay = BodyDisplay(text: "", totalCount: nil, isJSON: false)
     @State private var bodyRenderText = Text("")
+    /// The same render as an attributed string: the find overlay needs
+    /// attribute access (match backgrounds) without re-running the
+    /// tree-sitter parse per keystroke.
+    @State private var bodyRenderAttributed = AttributedString("")
     @State private var saveError: String?
+    /// Response-body find (⌘F): query, bar visibility, and which match is
+    /// the current one (index into the match list, cycled by ⌘G/⇧⌘G).
+    @State private var findVisible = false
+    @State private var findQuery = ""
+    @State private var findCurrentIndex = 0
+    @FocusState private var findFieldFocused: Bool
+    /// Find render cache (see bodyContent): keyed by response/mode/query/
+    /// current index, so unrelated state changes (word wrap, banner) reuse
+    /// it instead of rescanning a 200K body.
+    @State private var findMatchRangesKey = ""
+    @State private var findMatchRanges: [Range<String.Index>] = []
 
     /// Max characters rendered in the body pane. Beyond this a single SwiftUI
     /// `Text` becomes sluggish, so the view shows a prefix plus a notice.
@@ -134,11 +149,15 @@ struct ResponseViewerView: View {
         // written from the task, never during view evaluation.
         let display: BodyDisplay = key == bodyRenderKey ? bodyRenderDisplay : bodyDisplay(response)
         let rendered: Text = key == bodyRenderKey ? bodyRenderText : renderedText(for: display)
+        let renderedAttributed =
+            key == bodyRenderKey
+            ? bodyRenderAttributed
+            : (display.isJSON ? SyntaxHighlight.attributedText(display.text) : AttributedString(display.text))
         return VStack(spacing: 0) {
             sectionBar(response)
             Divider()
             if responseSection == .body {
-                bodyContent(response, display, rendered: rendered)
+                bodyContent(response, display, rendered: rendered, renderedAttributed: renderedAttributed)
             } else {
                 headersPane(response)
             }
@@ -152,6 +171,9 @@ struct ResponseViewerView: View {
         .onChange(of: response.id) { _, _ in
             headerFilter = ""
             saveError = nil
+            findVisible = false
+            findQuery = ""
+            findCurrentIndex = 0
         }
     }
 
@@ -165,6 +187,10 @@ struct ResponseViewerView: View {
         let display = bodyDisplay(response)
         bodyRenderDisplay = display
         bodyRenderText = renderedText(for: display)
+        bodyRenderAttributed =
+            display.isJSON
+            ? SyntaxHighlight.attributedText(display.text)
+            : AttributedString(display.text)
         bodyRenderKey = key
     }
 
@@ -202,7 +228,10 @@ struct ResponseViewerView: View {
         .padding(.horizontal, AppSpacing.small)
     }
 
-    private func bodyContent(_ response: ResponseModel, _ display: BodyDisplay, rendered: Text) -> some View {
+    private func bodyContent(
+        _ response: ResponseModel, _ display: BodyDisplay,
+        rendered: Text, renderedAttributed: AttributedString
+    ) -> some View {
         Group {
             if display.text.isEmpty {
                 ContentUnavailableView(
@@ -211,6 +240,32 @@ struct ResponseViewerView: View {
                     description: Text("This response did not return any body content.")
                 )
             } else {
+                // Find state resolves here (the display text lives in this
+                // scope): the render swaps to the match-highlighted variant
+                // only while the bar is open with a query - the cached
+                // no-find render stays the default path for large bodies.
+                let findActive = findVisible && !findQuery.isEmpty
+                let rangesKey = "\(response.id)-\(bodyMode)-\(findQuery)"
+                // Match list cached per response/mode/query (keyed task
+                // below warms it, sync-on-miss keeps the first paint
+                // correct): word-wrap toggles, banners, and other unrelated
+                // state changes reuse it instead of rescanning a 200K body.
+                let matchRanges: [Range<String.Index>] =
+                    findActive
+                    ? (rangesKey == findMatchRangesKey
+                        ? findMatchRanges
+                        : computeMatches(in: display.text, query: findQuery))
+                    : []
+                let matchCount = matchRanges.count
+                let currentIndex: Int? = matchCount > 0 ? abs(findCurrentIndex) % matchCount : nil
+                let effectiveRender: Text =
+                    findActive
+                    ? findHighlightedBody(
+                        attributed: renderedAttributed,
+                        query: findQuery,
+                        currentIndex: currentIndex
+                    )
+                    : rendered
                 VStack(spacing: 0) {
                     if let saveError {
                         ErrorBanner(message: saveError) { self.saveError = nil }
@@ -219,8 +274,54 @@ struct ResponseViewerView: View {
                     }
                     bodyToolbar(response, display: display)
                     Divider()
-                    bodyScroll(display, rendered: rendered)
+                    bodyScroll(display, rendered: effectiveRender, matchCount: matchCount, currentIndex: currentIndex)
                 }
+                .task(id: rangesKey) {
+                    guard findActive else {
+                        if !findMatchRangesKey.isEmpty {
+                            findMatchRangesKey = ""
+                            findMatchRanges = []
+                        }
+                        return
+                    }
+                    guard rangesKey != findMatchRangesKey else { return }
+                    findMatchRanges = computeMatches(in: display.text, query: findQuery)
+                    findMatchRangesKey = rangesKey
+                }
+                .onChange(of: findVisible) { _, visible in
+                    if visible { findFieldFocused = true }
+                }
+                // Editing the query rewinds to the first match (VS Code
+                // behavior); the old current index means nothing to a new
+                // match list.
+                .onChange(of: findQuery) { _, _ in
+                    findCurrentIndex = 0
+                }
+                // ⌘F: open the find bar. Lives inside the body content, so
+                // the shortcut exists exactly while a body is on screen.
+                Button("Find in Response") {
+                    findVisible = true
+                }
+                .keyboardShortcut("f", modifiers: .command)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .accessibilityHidden(true)
+                // ⌘G / ⇧⌘G: next / previous match (VS Code convention).
+                // No-op while find is closed (no matches counted).
+                Button("Next Match") {
+                    stepFind(1, matchCount: matchCount)
+                }
+                .keyboardShortcut("g", modifiers: .command)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .accessibilityHidden(true)
+                Button("Previous Match") {
+                    stepFind(-1, matchCount: matchCount)
+                }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .accessibilityHidden(true)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -267,7 +368,10 @@ struct ResponseViewerView: View {
         .padding(.vertical, AppSpacing.xSmall)
     }
 
-    private func bodyScroll(_ display: BodyDisplay, rendered: Text) -> some View {
+    private func bodyScroll(
+        _ display: BodyDisplay, rendered: Text,
+        matchCount: Int, currentIndex: Int?
+    ) -> some View {
         VStack(spacing: 0) {
             if let totalCount = display.totalCount {
                 let shown = display.text.count.formatted()
@@ -294,7 +398,145 @@ struct ResponseViewerView: View {
                     .padding(AppSpacing.medium)
             }
             .background(AppColor.codeBackground)
+            // The find widget overlays the body area itself (below the
+            // toolbar/banner): an ErrorBanner's dismiss stays clickable while
+            // find is open.
+            .overlay(alignment: .topTrailing) {
+                if findVisible {
+                    findBar(matchCount: matchCount, currentIndex: currentIndex)
+                        .padding(AppSpacing.medium)
+                }
+            }
         }
+    }
+
+    // MARK: - Find in response body
+
+    /// Case-insensitive, in-order occurrences of `query` in `text` (the
+    /// match list both the count display and the highlights are built from,
+    /// so "N of M" can never disagree with what's on screen).
+    private func computeMatches(in text: String, query: String) -> [Range<String.Index>] {
+        guard !query.isEmpty else { return [] }
+        var ranges: [Range<String.Index>] = []
+        var searchStart = text.startIndex
+        while let range = text.range(
+            of: query,
+            options: [.caseInsensitive, .diacriticInsensitive],
+            range: searchStart..<text.endIndex
+        ) {
+            ranges.append(range)
+            searchStart = range.upperBound
+            guard searchStart < text.endIndex else { break }
+        }
+        return ranges
+    }
+
+    private func countMatches(in text: String, query: String) -> Int {
+        computeMatches(in: text, query: query).count
+    }
+
+    /// The body with every match of the find query backed in amber and the
+    /// current one in accent. Single pass over a COPY of the cached
+    /// attributed render (COW - no tree-sitter re-parse); the search runs in
+    /// attributed space so highlight ranges never need index conversion.
+    private func findHighlightedBody(
+        attributed base: AttributedString,
+        query: String,
+        currentIndex: Int?
+    ) -> Text {
+        var attributed = base
+        var searchRange = attributed.startIndex..<attributed.endIndex
+        var index = 0
+        while !searchRange.isEmpty {
+            guard
+                let found = attributed[searchRange].range(
+                    of: query,
+                    options: [.caseInsensitive, .diacriticInsensitive]
+                )
+            else { break }
+            attributed[found].backgroundColor =
+                index == currentIndex ? AppColor.accent.opacity(0.45) : AppColor.warning.opacity(0.35)
+            searchRange = found.upperBound..<attributed.endIndex
+            index += 1
+        }
+        return Text(attributed)
+    }
+
+    /// Steps the current match (⌘G / ⇧⌘G / chevrons / Return), wrapping at
+    /// both ends.
+    private func stepFind(_ delta: Int, matchCount: Int) {
+        guard matchCount > 0 else { return }
+        findCurrentIndex = (findCurrentIndex + delta + matchCount) % matchCount
+    }
+
+    private func closeFind() {
+        findVisible = false
+        findFieldFocused = false
+    }
+
+    /// VS Code-style find widget, overlaid on the body's top-trailing
+    /// corner: query field, match count, prev/next, close.
+    private func findBar(matchCount: Int, currentIndex: Int?) -> some View {
+        HStack(spacing: AppSpacing.xSmall) {
+            Image(systemName: "magnifyingglass")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+            TextField("Find", text: $findQuery)
+                .textFieldStyle(.plain)
+                .font(.subheadline)
+                .frame(width: 150)
+                .focused($findFieldFocused)
+                .onSubmit { stepFind(1, matchCount: matchCount) }
+                .onKeyPress(keys: [.return]) { press in
+                    if press.modifiers.contains(.shift) {
+                        stepFind(-1, matchCount: matchCount)
+                        return .handled
+                    }
+                    return .ignored
+                }
+                .onExitCommand { closeFind() }
+            Group {
+                if findQuery.isEmpty {
+                    Text("Type to search")
+                } else if matchCount == 0 {
+                    Text("No Results")
+                } else if let currentIndex {
+                    Text("\(currentIndex + 1) of \(matchCount)")
+                }
+            }
+            .font(.caption2)
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+            Button {
+                stepFind(-1, matchCount: matchCount)
+            } label: {
+                Image(systemName: "chevron.up")
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(IconButtonStyle())
+            .disabled(matchCount == 0)
+            .help("Previous Match (⇧⌘G)")
+            Button {
+                stepFind(1, matchCount: matchCount)
+            } label: {
+                Image(systemName: "chevron.down")
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(IconButtonStyle())
+            .disabled(matchCount == 0)
+            .help("Next Match (⌘G)")
+            Button {
+                closeFind()
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(IconButtonStyle())
+            .help("Close Find (Esc)")
+        }
+        .padding(.horizontal, AppSpacing.small)
+        .padding(.vertical, AppSpacing.xSmall + 2)
+        .popupPanel()
     }
 
     private struct BodyDisplay {

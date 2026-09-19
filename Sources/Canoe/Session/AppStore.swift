@@ -10,7 +10,13 @@ final class AppStore {
     let vault = VaultStore()
 
     var presentNewWorkspace = false
-    var sidebarFilter: String = ""
+    /// Cleared whenever the tree re-lays out (filter change) so a scheduled
+    /// inline rename can't fire long after its create flow ended.
+    var sidebarFilter: String = "" {
+        didSet {
+            if sidebarFilter != oldValue { pendingInlineRenameID = nil }
+        }
+    }
     var sidebarTab = SidebarTab.items
 
     // MARK: - Sidebar expansion state
@@ -259,6 +265,11 @@ final class AppStore {
     func toggleConsole() {
         showConsole.toggle()
     }
+
+    /// Node scheduled to open its inline rename field in the sidebar tree
+    /// (set right after creating a collection/folder, VS Code-style create
+    /// flow). The row consumes it on commit or cancel.
+    var pendingInlineRenameID: UUID?
 
     // MARK: - Derived
 
@@ -830,15 +841,26 @@ final class AppStore {
     }
 
     /// Moves `tab` to the given display slot (drag reorder), clamped to the
-    /// open tabs' range. The order is the openTabs array itself; the
+    /// open tabs' range. The slot is expressed in visible-tab space (the
+    /// strip only shows visible tabs) and mapped back onto `openTabs`, which
+    /// can briefly hold dangling tabs between a deletion and its prune. The
     /// selection is unaffected. No-op when the slot doesn't change, so drag
     /// updates that don't cross a pill boundary cost nothing.
     func moveTab(_ tab: OpenTab, to slot: Int) {
-        guard let from = openTabs.firstIndex(of: tab) else { return }
-        let clamped = max(0, min(slot, openTabs.count - 1))
-        guard clamped != from else { return }
-        openTabs.remove(at: from)
-        openTabs.insert(tab, at: clamped)
+        let visible = visibleOpenTabs
+        guard let fromVisible = visible.firstIndex(of: tab) else { return }
+        let clamped = max(0, min(slot, visible.count - 1))
+        guard clamped != fromVisible else { return }
+        // Splice at the anchor's position in openTabs (before it when
+        // dragging left, after it when dragging right).
+        let anchor = visible[clamped]
+        openTabs.removeAll { $0 == tab }
+        if let anchorIdx = openTabs.firstIndex(of: anchor) {
+            let insertIdx = clamped < fromVisible ? anchorIdx : openTabs.index(after: anchorIdx)
+            openTabs.insert(tab, at: insertIdx)
+        } else {
+            openTabs.append(tab)
+        }
         persistOpenTabs()
     }
 
@@ -927,6 +949,8 @@ final class AppStore {
 
     func setActiveWorkspace(_ id: UUID?) {
         closeAllTabs()
+        // A scheduled inline rename belongs to the old workspace's tree.
+        pendingInlineRenameID = nil
         // Flip the memory model synchronously with the click: sidebar,
         // detail, and the manager-mode branch must change in the same
         // frame. Only the disk write stays async - when the flip waited
@@ -1032,12 +1056,13 @@ final class AppStore {
 
     // MARK: - Collections
 
-    func addCollection() {
+    @discardableResult
+    func addCollection() -> Collection? {
         // New items always land in the ACTIVE workspace: the menu actions
         // are disabled without one, and a first-workspace fallback would
         // create invisible data in the manager - or, on the welcome screen,
         // workspaceless data no workspace can ever display.
-        guard let workspaceID = activeWorkspace?.id else { return }
+        guard let workspaceID = activeWorkspace?.id else { return nil }
         // Max + 1, not count (see addEnvironment): deletions leave gaps.
         let collection = Collection(
             workspaceID: workspaceID,
@@ -1046,6 +1071,17 @@ final class AppStore {
         )
         vault.collections.append(collection)
         Task { await vault.writeCollection(persistable(collection)) }
+        // VS Code-style create flow: reveal + inline-rename the new row. The
+        // section must be expanded or the row never mounts and the pending
+        // rename would fire on a much later expansion (persisted, like the
+        // toggle path, so the reopened state matches what's on screen).
+        isCollectionsSectionExpanded = true
+        persistSidebarState()
+        // Creating while a filter is active would hide the default-named row
+        // entirely (VS Code clears the filter on create too).
+        sidebarFilter = ""
+        pendingInlineRenameID = collection.id
+        return collection
     }
 
     func deleteCollection(_ id: UUID) {
@@ -1163,8 +1199,11 @@ final class AppStore {
 
     // MARK: - Folders
 
-    func addFolder(in collectionID: UUID, parentFolderID: UUID? = nil) {
-        guard let idx = vault.collections.firstIndex(where: { $0.id == collectionID }) else { return }
+    @discardableResult
+    func addFolder(in collectionID: UUID, parentFolderID: UUID? = nil) -> Folder? {
+        guard let idx = vault.collections.firstIndex(where: { $0.id == collectionID }) else {
+            return nil
+        }
         var collection = vault.collections[idx]
         // Max + 1 within the parent, not count (see addEnvironment):
         // deletions leave orderIndex gaps that count would collide with.
@@ -1177,6 +1216,11 @@ final class AppStore {
         collection.folders.append(folder)
         vault.collections[idx] = collection
         Task { await vault.writeCollection(persistable(collection)) }
+        // Same inline-rename create flow as collections: a filter matching
+        // nothing would hide the new row, so clear it first.
+        sidebarFilter = ""
+        pendingInlineRenameID = folder.id
+        return folder
     }
 
     func deleteFolder(_ folderID: UUID, in collectionID: UUID) {
@@ -1311,6 +1355,9 @@ final class AppStore {
             }
             pendingRequestSnapshots[id]?.name = trimmed
             persistedRequestBaselines[id]?.name = trimmed
+            // The drafts mirror carries the dirty name: without this a crash
+            // before the next edit would restore the stale draft name.
+            if pendingRequestSnapshots[id] != nil { scheduleDraftPersistence() }
             let toSave = persistable(updated)
             Task { await vault.writeCollection(toSave) }
             return
@@ -1425,6 +1472,9 @@ final class AppStore {
 
     func toggleCollectionsSection() {
         isCollectionsSectionExpanded.toggle()
+        // Collapsing the section unmounts the collection rows: a scheduled
+        // inline rename would otherwise fire on a much later expansion.
+        if !isCollectionsSectionExpanded { pendingInlineRenameID = nil }
         persistSidebarState()
     }
 

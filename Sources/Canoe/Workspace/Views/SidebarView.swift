@@ -58,60 +58,72 @@ private struct ItemsView: View {
             // density. Custom rows use the subtle selection fill (method
             // colors stay readable) and draw their own indent guides.
             ScrollView {
-                LazyVStack(spacing: 0) {
-                    GroupHeader(
-                        title: "Collections",
-                        // Matches the rows below, which render the filtered
-                        // list (identical to the total when no filter is set).
-                        count: store.filteredCollections.count,
-                        isExpanded: store.isCollectionsSectionExpanded,
-                        onToggle: { store.toggleCollectionsSection() },
-                        actions: {
-                            Menu("Add", systemImage: "plus") {
-                                Button("New Collection") { store.addCollection() }
-                                Button("New Request") { store.addRequest() }
+                ScrollViewReader { proxy in
+                    LazyVStack(spacing: 0) {
+                        GroupHeader(
+                            title: "Collections",
+                            // Matches the rows below, which render the filtered
+                            // list (identical to the total when no filter is set).
+                            count: store.filteredCollections.count,
+                            isExpanded: store.isCollectionsSectionExpanded,
+                            onToggle: { store.toggleCollectionsSection() },
+                            actions: {
+                                Menu("Add", systemImage: "plus") {
+                                    Button("New Collection") { store.addCollection() }
+                                    Button("New Request") { store.addRequest() }
+                                }
+                                .menuStyle(.borderlessButton)
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(.borderless)
+                                .foregroundStyle(.secondary)
+                                .help("Add collection or request")
                             }
-                            .menuStyle(.borderlessButton)
-                            .labelStyle(.iconOnly)
-                            .buttonStyle(.borderless)
-                            .foregroundStyle(.secondary)
-                            .help("Add collection or request")
+                        )
+                        .padding(.top, AppSpacing.xSmall)
+                        .padding(.bottom, AppSpacing.xxSmall)
+                        if store.isCollectionsSectionExpanded {
+                            ForEach(store.filteredCollections) { collection in
+                                CollectionTree(collection: collection)
+                                    .id(collection.id)
+                            }
                         }
-                    )
-                    .padding(.top, AppSpacing.xSmall)
-                    .padding(.bottom, AppSpacing.xxSmall)
-                    if store.isCollectionsSectionExpanded {
-                        ForEach(store.filteredCollections) { collection in
-                            CollectionTree(collection: collection)
+                        GroupHeader(
+                            title: "Environments",
+                            // Matches the rows below (see Collections above).
+                            count: filteredEnvironments.count,
+                            isExpanded: store.isEnvironmentsSectionExpanded,
+                            onToggle: { store.toggleEnvironmentsSection() },
+                            actions: {
+                                Button("Add Environment", systemImage: "plus") {
+                                    store.addEnvironment()
+                                }
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(.borderless)
+                                .foregroundStyle(.secondary)
+                                .help("Add environment")
+                            }
+                        )
+                        .padding(.top, AppSpacing.xSmall)
+                        .padding(.bottom, AppSpacing.xxSmall)
+                        if store.isEnvironmentsSectionExpanded {
+                            ForEach(filteredEnvironments) { env in
+                                EnvironmentRow(env: env)
+                            }
                         }
                     }
-                    GroupHeader(
-                        title: "Environments",
-                        // Matches the rows below (see Collections above).
-                        count: filteredEnvironments.count,
-                        isExpanded: store.isEnvironmentsSectionExpanded,
-                        onToggle: { store.toggleEnvironmentsSection() },
-                        actions: {
-                            Button("Add Environment", systemImage: "plus") {
-                                store.addEnvironment()
-                            }
-                            .labelStyle(.iconOnly)
-                            .buttonStyle(.borderless)
-                            .foregroundStyle(.secondary)
-                            .help("Add environment")
-                        }
-                    )
-                    .padding(.top, AppSpacing.xSmall)
-                    .padding(.bottom, AppSpacing.xxSmall)
-                    if store.isEnvironmentsSectionExpanded {
-                        ForEach(filteredEnvironments) { env in
-                            EnvironmentRow(env: env)
-                        }
+                    .padding(.horizontal, AppSpacing.xSmall)
+                    .padding(.bottom, AppSpacing.small)
+                    .frame(maxWidth: .infinity)
+                    // VS Code create flow: reveal the fresh node's row (the
+                    // create paths pre-expand its ancestors) so the inline
+                    // rename starts while the row is on screen - otherwise a
+                    // pending rename could fire much later, when the row
+                    // happens to mount.
+                    .onChange(of: store.pendingInlineRenameID) { _, id in
+                        guard let id else { return }
+                        proxy.scrollTo(id, anchor: .center)
                     }
                 }
-                .padding(.horizontal, AppSpacing.xSmall)
-                .padding(.bottom, AppSpacing.small)
-                .frame(maxWidth: .infinity)
             }
             .overlay {
                 if store.visibleCollections.isEmpty && store.activeWorkspaceEnvironments.isEmpty {
@@ -349,12 +361,150 @@ private struct ExpanderChevron: View {
 
 // MARK: - Collection tree (with folder/request tree)
 
+/// A tree row label that highlights every case-insensitive match of the
+/// active sidebar filter (VS Code explorer style, amber backing); without a
+/// filter it renders plain.
+private func sidebarRowLabel(_ text: String, filter: String) -> Text {
+    let trimmed = filter.trimmingCharacters(in: .whitespacesAndNewlines)
+    var attributed = AttributedString(text)
+    guard !trimmed.isEmpty else { return Text(attributed) }
+    var searchRange = attributed.startIndex..<attributed.endIndex
+    while !searchRange.isEmpty {
+        guard
+            let found = attributed[searchRange].range(
+                of: trimmed,
+                options: [.caseInsensitive, .diacriticInsensitive]
+            )
+        else { break }
+        attributed[found].backgroundColor = AppColor.warning.opacity(0.35)
+        searchRange = found.upperBound..<attributed.endIndex
+    }
+    return Text(attributed)
+}
+
+/// VS Code-style in-place rename field: renders in the tree row in place of
+/// the label, commits on Return, focus loss, AND clicks outside the field
+/// (macOS SwiftUI TextFields don't blur on background clicks on their own,
+/// so the commit-on-blur rule needs the NSEvent monitor below - the same
+/// pattern as the request editor's name field). Cancels on Esc. The
+/// finished flag keeps a post-cancel focus change from committing anyway.
+private struct InlineRenameField: View {
+    let initialName: String
+    let onCommit: (String) -> Void
+    let onCancel: () -> Void
+    @State private var draft = ""
+    @State private var finished = false
+    /// The field's frame - the click-away monitor spares clicks inside it.
+    @State private var fieldFrame: CGRect = .zero
+    @State private var dismissMonitor: Any?
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField("Name", text: $draft)
+            .font(AppFont.sidebarRow)
+            .textFieldStyle(.plain)
+            .focused($focused)
+            .onAppear { draft = initialName }
+            .task { focused = true }
+            .onSubmit { finish(committing: true) }
+            .onChange(of: focused) { _, isFocused in
+                if !isFocused { finish(committing: true) }
+            }
+            .onExitCommand { finish(committing: false) }
+            .background(
+                GeometryReader { geo in
+                    Color.clear.preference(
+                        key: InlineRenameFrameKey.self,
+                        value: geo.frame(in: .global))
+                }
+            )
+            .onPreferenceChange(InlineRenameFrameKey.self) { fieldFrame = $0 }
+            .onAppear { installDismissMonitor() }
+            .onDisappear { removeDismissMonitor() }
+    }
+
+    /// Observes without consuming, so TextField clicks are never delayed or
+    /// stolen (a SwiftUI root gesture would race the field editor's
+    /// mouseDown and break focus-by-click). Clicks anywhere else - rows,
+    /// chrome, buttons - read as blur and commit.
+    private func installDismissMonitor() {
+        guard dismissMonitor == nil else { return }
+        dismissMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
+            if focused, !finished, !fieldFrame.contains(event.locationInWindow) {
+                finish(committing: true)
+            }
+            return event
+        }
+    }
+
+    private func removeDismissMonitor() {
+        if let monitor = dismissMonitor {
+            NSEvent.removeMonitor(monitor)
+            dismissMonitor = nil
+        }
+    }
+
+    private func finish(committing: Bool) {
+        guard !finished else { return }
+        finished = true
+        if committing {
+            onCommit(draft.trimmingCharacters(in: .whitespacesAndNewlines))
+        } else {
+            onCancel()
+        }
+    }
+}
+
+/// Tracks the inline rename field's frame so its spatial tap-to-dismiss can
+/// spare clicks inside the field.
+private struct InlineRenameFrameKey: PreferenceKey {
+    static let defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        value = nextValue()
+    }
+}
+
+/// Small hover-time icon button for tree rows (VS Code explorer-style
+/// inline row actions).
+private struct InlineActionButton: View {
+    let systemImage: String
+    let help: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: AppSize.compactControl, height: AppSize.compactControl)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+}
+
+/// Opaque backdrop for a row's floating action buttons: the row tints are
+/// translucent (secondary 10% / accent 14%), so the buttons need an opaque
+/// sidebar-colored base under the tint or the truncated label shows through.
+private struct RowActionBackground: View {
+    let tint: Color
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+            .fill(tint)
+            .background(
+                AppColor.sidebarBackground,
+                in: RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+            )
+    }
+}
+
 private struct CollectionTree: View {
     @Environment(AppStore.self) private var store
     let collection: Collection
     @State private var isHoveringHeader = false
     @State private var isRenaming = false
-    @State private var renameDraft = ""
     @State private var showDeleteConfirm = false
 
     /// Expansion is remembered across launches in the store (VS Code-style
@@ -381,79 +531,146 @@ private struct CollectionTree: View {
         return requests.filter { store.requestMatchesFilter($0) }
     }
 
+    /// Inline rename is active via the hover/context action, or via the
+    /// create flow (the store schedules the fresh node right after adding).
+    private var isRenamingNode: Bool {
+        isRenaming || store.pendingInlineRenameID == collection.id
+    }
+
+    /// The row while its inline rename field is up: not clickable, chevron
+    /// hidden, the field sits where the label was.
+    private var renameRow: some View {
+        HStack(spacing: 0) {
+            Color.clear.frame(width: AppSize.treeExpanderColumn)
+            InlineRenameField(
+                initialName: collection.name,
+                onCommit: { name in
+                    store.renameCollection(collection.id, to: name)
+                    store.pendingInlineRenameID = nil
+                    isRenaming = false
+                },
+                onCancel: {
+                    store.pendingInlineRenameID = nil
+                    isRenaming = false
+                }
+            )
+            .padding(.trailing, AppSpacing.xSmall)
+        }
+        .padding(.leading, AppSize.treeExpanderColumn)
+        .padding(.vertical, AppSpacing.xSmall)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                .fill(AppColor.subtleBackground)
+        )
+        // Track hover even while renaming so the row's hover fill doesn't
+        // stay lit after the branch switch back to the button row.
+        .onHover { isHoveringHeader = $0 }
+        .contentShape(Rectangle())
+    }
+
+    /// VS Code explorer-style hover actions on the row's trailing edge,
+    /// masked by an opaque backdrop so the truncated label can't show
+    /// through.
+    private var hoverActions: some View {
+        Group {
+            if isHoveringHeader {
+                HStack(spacing: AppSpacing.xxSmall) {
+                    InlineActionButton(systemImage: "doc.badge.plus", help: "Add Request") {
+                        store.addRequest(in: collection.id)
+                        store.setSidebarNodeExpanded(collection.id, true)
+                    }
+                    InlineActionButton(systemImage: "folder.badge.plus", help: "Add Folder") {
+                        store.addFolder(in: collection.id, parentFolderID: nil)
+                        store.setSidebarNodeExpanded(collection.id, true)
+                    }
+                    InlineActionButton(systemImage: "pencil", help: "Rename") { isRenaming = true }
+                    InlineActionButton(systemImage: "trash", help: "Delete Collection") {
+                        showDeleteConfirm = true
+                    }
+                }
+                .padding(.trailing, AppSpacing.xSmall)
+                .background(
+                    RowActionBackground(tint: isSelected ? AppColor.selectionBackground : AppColor.subtleBackground)
+                )
+            }
+        }
+    }
+
     var body: some View {
         Group {
-            // Postman-style: the whole row opens the collection's page (an
-            // overview of its requests, auth, and variables); only the
-            // chevron toggles the tree. A tap on the chevron reaches the
-            // inner button alone, anywhere else opens the page.
-            Button {
-                store.openTab(.collection(collection.id))
-                store.setSidebarNodeExpanded(collection.id, true)
-            } label: {
-                HStack(spacing: AppSpacing.xSmall) {
-                    Button {
-                        store.toggleSidebarNode(collection.id)
-                    } label: {
-                        ExpanderChevron(isExpanded: isExpanded)
-                            .padding(.vertical, AppSpacing.xSmall)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help(isExpanded ? "Collapse collection" : "Expand collection")
-                    Text(collection.name)
-                        .font(AppFont.sidebarRow.weight(.medium))
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                // Tree level 1: one expander column in from the header.
-                .padding(.leading, AppSize.treeExpanderColumn)
-                .padding(.vertical, AppSpacing.xSmall)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                        .fill(isSelected ? AppColor.selectionBackground : isHoveringHeader ? AppColor.subtleBackground : .clear)
-                )
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .onHover { isHoveringHeader = $0 }
-            .help("Open \(collection.name)")
-            .contextMenu {
-                Button("Add Request", systemImage: "plus") {
-                    store.addRequest(in: collection.id)
-                    store.setSidebarNodeExpanded(collection.id, true)
-                }
-                Button("Add Folder", systemImage: "folder.badge.plus") {
-                    store.addFolder(in: collection.id, parentFolderID: nil)
-                    store.setSidebarNodeExpanded(collection.id, true)
-                }
-                Divider()
-                Button("Edit Collection", systemImage: "folder.badge.gearshape") {
+            if isRenamingNode {
+                renameRow
+            } else {
+                // Postman-style: the whole row opens the collection's page (an
+                // overview of its requests, auth, and variables); only the
+                // chevron toggles the tree. A tap on the chevron reaches the
+                // inner button alone, anywhere else opens the page.
+                Button {
                     store.openTab(.collection(collection.id))
+                    store.setSidebarNodeExpanded(collection.id, true)
+                } label: {
+                    HStack(spacing: AppSpacing.xSmall) {
+                        Button {
+                            store.toggleSidebarNode(collection.id)
+                        } label: {
+                            ExpanderChevron(isExpanded: isExpanded)
+                                .padding(.vertical, AppSpacing.xSmall)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help(isExpanded ? "Collapse collection" : "Expand collection")
+                        sidebarRowLabel(collection.name, filter: store.sidebarFilter)
+                            .font(AppFont.sidebarRow.weight(.medium))
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    // Tree level 1: one expander column in from the header.
+                    .padding(.leading, AppSize.treeExpanderColumn)
+                    .padding(.vertical, AppSpacing.xSmall)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                            .fill(isSelected ? AppColor.selectionBackground : isHoveringHeader ? AppColor.subtleBackground : .clear)
+                    )
+                    .contentShape(Rectangle())
                 }
-                Button("Rename Collection") {
-                    renameDraft = collection.name
-                    isRenaming = true
+                .buttonStyle(.plain)
+                .onHover { isHoveringHeader = $0 }
+                .help("Open \(collection.name)")
+                .contextMenu {
+                    Button("Add Request", systemImage: "plus") {
+                        store.addRequest(in: collection.id)
+                        store.setSidebarNodeExpanded(collection.id, true)
+                    }
+                    Button("Add Folder", systemImage: "folder.badge.plus") {
+                        store.addFolder(in: collection.id, parentFolderID: nil)
+                        store.setSidebarNodeExpanded(collection.id, true)
+                    }
+                    Divider()
+                    Button("Edit Collection", systemImage: "folder.badge.gearshape") {
+                        store.openTab(.collection(collection.id))
+                    }
+                    Button("Rename Collection") {
+                        isRenaming = true
+                    }
+                    Divider()
+                    Button("Delete Collection", role: .destructive) {
+                        showDeleteConfirm = true
+                    }
                 }
-                Divider()
-                Button("Delete Collection", role: .destructive) {
-                    showDeleteConfirm = true
-                }
+                .overlay(alignment: .trailing) { hoverActions }
             }
             if isExpanded {
                 ForEach(visibleFolders) { folder in
                     FolderTree(folder: folder, collection: collection, depth: 1)
+                        .id(folder.id)
                 }
                 ForEach(visibleRequests) { request in
                     RequestRow(request: request, depth: 1)
+                        .id(request.id)
                 }
             }
-        }
-        .alert("Rename Collection", isPresented: $isRenaming) {
-            TextField("Collection Name", text: $renameDraft)
-            Button("Rename") { store.renameCollection(collection.id, to: renameDraft) }
-            Button("Cancel", role: .cancel) {}
         }
         .confirmationDialog(
             "Delete collection \"\(collection.name)\"",
@@ -477,7 +694,6 @@ private struct FolderTree: View {
     let depth: Int
     @State private var isHoveringHeader = false
     @State private var isRenaming = false
-    @State private var renameDraft = ""
     @State private var showDeleteConfirm = false
     @State private var showEditSheet = false
 
@@ -500,81 +716,141 @@ private struct FolderTree: View {
         return requests.filter { store.requestMatchesFilter($0) }
     }
 
+    /// Inline rename via the hover/context action or the create flow.
+    private var isRenamingNode: Bool {
+        isRenaming || store.pendingInlineRenameID == folder.id
+    }
+
+    /// The folder header while its inline rename field is up.
+    private var renameRow: some View {
+        HStack(spacing: 0) {
+            Color.clear
+                .frame(width: AppSize.treeExpanderColumn + AppSize.treeIndent * CGFloat(depth))
+            InlineRenameField(
+                initialName: folder.name,
+                onCommit: { name in
+                    store.renameFolder(folder.id, in: collection.id, to: name)
+                    store.pendingInlineRenameID = nil
+                    isRenaming = false
+                },
+                onCancel: {
+                    store.pendingInlineRenameID = nil
+                    isRenaming = false
+                }
+            )
+            .padding(.trailing, AppSpacing.xSmall)
+        }
+        .padding(.leading, AppSize.treeExpanderColumn)
+        .padding(.vertical, AppSpacing.xSmall)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                .fill(AppColor.subtleBackground)
+        )
+        .overlay(alignment: .leading) {
+            IndentGuides(depth: depth)
+        }
+        // Track hover even while renaming so the row's hover fill doesn't
+        // stay lit after the branch switch back to the button row.
+        .onHover { isHoveringHeader = $0 }
+        .contentShape(Rectangle())
+    }
+
+    private var hoverActions: some View {
+        Group {
+            if isHoveringHeader {
+                HStack(spacing: AppSpacing.xxSmall) {
+                    InlineActionButton(systemImage: "doc.badge.plus", help: "Add Request") {
+                        store.addRequest(in: collection.id, folderID: folder.id)
+                        store.setSidebarNodeExpanded(folder.id, true)
+                    }
+                    InlineActionButton(systemImage: "pencil", help: "Rename") { isRenaming = true }
+                    InlineActionButton(systemImage: "trash", help: "Delete Folder") {
+                        showDeleteConfirm = true
+                    }
+                }
+                .padding(.trailing, AppSpacing.xSmall)
+                .background(RowActionBackground(tint: AppColor.subtleBackground))
+            }
+        }
+    }
+
     var body: some View {
         Group {
-            Button {
-                store.toggleSidebarNode(folder.id)
-            } label: {
-                HStack(spacing: 0) {
-                    // The chevron sits one tree step per level right of the
-                    // collection's chevron; the folder icon lands one expander
-                    // column past it - the same x as sibling requests' tags.
-                    Color.clear
-                        .frame(width: AppSize.treeExpanderColumn + AppSize.treeIndent * CGFloat(depth))
-                    HStack(spacing: AppSpacing.xSmall) {
-                        ExpanderChevron(isExpanded: isExpanded)
-                        Image(systemName: "folder")
-                            .font(.system(size: AppSize.compactControl))  // VS Code uses 16px tree icons
-                            .foregroundStyle(.secondary)
-                        Text(folder.name)
-                            .font(AppFont.sidebarRow)
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+            if isRenamingNode {
+                renameRow
+            } else {
+                Button {
+                    store.toggleSidebarNode(folder.id)
+                } label: {
+                    HStack(spacing: 0) {
+                        // The chevron sits one tree step per level right of the
+                        // collection's chevron; the folder icon lands one expander
+                        // column past it - the same x as sibling requests' tags.
+                        Color.clear
+                            .frame(width: AppSize.treeExpanderColumn + AppSize.treeIndent * CGFloat(depth))
+                        HStack(spacing: AppSpacing.xSmall) {
+                            ExpanderChevron(isExpanded: isExpanded)
+                            Image(systemName: "folder")
+                                .font(.system(size: AppSize.compactControl))  // VS Code uses 16px tree icons
+                                .foregroundStyle(.secondary)
+                            sidebarRowLabel(folder.name, filter: store.sidebarFilter)
+                                .font(AppFont.sidebarRow)
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .padding(.trailing, AppSpacing.xSmall)
+                        .padding(.vertical, AppSpacing.xSmall)
                     }
-                    .padding(.trailing, AppSpacing.xSmall)
-                    .padding(.vertical, AppSpacing.xSmall)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                            .fill(isHoveringHeader ? AppColor.subtleBackground : .clear)
+                    )
+                    .overlay(alignment: .leading) {
+                        IndentGuides(depth: depth)
+                    }
+                    .contentShape(Rectangle())
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                        .fill(isHoveringHeader ? AppColor.subtleBackground : .clear)
-                )
-                .overlay(alignment: .leading) {
-                    IndentGuides(depth: depth)
+                .buttonStyle(.plain)
+                .onHover { isHoveringHeader = $0 }
+                .help(isExpanded ? "Collapse folder" : "Expand folder")
+                .contextMenu {
+                    Button("Add Request", systemImage: "plus") {
+                        store.addRequest(in: collection.id, folderID: folder.id)
+                        store.setSidebarNodeExpanded(folder.id, true)
+                    }
+                    Button("Add Subfolder", systemImage: "folder.badge.plus") {
+                        store.addFolder(in: collection.id, parentFolderID: folder.id)
+                        store.setSidebarNodeExpanded(folder.id, true)
+                    }
+                    Divider()
+                    Button("Edit Folder", systemImage: "folder.badge.gearshape") {
+                        showEditSheet = true
+                    }
+                    Button("Rename Folder") {
+                        isRenaming = true
+                    }
+                    Divider()
+                    Button("Delete Folder", role: .destructive) {
+                        showDeleteConfirm = true
+                    }
                 }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .onHover { isHoveringHeader = $0 }
-            .help(isExpanded ? "Collapse folder" : "Expand folder")
-            .contextMenu {
-                Button("Add Request", systemImage: "plus") {
-                    store.addRequest(in: collection.id, folderID: folder.id)
-                    store.setSidebarNodeExpanded(folder.id, true)
-                }
-                Button("Add Subfolder", systemImage: "folder.badge.plus") {
-                    store.addFolder(in: collection.id, parentFolderID: folder.id)
-                    store.setSidebarNodeExpanded(folder.id, true)
-                }
-                Divider()
-                Button("Edit Folder", systemImage: "folder.badge.gearshape") {
-                    showEditSheet = true
-                }
-                Button("Rename Folder") {
-                    renameDraft = folder.name
-                    isRenaming = true
-                }
-                Divider()
-                Button("Delete Folder", role: .destructive) {
-                    showDeleteConfirm = true
-                }
+                .overlay(alignment: .trailing) { hoverActions }
             }
             if isExpanded {
                 ForEach(visibleFolders) { subfolder in
                     FolderTree(folder: subfolder, collection: collection, depth: depth + 1)
+                        .id(subfolder.id)
                 }
                 ForEach(visibleRequests) { request in
                     RequestRow(request: request, depth: depth + 1)
+                        .id(request.id)
                 }
             }
         }
         .sheet(isPresented: $showEditSheet) {
             FolderEditSheet(collection: collection, folder: folder)
-        }
-        .alert("Rename Folder", isPresented: $isRenaming) {
-            TextField("Folder Name", text: $renameDraft)
-            Button("Rename") { store.renameFolder(folder.id, in: collection.id, to: renameDraft) }
-            Button("Cancel", role: .cancel) {}
         }
         .confirmationDialog(
             "Delete folder \"\(folder.name)\"",
@@ -597,72 +873,126 @@ private struct RequestRow: View {
     let depth: Int
     @State private var isHovering = false
     @State private var isRenaming = false
-    @State private var renameDraft = ""
     @State private var showDeleteConfirm = false
 
     private var isSelected: Bool { store.selectedTab == .request(request.id) }
 
-    var body: some View {
-        Button {
-            store.openTab(.request(request.id))
-        } label: {
-            HStack(spacing: 0) {
-                // The method tag sits on the content column: one expander
-                // column past the row's chevron position, which steps one
-                // tree step per level - the same x as sibling folders' icons.
-                Color.clear
-                    .frame(width: 2 * AppSize.treeExpanderColumn + AppSize.treeIndent * CGFloat(depth))
-                HStack(spacing: AppSpacing.xSmall) {
-                    MethodTag(method: request.httpMethod)
-                    Text(request.name)
-                        .font(AppFont.sidebarRow)
-                        .lineLimit(1)
-                        .foregroundStyle(.primary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+    /// Inline rename via the hover/context action.
+    private var isRenamingNode: Bool { isRenaming }
+
+    /// The row while its inline rename field is up: not clickable, the
+    /// field sits where the label was (method tag stays).
+    private var renameRow: some View {
+        HStack(spacing: 0) {
+            Color.clear
+                .frame(width: 2 * AppSize.treeExpanderColumn + AppSize.treeIndent * CGFloat(depth))
+            HStack(spacing: AppSpacing.xSmall) {
+                MethodTag(method: request.httpMethod)
+                InlineRenameField(
+                    initialName: request.name,
+                    onCommit: { name in
+                        store.renameRequest(request.id, to: name)
+                        isRenaming = false
+                    },
+                    onCancel: { isRenaming = false }
+                )
+                .padding(.trailing, AppSpacing.xSmall)
+            }
+            .padding(.vertical, AppSpacing.xSmall)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                .fill(AppColor.subtleBackground)
+        )
+        .overlay(alignment: .leading) {
+            IndentGuides(depth: depth)
+        }
+        // Track hover even while renaming so the row's hover fill doesn't
+        // stay lit after the branch switch back to the button row.
+        .onHover { isHovering = $0 }
+        .contentShape(Rectangle())
+    }
+
+    private var hoverActions: some View {
+        Group {
+            if isHovering {
+                HStack(spacing: AppSpacing.xxSmall) {
+                    InlineActionButton(systemImage: "pencil", help: "Rename") { isRenaming = true }
+                    InlineActionButton(systemImage: "trash", help: "Delete Request") {
+                        showDeleteConfirm = true
+                    }
                 }
                 .padding(.trailing, AppSpacing.xSmall)
-                .padding(.vertical, AppSpacing.xSmall)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                    .fill(isSelected ? AppColor.selectionBackground : isHovering ? AppColor.subtleBackground : .clear)
-            )
-            .overlay(alignment: .leading) {
-                IndentGuides(depth: depth)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
-        .contextMenu {
-            Button("Rename") {
-                renameDraft = request.name
-                isRenaming = true
-            }
-            Button("Duplicate") {
-                store.duplicateRequest(request.id)
-            }
-            Divider()
-            Button("Delete", role: .destructive) {
-                showDeleteConfirm = true
+                .background(
+                    RowActionBackground(tint: isSelected ? AppColor.selectionBackground : AppColor.subtleBackground)
+                )
             }
         }
-        .help(request.name)
-        .alert("Rename Request", isPresented: $isRenaming) {
-            TextField("Request Name", text: $renameDraft)
-            Button("Rename") { store.renameRequest(request.id, to: renameDraft) }
-            Button("Cancel", role: .cancel) {}
-        }
-        .confirmationDialog(
-            "Delete request \"\(request.name)\"",
-            isPresented: $showDeleteConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                store.deleteRequest(request.id)
+    }
+
+    var body: some View {
+        Group {
+            if isRenamingNode {
+                renameRow
+            } else {
+                Button {
+                    store.openTab(.request(request.id))
+                } label: {
+                    HStack(spacing: 0) {
+                        // The method tag sits on the content column: one expander
+                        // column past the row's chevron position, which steps one
+                        // tree step per level - the same x as sibling folders' icons.
+                        Color.clear
+                            .frame(width: 2 * AppSize.treeExpanderColumn + AppSize.treeIndent * CGFloat(depth))
+                        HStack(spacing: AppSpacing.xSmall) {
+                            MethodTag(method: request.httpMethod)
+                            sidebarRowLabel(request.name, filter: store.sidebarFilter)
+                                .font(AppFont.sidebarRow)
+                                .lineLimit(1)
+                                .foregroundStyle(.primary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .padding(.trailing, AppSpacing.xSmall)
+                        .padding(.vertical, AppSpacing.xSmall)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                            .fill(isSelected ? AppColor.selectionBackground : isHovering ? AppColor.subtleBackground : .clear)
+                    )
+                    .overlay(alignment: .leading) {
+                        IndentGuides(depth: depth)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { isHovering = $0 }
+                .contextMenu {
+                    Button("Rename") {
+                        isRenaming = true
+                    }
+                    Button("Duplicate") {
+                        store.duplicateRequest(request.id)
+                    }
+                    Divider()
+                    Button("Delete", role: .destructive) {
+                        showDeleteConfirm = true
+                    }
+                }
+                .overlay(alignment: .trailing) { hoverActions }
+                .help(request.name)
+                .confirmationDialog(
+                    "Delete request \"\(request.name)\"",
+                    isPresented: $showDeleteConfirm,
+                    titleVisibility: .visible
+                ) {
+                    Button("Delete", role: .destructive) {
+                        store.deleteRequest(request.id)
+                    }
+                    Button("Cancel", role: .cancel) {}
+                }
             }
-            Button("Cancel", role: .cancel) {}
         }
     }
 }

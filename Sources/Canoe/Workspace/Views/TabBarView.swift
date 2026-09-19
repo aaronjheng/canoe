@@ -93,6 +93,11 @@ struct TabBarView: View {
                         }
                         .buttonStyle(ToolbarButtonStyle())
                         .help("New Request (⌘N)")
+                        .onGeometryChange(for: CGRect.self) { proxy in
+                            proxy.frame(in: .global)
+                        } action: { frame in
+                            stripGeometry.plusButtonFrame = frame
+                        }
                     }
                     .padding(.horizontal, AppSpacing.small)
                     .padding(.vertical, AppSpacing.xSmall)
@@ -280,7 +285,8 @@ struct TabBarView: View {
             x: windowFrame.origin.x + event.locationInWindow.x,
             y: screenTop - windowFrame.origin.y - event.locationInWindow.y)
         guard stripGeometry.stripFrame.contains(point) else { return false }
-        guard !stripGeometry.pillFrames.values.contains(where: { $0.contains(point) })
+        guard !stripGeometry.pillFrames.values.contains(where: { $0.contains(point) }),
+            !stripGeometry.plusButtonFrame.contains(point)
         else { return false }
         store.addRequest()
         return true
@@ -769,6 +775,9 @@ private final class TabStripGeometryBox {
     var window: NSWindow?
     var stripFrame: CGRect = .zero
     var pillFrames: [OpenTab: CGRect] = [:]
+    /// The inline "+" button: not a pill, but a double-click on it must not
+    /// be treated as "empty strip" and mint a second request.
+    var plusButtonFrame: CGRect = .zero
 }
 
 /// Captures the hosting window for the double-click monitor (the monitor
