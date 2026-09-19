@@ -150,48 +150,12 @@ private struct FormDataEditor: View {
     var body: some View {
         List {
             ForEach($fields) { $field in
-                HStack(spacing: AppSpacing.small) {
-                    Toggle("", isOn: $field.isEnabled)
-                        .labelsHidden()
-                        .toggleStyle(.checkbox)
-                        .controlSize(.small)
-                        .frame(width: 32)
-                        .help(field.isEnabled ? "Disable row" : "Enable row")
-                    VariableHighlightEditor(
-                        text: $field.key,
-                        variables: variables,
-                        suggestions: suggestions,
-                        placeholder: "key"
-                    )
-                    .variableFieldBordered()
-                    Picker("Kind", selection: $field.fieldKind) {
-                        ForEach(FormFieldKind.allCases, id: \.self) { kind in
-                            Text(kind == .text ? "Text" : "File").tag(kind)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .frame(width: 76)
-                    if field.fieldKind == .file {
-                        fileCell(field)
-                    } else {
-                        VariableHighlightEditor(
-                            text: $field.value,
-                            variables: variables,
-                            suggestions: suggestions,
-                            placeholder: "value"
-                        )
-                        .variableFieldBordered()
-                    }
-                    Button(role: .destructive) {
-                        fields.removeAll { $0.id == field.id }
-                    } label: {
-                        Image(systemName: "trash")
-                    }
-                    .buttonStyle(IconButtonStyle())
-                    .foregroundStyle(.secondary)
-                    .help("Remove row")
-                }
+                FormDataRow(
+                    field: $field,
+                    variables: variables,
+                    suggestions: suggestions,
+                    onDelete: { fields.removeAll { $0.id == field.id } }
+                )
             }
             Button {
                 fields.append(FormField())
@@ -202,8 +166,66 @@ private struct FormDataEditor: View {
             .buttonStyle(IconButtonStyle())
         }
     }
+}
 
-    private func fileCell(_ field: FormField) -> some View {
+/// One form-data row: enable toggle, bordered key/value editors with the
+/// shared focus ring, kind picker, and delete button. A dedicated view so
+/// each row owns its key/value focus mirrors (a `ForEach` body cannot hold
+/// per-row `@State`).
+private struct FormDataRow: View {
+    @Binding var field: FormField
+    let variables: [String: String]
+    let suggestions: [VariableSuggestion]
+    var onDelete: () -> Void
+    @State private var isKeyFocused = false
+    @State private var isValueFocused = false
+
+    var body: some View {
+        HStack(spacing: AppSpacing.small) {
+            Toggle("", isOn: $field.isEnabled)
+                .labelsHidden()
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
+                .frame(width: 32)
+                .help(field.isEnabled ? "Disable row" : "Enable row")
+            VariableHighlightEditor(
+                text: $field.key,
+                variables: variables,
+                suggestions: suggestions,
+                placeholder: "key",
+                onFocusChange: { isKeyFocused = $0 }
+            )
+            .variableFieldBordered(isFocused: isKeyFocused)
+            Picker("Kind", selection: $field.fieldKind) {
+                ForEach(FormFieldKind.allCases, id: \.self) { kind in
+                    Text(kind == .text ? "Text" : "File").tag(kind)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .frame(width: 76)
+            if field.fieldKind == .file {
+                fileCell
+            } else {
+                VariableHighlightEditor(
+                    text: $field.value,
+                    variables: variables,
+                    suggestions: suggestions,
+                    placeholder: "value",
+                    onFocusChange: { isValueFocused = $0 }
+                )
+                .variableFieldBordered(isFocused: isValueFocused)
+            }
+            Button(role: .destructive, action: onDelete) {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(IconButtonStyle())
+            .foregroundStyle(.secondary)
+            .help("Remove row")
+        }
+    }
+
+    private var fileCell: some View {
         HStack(spacing: AppSpacing.xSmall) {
             Text(field.value.isEmpty ? "No file selected" : URL(fileURLWithPath: field.value).lastPathComponent)
                 .font(AppFont.monoSubheadline)
@@ -214,9 +236,7 @@ private struct FormDataEditor: View {
                 .helpIf(!field.value.isEmpty, field.value)
             LinkButton("Browse…") {
                 if let url = openFilePanel() {
-                    if let index = fields.firstIndex(where: { $0.id == field.id }) {
-                        fields[index].value = url.path
-                    }
+                    field.value = url.path
                 }
             }
             .help("Choose a file to upload")

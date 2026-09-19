@@ -86,6 +86,11 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
     /// focus elsewhere (the key/value table uses it to settle the ghost row
     /// once the materialized row owns the content).
     var onEditingEnded: (() -> Void)?
+    /// Reports keyboard-focus changes so border chrome (see
+    /// `variableFieldBordered`) can show the shared accent ring. The AppKit
+    /// field owns first responder, which no SwiftUI `@FocusState` observes,
+    /// so containers that need the ring pass a state setter here.
+    var onFocusChange: ((Bool) -> Void)?
     /// Whether the AppKit field accepts typing. The inherited-authorization
     /// echo renders fields read-only but selectable, so values still copy.
     var isEditable: Bool = true
@@ -129,6 +134,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         autoFocusOnUpdate: Bool = true,
         isEditable: Bool = true,
         onEditingEnded: (() -> Void)? = nil,
+        onFocusChange: ((Bool) -> Void)? = nil,
         onCommit: (() -> Void)? = nil,
         syntax: BodySyntax = .plain,
         onCaretChange: ((Int) -> Void)? = nil,
@@ -148,6 +154,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         self.autoFocusOnUpdate = autoFocusOnUpdate
         self.isEditable = isEditable
         self.onEditingEnded = onEditingEnded
+        self.onFocusChange = onFocusChange
         self.onCommit = onCommit
         self.syntax = syntax
         self.onCaretChange = onCaretChange
@@ -168,6 +175,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
                     autoFocusOnUpdate: autoFocusOnUpdate,
                     isEditable: isEditable,
                     onEditingEnded: onEditingEnded,
+                    onFocusChange: onFocusChange,
                     onCommit: onCommit,
                     onCaretChange: onCaretChange
                 )
@@ -315,6 +323,7 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
     let autoFocusOnUpdate: Bool
     let isEditable: Bool
     let onEditingEnded: (() -> Void)?
+    let onFocusChange: ((Bool) -> Void)?
     let onCommit: (() -> Void)?
     let onCaretChange: ((Int) -> Void)?
     func makeCoordinator() -> Coordinator {
@@ -408,6 +417,11 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
 
     static func dismantleNSView(_ field: NSTextField, coordinator: Coordinator) {
         coordinator.completion.hide()
+        // The field can disappear mid-focus (auth-type switch, row delete)
+        // without `controlTextDidEndEditing` firing: report blur so a reused
+        // focus mirror never sticks on the accent ring. Idempotent when the
+        // session already ended (repeated `false` is a no-op render).
+        coordinator.parent.onFocusChange?(false)
     }
 
     @MainActor
@@ -449,6 +463,7 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
             if let field = notification.object as? NSTextField, let editor = field.currentEditor() {
                 parent.onCaretChange?(editor.selectedRange.location)
             }
+            parent.onFocusChange?(true)
             guard let focus = parent.focus, let focusValue = parent.focusValue,
                 focus.wrappedValue != focusValue
             else { return }
@@ -458,6 +473,7 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
         func controlTextDidEndEditing(_ notification: Notification) {
             completion.hide()
             clearFocusClaim()
+            parent.onFocusChange?(false)
             parent.onEditingEnded?()
         }
 
@@ -1207,6 +1223,7 @@ extension VariableHighlightEditor where FocusValue == Never {
         font: VariableEditorFont = .monoSubheadline,
         placeholder: String? = nil,
         isEditable: Bool = true,
+        onFocusChange: ((Bool) -> Void)? = nil,
         onCommit: (() -> Void)? = nil
     ) {
         self.init(
@@ -1220,6 +1237,7 @@ extension VariableHighlightEditor where FocusValue == Never {
             focus: nil,
             focusValue: nil,
             isEditable: isEditable,
+            onFocusChange: onFocusChange,
             onCommit: onCommit
         )
     }

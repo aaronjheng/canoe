@@ -84,6 +84,12 @@ struct AuthorizationForm: View {
     /// Types offered in the picker. The collection is the top of the
     /// inheritance chain, so (Postman-style) it is not offered inherit there.
     var availableTypes: [RequestAuthType] = RequestAuthType.allCases
+    /// Focus mirrors for the bordered fields below: the AppKit-backed editors
+    /// report via `onFocusChange`, the SecureField via `@FocusState`. Without
+    /// these the shared accent ring never lights up here.
+    @State private var isUsernameFocused = false
+    @FocusState private var isPasswordFocused: Bool
+    @State private var isTokenFocused = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -146,14 +152,16 @@ struct AuthorizationForm: View {
                             text: $username,
                             variables: variables,
                             suggestions: suggestions,
-                            placeholder: "Username"
+                            placeholder: "Username",
+                            onFocusChange: { isUsernameFocused = $0 }
                         )
-                        .variableFieldBordered()
+                        .variableFieldBordered(isFocused: isUsernameFocused)
                     }
                     fieldRow("Password") {
                         SecureField("Password", text: $password)
                             .font(AppFont.monoSubheadline)
-                            .variableFieldBordered()
+                            .variableFieldBordered(isFocused: isPasswordFocused)
+                            .focused($isPasswordFocused)
                     }
                 case .bearer:
                     fieldRow("Token") {
@@ -161,9 +169,10 @@ struct AuthorizationForm: View {
                             text: $token,
                             variables: variables,
                             suggestions: suggestions,
-                            placeholder: "Token"
+                            placeholder: "Token",
+                            onFocusChange: { isTokenFocused = $0 }
                         )
-                        .variableFieldBordered()
+                        .variableFieldBordered(isFocused: isTokenFocused)
                     }
                 }
             }

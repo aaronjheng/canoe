@@ -549,14 +549,12 @@ struct RequestEditorView: View {
         .padding(.vertical, 3)
         .background(AppColor.urlFieldBackground, in: shape)
         .overlay {
-            if urlFieldFocused == .url {
-                shape.inset(by: -1.5)
-                    .stroke(AppColor.focusRing, lineWidth: 3)
-                    .allowsHitTesting(false)
-            } else {
-                shape.strokeBorder(AppColor.borderStrong, lineWidth: 1)
-                    .allowsHitTesting(false)
-            }
+            shape
+                .strokeBorder(
+                    urlFieldFocused == .url ? AppColor.accent : AppColor.borderStrong,
+                    lineWidth: urlFieldFocused == .url ? 2 : 1
+                )
+                .allowsHitTesting(false)
         }
     }
 

@@ -441,7 +441,7 @@ private struct TabDrawer: View {
             TextField("Search tabs", text: $search)
                 .textFieldStyle(.plain)
                 .focused($searchFocused)
-                .variableFieldBordered()
+                .variableFieldBordered(isFocused: searchFocused)
                 .padding(AppSpacing.small)
             Divider()
             if matchingTabs.isEmpty {

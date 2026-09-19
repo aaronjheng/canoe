@@ -6,6 +6,7 @@ import SwiftUI
 struct EnvironmentDetailView: View {
     @Environment(AppStore.self) private var store
     @State private var draft: EnvProfile
+    @FocusState private var isNameFocused: Bool
 
     init(environment: EnvProfile) {
         _draft = State(initialValue: environment)
@@ -24,7 +25,8 @@ struct EnvironmentDetailView: View {
                     .foregroundStyle(.secondary)
                 TextField("Environment Name", text: $draft.name)
                     .font(.subheadline)
-                    .variableFieldBordered()
+                    .variableFieldBordered(isFocused: isNameFocused)
+                    .focused($isNameFocused)
                 Spacer(minLength: AppSpacing.medium)
                 saveButton
             }

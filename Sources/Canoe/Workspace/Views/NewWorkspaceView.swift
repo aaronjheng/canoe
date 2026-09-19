@@ -26,7 +26,7 @@ struct NewWorkspaceView: View {
 
             TextField("Workspace Name", text: $name)
                 .font(.subheadline)
-                .variableFieldBordered()
+                .variableFieldBordered(isFocused: isFocused)
                 .focused($isFocused)
                 .onSubmit(create)
 
