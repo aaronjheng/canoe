@@ -207,10 +207,6 @@ private struct EnvironmentRow: View {
                     .font(AppFont.sidebarRow)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Text("\(env.variables.count)")
-                    .font(AppFont.countBadge)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
                 if isActive {
                     Image(systemName: "checkmark")
                         .font(.caption.weight(.semibold))
