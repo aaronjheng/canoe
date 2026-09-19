@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 // MARK: - Badge
@@ -435,12 +436,14 @@ struct StatusCapsule: View {
 
 /// Shared Canoe mark with proportional continuous corners. The welcome
 /// screen opts into the soft accent shadow; inline states stay flat.
+/// Reads the running app's icon at runtime (like Runlet's welcome screen),
+/// so no separate imageset asset is needed.
 struct CanoeMarkView: View {
     let size: CGFloat
     var showsShadow = false
 
     var body: some View {
-        Image("CanoeMark")
+        Image(nsImage: NSApp.applicationIconImage)
             .resizable()
             .frame(width: size, height: size)
             .clipShape(RoundedRectangle(cornerRadius: size * 0.23, style: .continuous))
