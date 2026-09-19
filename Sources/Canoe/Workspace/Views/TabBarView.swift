@@ -6,6 +6,10 @@ struct TabBarView: View {
     @Environment(AppStore.self) private var store
     @State private var availableWidth: CGFloat = 0
     @State private var isDrawerShown = false
+    /// Whether the environment dropdown panel is open. Owned by ContentView:
+    /// the panel floats at window level (a strip-level overlay gets clipped
+    /// where it overflows the strip bounds).
+    @Binding var isEnvPickerShown: Bool
 
     var body: some View {
         HStack(spacing: AppSpacing.xSmall) {
@@ -70,7 +74,8 @@ struct TabBarView: View {
             // the tab row; the window's dedicated toolbar row was removed.
             Divider()
                 .frame(height: AppSize.tabStripDividerHeight)
-            EnvironmentPicker()
+            EnvironmentPicker(isShown: $isEnvPickerShown)
+                .anchorPreference(key: EnvPickerAnchorKey.self, value: .bounds) { $0 }
             ToolbarToggleButton(
                 systemImage: "curlybraces",
                 isOn: store.showVariablesSidebar,
@@ -154,31 +159,216 @@ struct TabBarView: View {
     private var newTabButtonWidth: CGFloat {
         AppSpacing.small * 2 + 14
     }
+
+}
+
+/// Anchor of the tab-row picker button, read by ContentView's window-level
+/// dropdown overlay.
+struct EnvPickerAnchorKey: PreferenceKey {
+    static let defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+        value = value ?? nextValue()
+    }
 }
 
 /// Postman-style environment selector living in the tab row (the window
-/// toolbar row was removed; this is its new home).
+/// toolbar row was removed; this is its new home): a button showing the
+/// active environment over a dropdown panel with search, a create shortcut,
+/// and a checkmarked "No environment" row. No per-collection pinning (see
+/// `setActiveEnvironment`): the choice is a single global active
+/// environment.
 struct EnvironmentPicker: View {
     @Environment(AppStore.self) private var store
+    @Binding var isShown: Bool
 
     var body: some View {
-        Picker(
-            "Environment",
-            selection: Binding<UUID?>(
-                get: { store.activeEnvironment?.id },
-                set: { store.setActiveEnvironment($0) }
-            )
-        ) {
-            Text("No Environment").tag(UUID?.none)
-            ForEach(store.activeWorkspaceEnvironments) { env in
-                Text(env.name).tag(UUID?.some(env.id))
+        // Plain content with a tap gesture, not a Button: only part of a
+        // Button label was hit-testing (the chevron, not the text).
+        HStack(spacing: AppSpacing.xxSmall) {
+            Text(store.activeEnvironment?.name ?? "No environment")
+                .font(.subheadline)
+                .foregroundStyle(store.activeEnvironment == nil ? .secondary : .primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Image(systemName: "chevron.down")
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, AppSpacing.small)
+        .frame(minHeight: AppSize.tabHeight)
+        .contentShape(Rectangle())
+        .onTapGesture { isShown.toggle() }
+        .accessibilityLabel(store.activeEnvironment.map { "Active environment: \($0.name)" } ?? "No environment selected")
+        .accessibilityAddTraits(.isButton)
+        .help(store.activeEnvironment.map { "Active environment: \($0.name)" } ?? "No environment selected")
+    }
+}
+
+/// The dropdown panel: search + create shortcut on top, then the checkmarked
+/// "No environment" row and one row per workspace environment. Hosted by
+/// ContentView's window-level overlay (see `EnvPickerAnchorKey`).
+struct EnvironmentPickerPanel: View {
+    /// Fixed panel width, mirrored by the overlay anchoring math.
+    static let width: CGFloat = 260
+
+    @Environment(AppStore.self) private var store
+    var onDismiss: () -> Void
+    @State private var search = ""
+    @FocusState private var searchFocused: Bool
+    @State private var hovered: PanelRow?
+    @State private var keyboard: PanelRow?
+
+    /// Selectable rows: the "No environment" pseudo-row first, then the
+    /// workspace environments in sidebar order. The case is deliberately
+    /// not named `none`: in a `PanelRow?` context `.none` resolves to
+    /// `Optional.none`, silently turning "no active environment" into nil.
+    private enum PanelRow: Hashable {
+        case noEnvironment
+        case environment(UUID)
+    }
+
+    private var visibleRows: [PanelRow] {
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        var rows: [PanelRow] = []
+        if query.isEmpty || "No environment".localizedCaseInsensitiveContains(query) {
+            rows.append(.noEnvironment)
+        }
+        rows += store.activeWorkspaceEnvironments
+            .filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
+            .map { PanelRow.environment($0.id) }
+        return rows
+    }
+
+    private var activeRow: PanelRow? {
+        guard let id = store.activeEnvironment?.id else { return .noEnvironment }
+        // A stale config (environment from another workspace) never matches
+        // a listed row: the panel then shows no checkmark, like Postman.
+        guard store.activeWorkspaceEnvironments.contains(where: { $0.id == id }) else { return nil }
+        return .environment(id)
+    }
+
+    private func name(for row: PanelRow) -> String {
+        switch row {
+        case .noEnvironment:
+            "No environment"
+        case .environment(let id):
+            store.activeWorkspaceEnvironments.first(where: { $0.id == id })?.name ?? ""
+        }
+    }
+
+    private func pick(_ row: PanelRow) {
+        switch row {
+        case .noEnvironment:
+            store.setActiveEnvironment(nil)
+        case .environment(let id):
+            store.setActiveEnvironment(id)
+        }
+        onDismiss()
+    }
+
+    /// Moves the keyboard selection, clamped to the visible rows. Starts
+    /// from the active row so the first arrow lands on a neighbor.
+    private func moveKeyboard(by delta: Int) {
+        let rows = visibleRows
+        guard !rows.isEmpty else { return }
+        let base = keyboard ?? activeRow
+        let idx = base.flatMap { rows.firstIndex(of: $0) } ?? (delta > 0 ? -1 : rows.count)
+        keyboard = rows[min(max(idx + delta, 0), rows.count - 1)]
+        hovered = nil
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: AppSpacing.small) {
+                TextField("Search", text: $search)
+                    .textFieldStyle(.plain)
+                    .font(.subheadline)
+                    .focused($searchFocused)
+                    .onSubmit {
+                        guard let row = keyboard ?? visibleRows.first else { return }
+                        pick(row)
+                    }
+                    .onExitCommand(perform: onDismiss)
+                    .onKeyPress(.upArrow) {
+                        moveKeyboard(by: -1)
+                        return .handled
+                    }
+                    .onKeyPress(.downArrow) {
+                        moveKeyboard(by: 1)
+                        return .handled
+                    }
+                    .onChange(of: search) { _, _ in
+                        keyboard = nil
+                    }
+                Divider()
+                    .frame(height: AppSize.tabStripDividerHeight)
+                Button("New Environment", systemImage: "plus") {
+                    // Same creation flow as the sidebar/menu (opens the
+                    // editor tab), plus activation: picking "+"
+                    // means working in the new environment.
+                    if let env = store.addEnvironment() {
+                        store.setActiveEnvironment(env.id)
+                    }
+                    onDismiss()
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .disabled(store.activeWorkspace == nil)
+                .help("New Environment")
+            }
+            .padding(.horizontal, AppSpacing.small)
+            .frame(minHeight: AppSize.tabHeight)
+
+            Divider()
+
+            if visibleRows.isEmpty {
+                Text("No Matching Environments")
+                    .font(.callout)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, minHeight: AppSize.tabHeight)
+            } else {
+                ForEach(visibleRows, id: \.self) { row in
+                    HStack(spacing: AppSpacing.small) {
+                        // Placeholder stays a real (hidden) checkmark, not
+                        // Color.clear: a sizeless view takes whatever height
+                        // it is offered, and the row is only minHeight-capped
+                        // (see WorkspacesView's header for the same gotcha).
+                        Image(systemName: "checkmark")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.primary)
+                            .frame(width: AppSize.compactControl)
+                            .opacity(row == activeRow ? 1 : 0)
+                        Text(name(for: row))
+                            .font(.subheadline)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, AppSpacing.small)
+                    .frame(maxWidth: .infinity, minHeight: AppSize.tabHeight, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                            .fill(row == hovered || row == keyboard ? AppColor.subtleBackground : .clear)
+                    )
+                    .contentShape(Rectangle())
+                    .onHover { hovering in
+                        hovered = hovering ? row : nil
+                        if hovering { keyboard = nil }
+                    }
+                    .onTapGesture { pick(row) }
+                }
+                .padding(.horizontal, AppSpacing.xSmall)
+                .padding(.vertical, AppSpacing.xSmall)
             }
         }
-        .pickerStyle(.menu)
-        .labelsHidden()
-        .lineLimit(1)
-        .truncationMode(.tail)
-        .help(store.activeEnvironment.map { "Active environment: \($0.name)" } ?? "No environment selected")
+        .frame(width: Self.width)
+        .popupPanel()
+        .onAppear { searchFocused = true }
+        .onChange(of: store.activeWorkspaceEnvironments) { _, _ in
+            keyboard = nil
+        }
     }
 }
 

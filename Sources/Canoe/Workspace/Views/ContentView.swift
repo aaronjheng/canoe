@@ -2,6 +2,11 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(AppStore.self) private var store
+    /// Whether the tab-row environment dropdown panel is open. The panel
+    /// itself floats at window level (see `envPickerOverlay`): hanging it
+    /// off the tab strip clips it where it overflows the strip bounds.
+    @State private var isEnvPickerShown = false
+    @State private var envPickerAnchor: Anchor<CGRect>?
 
     var body: some View {
         @Bindable var store = store
@@ -37,6 +42,35 @@ struct ContentView: View {
         // area inset - ignore it or the bar sinks 32pt below the traffic
         // lights, leaving a bare window-background band above it.
         .ignoresSafeArea()
+        .overlay { envPickerOverlay }
+        .onPreferenceChange(EnvPickerAnchorKey.self) { envPickerAnchor = $0 }
+    }
+
+    /// Postman-style environment dropdown: no popover bubble or arrow, just
+    /// the bordered card directly below the tab-row picker button,
+    /// trailing-edge aligned. Window-level so nothing clips it.
+    private var envPickerOverlay: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                if isEnvPickerShown {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { isEnvPickerShown = false }
+                    Button("Close Environment Picker") { isEnvPickerShown = false }
+                        .keyboardShortcut(.cancelAction)
+                        .frame(width: 0, height: 0)
+                        .opacity(0)
+                        .accessibilityHidden(true)
+                    if let anchor = envPickerAnchor {
+                        let button = proxy[anchor]
+                        EnvironmentPickerPanel(onDismiss: { isEnvPickerShown = false })
+                            .offset(
+                                x: button.maxX - EnvironmentPickerPanel.width,
+                                y: button.maxY + AppSpacing.xSmall)
+                    }
+                }
+            }
+        }
     }
 
     private var mainLayout: some View {
@@ -81,7 +115,7 @@ struct ContentView: View {
     private var detailPane: some View {
         VStack(spacing: 0) {
             if !store.openTabs.isEmpty {
-                TabBarView()
+                TabBarView(isEnvPickerShown: $isEnvPickerShown)
                 Divider()
             }
             detailContent

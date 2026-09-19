@@ -1821,10 +1821,13 @@ final class AppStore {
 
     // MARK: - Environments
 
-    func addEnvironment() {
+    /// Creates an environment in the active workspace, opens its editor tab,
+    /// and returns it so callers (the tab-row picker) can also activate it.
+    @discardableResult
+    func addEnvironment() -> EnvProfile? {
         // New environments always land in a workspace - the active one (the
         // menu action is disabled without one, see addCollection).
-        guard let workspaceID = activeWorkspace?.id else { return }
+        guard let workspaceID = activeWorkspace?.id else { return nil }
         // Max + 1 within the workspace, not count: deleted environments leave
         // orderIndex gaps, and count would collide with an existing value on
         // the first add after a deletion (two environments tying in the
@@ -1835,6 +1838,7 @@ final class AppStore {
         vault.environments.append(env)
         Task { await vault.saveEnvironment(env) }
         openEnvironment(env.id)
+        return env
     }
 
     /// Duplicates an environment (same variables) right below the original,
