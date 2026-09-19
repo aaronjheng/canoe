@@ -495,20 +495,31 @@ private struct TabPill: View {
                 store.requestCloseTab(tab)
             } label: {
                 Image(systemName: "xmark")
-                    .font(.caption2.weight(.semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .frame(width: AppSize.compactControl, height: AppSize.compactControl)
-                    // No resting fill - the circle only appears while the
-                    // pointer is over the button, marking it as clickable.
+                    .frame(width: Self.closeButtonSide, height: Self.closeButtonSide)
+                    // Opaque rounded square matching the pill's fill: the
+                    // tints are translucent (primary at 5-8%), so a tile
+                    // filled with them alone would still show the truncated
+                    // text underneath. An opaque controlBackground base
+                    // under the tint reproduces the pill's resolved color
+                    // while blocking the label completely.
                     .background {
-                        Circle().fill(isHoveringClose ? AppColor.tabActiveBackground : .clear)
+                        RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                            .fill(isHoveringClose ? AppColor.tabActiveBackground : pillFill)
+                            .background(
+                                AppColor.controlBackground,
+                                in: RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                            )
                     }
-                    .contentShape(Circle())
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .onHover { isHoveringClose = $0 }
             .help("Close Tab (⌘W)")
-            .padding(.trailing, AppSpacing.compact)
+            // Derived from the shared token so the right inset always equals
+            // the tile's top/bottom margins ((28 - 22) / 2 = 3pt).
+            .padding(.trailing, (AppSize.tabHeight - Self.closeButtonSide) / 2)
         } else if isDirty {
             // Postman-style dirty dot: unsaved tabs show a dot where the
             // close button sits; hovering swaps it back to the × above.
@@ -524,6 +535,17 @@ private struct TabPill: View {
     private var isDirty: Bool {
         isTabDirty(tab, store: store)
     }
+
+    /// The pill's resting fill (selected > hovered): the close × floats
+    /// above the label, so its background must match whatever is behind it.
+    private var pillFill: Color {
+        isSelected ? AppColor.tabActiveBackground : AppColor.tabHoverBackground
+    }
+
+    /// Close × tile: grown to the largest square an even 3pt margin to the
+    /// pill's top, bottom, and right edges allows (28pt strip - 2 × 3pt),
+    /// so the solid background covers the truncated text underneath.
+    private static let closeButtonSide: CGFloat = 22
 
     @ViewBuilder
     private var tabTitle: some View {
