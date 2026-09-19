@@ -455,12 +455,17 @@ private struct KVRow: View {
                             }
                     }
                 }
-                Toggle("", isOn: isGhostRow ? .constant(false) : $isEnabled)
-                    .labelsHidden()
-                    .toggleStyle(.checkbox)
-                    .controlSize(.small)
-                    .disabled(isGhostRow)
-                    .helpIf(!isGhostRow, isEnabled ? "Disable row" : "Enable row")
+                // The trailing ghost row has nothing to enable yet: no
+                // checkbox until it materializes into a real row.
+                if isGhostRow {
+                    Color.clear
+                } else {
+                    Toggle("", isOn: $isEnabled)
+                        .labelsHidden()
+                        .toggleStyle(.checkbox)
+                        .controlSize(.small)
+                        .help(isEnabled ? "Disable row" : "Enable row")
+                }
             }
             .frame(width: leadingColumnWidth)
             verticalRule
