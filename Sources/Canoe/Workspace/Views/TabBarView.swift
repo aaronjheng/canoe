@@ -5,6 +5,9 @@ import SwiftUI
 struct TabBarView: View {
     @Environment(AppStore.self) private var store
     @State private var availableWidth: CGFloat = 0
+    /// Which pill the pointer is over, lifted here so the separators
+    /// between pills can hide themselves around the hovered one.
+    @State private var hoveredTab: OpenTab?
     /// Whether the tab drawer / environment dropdown panel is open. Owned by
     /// ContentView: both float at window level (a strip-level overlay gets
     /// clipped where it overflows the strip bounds).
@@ -15,15 +18,38 @@ struct TabBarView: View {
         HStack(spacing: AppSpacing.xSmall) {
             ScrollView(.horizontal, showsIndicators: false) {
                 ScrollViewReader { proxy in
-                    HStack(spacing: AppSpacing.xSmall) {
-                        ForEach(store.visibleOpenTabs) { tab in
+                    // Tight pill spacing: the separator's 1pt column plus
+                    // 2pt on each side keeps inactive tabs visually apart
+                    // without wasting strip width.
+                    HStack(spacing: AppSpacing.xxSmall) {
+                        ForEach(Array(store.visibleOpenTabs.enumerated()), id: \.element.id) { index, tab in
                             TabPill(
                                 tab: tab,
                                 width: tabWidth,
                                 isSelected: store.selectedTab == tab,
-                                isSending: store.sendingTabs.contains(tab)
+                                isSending: store.sendingTabs.contains(tab),
+                                isHovered: hoveredTab == tab,
+                                onHover: { hoveredTab = $0 ? tab : nil }
                             )
                             .id(tab)
+                            // Postman-style hairline between neighboring
+                            // tabs; it vanishes once either side becomes
+                            // the selected or hovered pill (its own fill
+                            // or close × already marks it).
+                            if index < store.visibleOpenTabs.count - 1 {
+                                let next = store.visibleOpenTabs[index + 1]
+                                TabSeparator(
+                                    isVisible: store.selectedTab != tab
+                                        && store.selectedTab != next
+                                        && hoveredTab != tab
+                                        && hoveredTab != next
+                                )
+                            }
+                        }
+                        if let last = store.visibleOpenTabs.last {
+                            TabSeparator(
+                                isVisible: store.selectedTab != last && hoveredTab != last
+                            )
                         }
                         // Postman-style: the "+" rides inline after the
                         // last tab (inside the scroll area) instead of
@@ -144,8 +170,9 @@ struct TabBarView: View {
     private var tabWidth: CGFloat? {
         let count = store.visibleOpenTabs.count
         guard count > 0, availableWidth > 0 else { return nil }
-        // One gap between each pair of tabs plus one before the "+" button.
-        let gaps = AppSpacing.xSmall * CGFloat(count)
+        // One gap between each pair of tabs plus one before the "+" button
+        // (matches the pills HStack's xxSmall spacing).
+        let gaps = AppSpacing.xxSmall * CGFloat(count)
         let usable = availableWidth - AppSpacing.small * 2 - gaps - newTabButtonWidth
         return min(AppSize.tabMaxWidth, max(AppSize.tabMinWidth, usable / CGFloat(count)))
     }
@@ -394,7 +421,11 @@ private struct TabPill: View {
     let width: CGFloat?
     let isSelected: Bool
     let isSending: Bool
-    @State private var isHovering = false
+    /// Hover lives at the strip level (not pill-local state) so the
+    /// neighboring separators can hide themselves while the pointer is over
+    /// this pill.
+    let isHovered: Bool
+    let onHover: (Bool) -> Void
     @State private var isHoveringClose = false
 
     var body: some View {
@@ -428,7 +459,7 @@ private struct TabPill: View {
             // redundant).
             if isSelected {
                 AppColor.tabActiveBackground
-            } else if isHovering {
+            } else if isHovered {
                 AppColor.tabHoverBackground
             } else {
                 Color.clear
@@ -441,7 +472,7 @@ private struct TabPill: View {
         .overlay(alignment: .trailing) {
             trailingAccessory
         }
-        .onHover { isHovering = $0 }
+        .onHover { onHover($0) }
         .contextMenu {
             Button("Close Tab") { store.requestCloseTab(tab) }
             Button("Close Other Tabs") { store.requestCloseOtherTabs(except: tab) }
@@ -490,7 +521,7 @@ private struct TabPill: View {
                 .controlSize(.mini)
                 .frame(width: AppSize.compactControl, height: AppSize.compactControl)
                 .padding(.trailing, AppSpacing.compact)
-        } else if isHovering || (isSelected && !isDirty) {
+        } else if isHovered || (isSelected && !isDirty) {
             Button {
                 store.requestCloseTab(tab)
             } label: {
@@ -615,6 +646,19 @@ private func isTabDirty(_ tab: OpenTab, store: AppStore) -> Bool {
 
 /// A tab's leading icon (method tag for requests, scope glyph otherwise).
 /// Shared by the tab pill and the drawer rows.
+/// Hairline between neighboring tab pills. Always occupies its 1pt column
+/// (no layout shift when the fill toggles); it goes clear when either
+/// neighbor is the selected pill.
+private struct TabSeparator: View {
+    let isVisible: Bool
+
+    var body: some View {
+        Rectangle()
+            .fill(isVisible ? AppColor.border : Color.clear)
+            .frame(width: 1, height: 16)
+    }
+}
+
 private struct TabItemIcon: View {
     @Environment(AppStore.self) private var store
     let tab: OpenTab
