@@ -333,36 +333,42 @@ struct EnvironmentPickerPanel: View {
                     .foregroundStyle(.tertiary)
                     .frame(maxWidth: .infinity, minHeight: AppSize.tabHeight)
             } else {
-                ForEach(visibleRows, id: \.self) { row in
-                    HStack(spacing: AppSpacing.small) {
-                        // Placeholder stays a real (hidden) checkmark, not
-                        // Color.clear: a sizeless view takes whatever height
-                        // it is offered, and the row is only minHeight-capped
-                        // (see WorkspacesView's header for the same gotcha).
-                        Image(systemName: "checkmark")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.primary)
-                            .frame(width: AppSize.compactControl)
-                            .opacity(row == activeRow ? 1 : 0)
-                        Text(name(for: row))
-                            .font(.subheadline)
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                        Spacer(minLength: 0)
+                // Rows wrapped in an explicit stack with the insets on the
+                // container: padding applied to the ForEach itself would
+                // distribute onto every row (+4pt above and below each),
+                // loosening the pitch to 36pt instead of the shared 28pt.
+                VStack(spacing: 0) {
+                    ForEach(visibleRows, id: \.self) { row in
+                        HStack(spacing: AppSpacing.small) {
+                            // Placeholder stays a real (hidden) checkmark, not
+                            // Color.clear: a sizeless view takes whatever height
+                            // it is offered, and the row is only minHeight-capped
+                            // (see WorkspacesView's header for the same gotcha).
+                            Image(systemName: "checkmark")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.primary)
+                                .frame(width: AppSize.compactControl)
+                                .opacity(row == activeRow ? 1 : 0)
+                            Text(name(for: row))
+                                .font(.subheadline)
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, AppSpacing.small)
+                        .frame(maxWidth: .infinity, minHeight: AppSize.tabHeight, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                                .fill(row == hovered || row == keyboard ? AppColor.subtleBackground : .clear)
+                        )
+                        .contentShape(Rectangle())
+                        .onHover { hovering in
+                            hovered = hovering ? row : nil
+                            if hovering { keyboard = nil }
+                        }
+                        .onTapGesture { pick(row) }
                     }
-                    .padding(.horizontal, AppSpacing.small)
-                    .frame(maxWidth: .infinity, minHeight: AppSize.tabHeight, alignment: .leading)
-                    .background(
-                        RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                            .fill(row == hovered || row == keyboard ? AppColor.subtleBackground : .clear)
-                    )
-                    .contentShape(Rectangle())
-                    .onHover { hovering in
-                        hovered = hovering ? row : nil
-                        if hovering { keyboard = nil }
-                    }
-                    .onTapGesture { pick(row) }
                 }
                 .padding(.horizontal, AppSpacing.xSmall)
                 .padding(.vertical, AppSpacing.xSmall)
