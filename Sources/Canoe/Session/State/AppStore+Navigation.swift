@@ -96,6 +96,55 @@ extension AppStore {
         openTab(.request(id))
     }
 
+    /// Single-clicks a sidebar request (VSCode-style preview): an already
+    /// open tab is selected; otherwise the live preview tab is reused, or a
+    /// new preview tab is opened when there is none. A dirty preview holds
+    /// unsaved edits, so it is pinned in place instead of replaced.
+    func previewRequest(_ id: UUID) {
+        let tab: OpenTab = .request(id)
+        if openTabs.contains(tab) {
+            selectedTab = tab
+            persistOpenTabs()
+            return
+        }
+        if let preview = previewTab, !openTabs.contains(preview) {
+            previewTab = nil
+        }
+        if let preview = previewTab, hasPendingEdits(for: preview) {
+            previewTab = nil
+        }
+        if let preview = previewTab, let idx = openTabs.firstIndex(of: preview) {
+            clearTabState(preview)
+            openTabs[idx] = tab
+        } else {
+            openTabs.append(tab)
+        }
+        previewTab = tab
+        selectedTab = tab
+        persistOpenTabs()
+    }
+
+    /// Double-clicks a sidebar request: pins the tab to the request. A live
+    /// preview of the same request is pinned in place; otherwise a pinned
+    /// tab is opened (or selected). Any other preview tab is left alone.
+    func pinRequest(_ id: UUID) {
+        let tab: OpenTab = .request(id)
+        if previewTab == tab {
+            previewTab = nil
+        }
+        if !openTabs.contains(tab) {
+            openTabs.append(tab)
+        }
+        selectedTab = tab
+        persistOpenTabs()
+    }
+
+    /// Pins a tab pill (double-clicked in the strip). No-op unless it is the
+    /// live preview tab.
+    func pinTab(_ tab: OpenTab) {
+        if previewTab == tab { previewTab = nil }
+    }
+
     /// Opens (or focuses) an environment tab.
     func openEnvironment(_ id: UUID) {
         openTab(.environment(id))
@@ -146,15 +195,8 @@ extension AppStore {
     /// the in-memory vault is restored to the last saved content, so
     /// reopening shows no modifications (and the drafts mirror is pruned).
     func closeTab(_ tab: OpenTab) {
-        sendTasks[tab]?.cancel()
-        sendTasks[tab] = nil
-        sendTokens[tab] = nil
-        sendingTabs.remove(tab)
-        lastCancelAt[tab] = nil
-        responsesByTab[tab] = nil
-        errorsByTab[tab] = nil
-        responseHistoryByTab[tab] = nil
-        viewingHistoryIndexByTab[tab] = nil
+        clearTabState(tab)
+        if previewTab == tab { previewTab = nil }
         discardPendingEdits(for: tab)
         guard let idx = openTabs.firstIndex(of: tab) else { return }
         openTabs.remove(at: idx)
@@ -168,6 +210,21 @@ extension AppStore {
             }
         }
         persistOpenTabs()
+    }
+
+    /// Drops a tab's per-tab runtime state (in-flight send, cached
+    /// response, errors, history position) without touching the tab strip.
+    /// Shared by closeTab and preview replacement.
+    private func clearTabState(_ tab: OpenTab) {
+        sendTasks[tab]?.cancel()
+        sendTasks[tab] = nil
+        sendTokens[tab] = nil
+        sendingTabs.remove(tab)
+        lastCancelAt[tab] = nil
+        responsesByTab[tab] = nil
+        errorsByTab[tab] = nil
+        responseHistoryByTab[tab] = nil
+        viewingHistoryIndexByTab[tab] = nil
     }
 
     func closeSelectedTab() {
@@ -457,6 +514,7 @@ extension AppStore {
         errorsByTab = errorsByTab.filter { open.contains($0.key) }
         responseHistoryByTab = responseHistoryByTab.filter { open.contains($0.key) }
         viewingHistoryIndexByTab = viewingHistoryIndexByTab.filter { open.contains($0.key) }
+        if let preview = previewTab, !open.contains(preview) { previewTab = nil }
         if let selected = selectedTab, !open.contains(selected) {
             selectedTab = openTabs.last
         }

@@ -94,6 +94,8 @@ extension AppStore {
             }
             pendingRequestSnapshots[id]?.name = trimmed
             persistedRequestBaselines[id]?.name = trimmed
+            // A rename is an edit: it pins a live preview like any other.
+            if previewTab == .request(id) { previewTab = nil }
             // The drafts mirror carries the dirty name: without this a crash
             // before the next edit would restore the stale draft name.
             if pendingRequestSnapshots[id] != nil { scheduleDraftPersistence() }
@@ -141,6 +143,9 @@ extension AppStore {
         }
 
         pendingRequestSnapshots[request.id] = request
+        // Editing pins a live preview tab: it now holds unsaved work and
+        // must survive the next previewed request.
+        if previewTab == .request(request.id) { previewTab = nil }
         scheduleDraftPersistence()
     }
 

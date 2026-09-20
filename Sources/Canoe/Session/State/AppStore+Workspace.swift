@@ -102,6 +102,7 @@ extension AppStore {
         viewingHistoryIndexByTab = [:]
         openTabs = []
         selectedTab = nil
+        previewTab = nil
         persistOpenTabs()
     }
 

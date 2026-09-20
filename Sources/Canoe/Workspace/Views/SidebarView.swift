@@ -937,7 +937,7 @@ private struct RequestRow: View {
                 renameRow
             } else {
                 Button {
-                    store.openTab(.request(request.id))
+                    store.previewRequest(request.id)
                 } label: {
                     HStack(spacing: 0) {
                         // The method tag sits on the content column: one expander
@@ -968,6 +968,13 @@ private struct RequestRow: View {
                 }
                 .buttonStyle(.plain)
                 .onHover { isHovering = $0 }
+                // Double-click pins the preview tab. The Button above still
+                // fires immediately on each click (no double-click hold
+                // delay): the two single clicks preview-then-reselect, and
+                // the double-tap pins - the end state is always correct.
+                .simultaneousGesture(
+                    TapGesture(count: 2).onEnded { store.pinRequest(request.id) }
+                )
                 .contextMenu {
                     Button("Rename") {
                         isRenaming = true

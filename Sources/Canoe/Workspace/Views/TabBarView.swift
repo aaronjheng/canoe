@@ -284,6 +284,12 @@ struct TabBarView: View {
         let point = CGPoint(
             x: windowFrame.origin.x + event.locationInWindow.x,
             y: screenTop - windowFrame.origin.y - event.locationInWindow.y)
+        // Double-clicking the preview pill pins it (VSCode behavior);
+        // double-clicks on pinned pills are already where they belong.
+        if let hit = stripGeometry.pillFrames.first(where: { $0.value.contains(point) }) {
+            store.pinTab(hit.key)
+            return true
+        }
         guard stripGeometry.stripFrame.contains(point) else { return false }
         guard !stripGeometry.pillFrames.values.contains(where: { $0.contains(point) }),
             !stripGeometry.plusButtonFrame.contains(point)
@@ -543,6 +549,7 @@ private struct TabPill: View {
             HStack(spacing: AppSpacing.xSmall) {
                 TabItemIcon(tab: tab)
                 tabTitle
+                    .modifier(PreviewTitleStyle(isPreview: isPreview))
             }
             .padding(.horizontal, AppSpacing.small)
             // Fixed pill height (content was 4pt-padded top and bottom); the
@@ -687,6 +694,10 @@ private struct TabPill: View {
     /// so the solid background covers the truncated text underneath.
     private static let closeButtonSide: CGFloat = 22
 
+    /// Whether this pill is the live single-click preview tab (VSCode-style
+    /// italic until pinned).
+    private var isPreview: Bool { store.previewTab == tab }
+
     @ViewBuilder
     private var tabTitle: some View {
         switch tab {
@@ -734,6 +745,19 @@ private struct TabPill: View {
 }
 
 // MARK: - Tab drawer
+
+/// Italicizes live preview (unpinned) tab titles, VSCode-style.
+private struct PreviewTitleStyle: ViewModifier {
+    let isPreview: Bool
+
+    func body(content: Content) -> some View {
+        if isPreview {
+            content.italic()
+        } else {
+            content
+        }
+    }
+}
 
 /// Whether the tab's underlying entity has unsaved modifications. Shared by
 /// the tab pill's dirty dot and the drawer's rows.
@@ -923,6 +947,7 @@ struct TabDrawer: View {
                                         .foregroundStyle(.primary)
                                         .lineLimit(1)
                                         .truncationMode(.tail)
+                                        .modifier(PreviewTitleStyle(isPreview: store.previewTab == tab))
                                     Spacer(minLength: 0)
                                     if isTabDirty(tab, store: store) {
                                         Circle()
