@@ -11,6 +11,16 @@ struct FilterField: View {
     @Binding var text: String
     var placeholder: String
     var verticalPadding: CGFloat = AppSpacing.xSmall
+    /// Boxed presentation: a four-sided hairline border and a raised fill,
+    /// floating inside the parent's padding (the workspace sidebar's
+    /// filter). The default stays borderless for the other call sites.
+    var isBoxed = false
+
+    @FocusState private var isFocused: Bool
+    @State private var isHovered = false
+    /// The box's screen frame - the blur monitor spares clicks inside it.
+    @State private var fieldFrame: CGRect = .zero
+    @State private var blurMonitor: Any?
 
     var body: some View {
         HStack(spacing: AppSpacing.xSmall) {
@@ -20,6 +30,7 @@ struct FilterField: View {
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
                 .font(.subheadline)
+                .focused($isFocused)
             if !text.isEmpty {
                 Button("Clear Filter", systemImage: "xmark.circle.fill") {
                     text = ""
@@ -32,6 +43,70 @@ struct FilterField: View {
         }
         .padding(.horizontal, AppSpacing.medium)
         .padding(.vertical, verticalPadding)
+        .background {
+            if isBoxed {
+                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                    .fill(AppColor.controlBackground)
+            }
+        }
+        .overlay {
+            if let borderColor = borderColor {
+                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                    .strokeBorder(borderColor)
+                    .animation(.easeOut(duration: 0.12), value: borderColor)
+            }
+        }
+        .padding(.horizontal, isBoxed ? AppSpacing.small : 0)
+        .onHover { isHovered = $0 }
+        .onGeometryChange(for: CGRect.self) { proxy in
+            proxy.frame(in: .global)
+        } action: { frame in
+            fieldFrame = frame
+        }
+        .onAppear { installBlurMonitor() }
+        .onDisappear { removeBlurMonitor() }
+    }
+
+    /// Boxed border tiers: idle hairline, hover one step stronger, focused
+    /// accent (the standard focused-input signal). Unboxed fields render no
+    /// border at all.
+    private var borderColor: Color? {
+        guard isBoxed else { return nil }
+        if isFocused { return AppColor.accent }
+        if isHovered { return AppColor.borderStrong }
+        return AppColor.border
+    }
+
+    /// Observes without consuming: a leftMouseDown outside the box drops
+    /// focus (macOS SwiftUI text fields don't blur on background clicks on
+    /// their own - the same disease the sidebar's inline rename field and
+    /// the request name field each hand-roll monitors for). The click point
+    /// is converted from window-base into the screen-top-left space SwiftUI
+    /// .global frames use (same conversion as the tab strip's double-click
+    /// monitor), so clicks inside the field keep the caret.
+    private func installBlurMonitor() {
+        guard blurMonitor == nil else { return }
+        blurMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
+            MainActor.assumeIsolated {
+                if isFocused, let window = event.window {
+                    let screenTop = window.screen?.frame.maxY ?? 0
+                    let point = CGPoint(
+                        x: window.frame.origin.x + event.locationInWindow.x,
+                        y: screenTop - window.frame.origin.y - event.locationInWindow.y)
+                    if !fieldFrame.contains(point) {
+                        isFocused = false
+                    }
+                }
+            }
+            return event
+        }
+    }
+
+    private func removeBlurMonitor() {
+        if let monitor = blurMonitor {
+            NSEvent.removeMonitor(monitor)
+            blurMonitor = nil
+        }
     }
 }
 

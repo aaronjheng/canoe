@@ -23,7 +23,6 @@ struct VariablesSidebarView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider()
             if let request = store.selectedRequest {
                 requestContent(for: request)
             } else {
@@ -79,7 +78,6 @@ struct VariablesSidebarView: View {
             : resolvedAll.filter { $0.key.localizedCaseInsensitiveContains(query) || $0.value.localizedCaseInsensitiveContains(query) }
         return VStack(spacing: 0) {
             filterField
-            Divider()
             ScrollView {
                 VStack(spacing: 0) {
                     ForEach(displayScopes) { scope in
@@ -113,7 +111,8 @@ struct VariablesSidebarView: View {
     }
 
     private var filterField: some View {
-        FilterField(text: $filter, placeholder: "Filter Variables")
+        FilterField(text: $filter, placeholder: "Filter Variables", isBoxed: true)
+            .padding(.vertical, AppSpacing.xSmall)
     }
 
     // MARK: - No request context (Postman's "All variables" view)

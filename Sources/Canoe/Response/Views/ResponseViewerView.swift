@@ -573,8 +573,8 @@ struct ResponseViewerView: View {
             )
         } else {
             VStack(spacing: 0) {
-                FilterField(text: $headerFilter, placeholder: "Search Headers")
-                Divider()
+                FilterField(text: $headerFilter, placeholder: "Search Headers", isBoxed: true)
+                    .padding(.vertical, AppSpacing.xSmall)
                 let query = headerFilter.trimmingCharacters(in: .whitespacesAndNewlines)
                 let matches = response.headers.filter { header in
                     query.isEmpty

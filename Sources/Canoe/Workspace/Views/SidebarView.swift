@@ -20,7 +20,6 @@ struct SidebarView: View {
             .fixedSize()
             .padding(.horizontal, AppSpacing.medium)
             .padding(.vertical, AppSpacing.xSmall)
-            Divider()
             if store.sidebarTab == .items {
                 ItemsView()
             } else {
@@ -50,8 +49,11 @@ private struct ItemsView: View {
     var body: some View {
         @Bindable var store = store
         VStack(spacing: 0) {
-            FilterField(text: $store.sidebarFilter, placeholder: "Filter")
-            Divider()
+            // Boxed: the sidebar filter reads as a proper input field
+            // (four-sided hairline border, raised fill). The box replaces
+            // the old top/bottom dividers as the section boundary.
+            FilterField(text: $store.sidebarFilter, placeholder: "Filter", isBoxed: true)
+                .padding(.vertical, AppSpacing.xSmall)
             // Manual tree rows instead of `List(selection:)`: the native
             // sidebar selection is a solid accent fill that swallows the
             // HTTP method colors, and its roomy rows don't match Postman's

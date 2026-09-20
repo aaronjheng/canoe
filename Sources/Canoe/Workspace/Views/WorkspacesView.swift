@@ -107,9 +107,8 @@ struct WorkspacesView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider()
-            FilterField(text: $filter, placeholder: "Search Workspaces")
-            Divider()
+            FilterField(text: $filter, placeholder: "Search Workspaces", isBoxed: true)
+                .padding(.vertical, AppSpacing.xSmall)
             // Note: no "no workspaces" state here. This mode is unreachable
             // with an empty vault (ContentView shows the welcome screen),
             // and deleting the last workspace exits back to it.
