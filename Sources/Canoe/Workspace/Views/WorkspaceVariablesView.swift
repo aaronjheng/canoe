@@ -35,8 +35,6 @@ struct WorkspaceVariablesView: View {
             .padding(.horizontal, AppSpacing.medium)
             .padding(.vertical, AppSpacing.small)
 
-            Divider()
-
             KeyValueEditor(
                 items: $draft.variables,
                 makeNew: Variable.init,
