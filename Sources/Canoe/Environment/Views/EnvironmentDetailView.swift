@@ -6,7 +6,6 @@ import SwiftUI
 struct EnvironmentDetailView: View {
     @Environment(AppStore.self) private var store
     @State private var draft: EnvironmentProfile
-    @FocusState private var isNameFocused: Bool
 
     init(environment: EnvironmentProfile) {
         _draft = State(initialValue: environment)
@@ -20,20 +19,12 @@ struct EnvironmentDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: AppSpacing.small) {
-                Text("Name")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                TextField("Environment Name", text: $draft.name)
-                    .font(.subheadline)
-                    .variableFieldBordered(isFocused: isNameFocused)
-                    .focused($isNameFocused)
+                InlineNameField(text: $draft.name, placeholder: "Environment Name")
                 Spacer(minLength: AppSpacing.medium)
                 saveButton
             }
             .padding(.horizontal, AppSpacing.medium)
             .padding(.vertical, AppSpacing.small)
-
-            Divider()
 
             KeyValueEditor(
                 items: $draft.variables,

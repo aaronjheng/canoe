@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 // Shared filter fields and underline tabs.
@@ -84,5 +85,100 @@ struct UnderlineTab: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
+    }
+}
+
+// MARK: - Inline name field
+
+/// Postman-style inline name field (same language as the request name
+/// field): quiet heading at rest, light pill on hover, accent-ring field on
+/// focus. The field hugs its text (ViewThatFits) so the chrome never reads
+/// as a wide empty input; a very long name falls back to the row remainder
+/// and scrolls inside while focused. One persistent TextField - no view swap
+/// on state change - so caret, undo, and the draft push behave like every
+/// other field. Esc restores the focus-time baseline; Enter commits.
+struct InlineNameField: View {
+    @Binding var text: String
+    var placeholder: String = "Name"
+    var font: Font = .subheadline.weight(.semibold)
+    @FocusState private var isFocused: Bool
+    @State private var isHovered = false
+    /// Text at focus time; Esc restores it (commit happens on blur/Enter).
+    @State private var baseline = ""
+    /// The field's frame in window coordinates - the click-away monitor
+    /// needs it to spare clicks inside the field.
+    @State private var fieldFrame: CGRect = .zero
+    /// Local left-mouse-down monitor that ends editing when a click lands
+    /// outside the field. Installed while on screen.
+    @State private var dismissMonitor: Any?
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            fieldBody
+                .fixedSize()
+            fieldBody
+        }
+        .onHover { isHovered = $0 }
+        .onGeometryChange(for: CGRect.self) { proxy in
+            proxy.frame(in: .global)
+        } action: {
+            fieldFrame = $0
+        }
+        .onChange(of: isFocused) { _, focused in
+            if focused { baseline = text }
+        }
+        .onAppear { installDismissMonitor() }
+        .onDisappear { removeDismissMonitor() }
+    }
+
+    private var fieldBody: some View {
+        TextField(placeholder, text: $text)
+            .font(font)
+            .textFieldStyle(.plain)
+            .focused($isFocused)
+            .padding(.horizontal, AppSpacing.small - AppSpacing.xxSmall)
+            .padding(.vertical, AppSpacing.xSmall)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                    .fill(
+                        isFocused
+                            ? AppColor.fieldBackground
+                            : (isHovered ? AppColor.subtleBackground : .clear)
+                    )
+            )
+            .overlay {
+                if isFocused {
+                    RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                        .strokeBorder(AppColor.accent, lineWidth: 2)
+                }
+            }
+            .onSubmit { isFocused = false }
+            .onKeyPress(.escape) {
+                text = baseline
+                isFocused = false
+                return .handled
+            }
+    }
+
+    /// Ends editing when a click lands outside the field. A local NSEvent
+    /// monitor observes without consuming, so TextField clicks are never
+    /// delayed or stolen (a SwiftUI root gesture would race the field
+    /// editor's mouseDown and break focus-by-click). Clicks anywhere else -
+    /// chrome, other editors, buttons - read as blur and drop the ring.
+    private func installDismissMonitor() {
+        guard dismissMonitor == nil else { return }
+        dismissMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
+            if isFocused, !fieldFrame.contains(event.locationInWindow) {
+                isFocused = false
+            }
+            return event
+        }
+    }
+
+    private func removeDismissMonitor() {
+        if let monitor = dismissMonitor {
+            NSEvent.removeMonitor(monitor)
+            dismissMonitor = nil
+        }
     }
 }
