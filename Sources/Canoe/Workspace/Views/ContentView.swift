@@ -217,7 +217,7 @@ struct ContentView: View {
 /// (bottom), like the classic Postman layout.
 struct RequestWorkspaceView: View {
     @Environment(AppStore.self) private var store
-    let request: RequestItem
+    let request: Request
 
     var body: some View {
         VSplitView {

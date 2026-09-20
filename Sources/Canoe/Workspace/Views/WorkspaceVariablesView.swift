@@ -83,7 +83,7 @@ struct WorkspaceVariablesView: View {
     /// names-only fallback.
     private var suggestions: [VariableSuggestion] {
         VariableSuggestion.suggestions(from: [
-            RequestVariableScope(
+            VariableScope(
                 kind: .workspace, ownerID: draft.id,
                 ownerName: draft.name, variables: draft.variables
             )

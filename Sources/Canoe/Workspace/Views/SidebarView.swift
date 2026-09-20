@@ -36,7 +36,7 @@ struct SidebarView: View {
 private struct ItemsView: View {
     @Environment(AppStore.self) private var store
 
-    private var filteredEnvironments: [EnvProfile] {
+    private var filteredEnvironments: [EnvironmentProfile] {
         let query = store.sidebarFilter.trimmingCharacters(in: .whitespacesAndNewlines)
         let scoped = store.activeWorkspaceEnvironments
         guard !query.isEmpty else { return scoped }
@@ -203,7 +203,7 @@ private struct GroupHeader<Actions: View>: View {
 
 private struct EnvironmentRow: View {
     @Environment(AppStore.self) private var store
-    let env: EnvProfile
+    let env: EnvironmentProfile
     @State private var isHovering = false
     @State private var showDeleteConfirm = false
 
@@ -525,7 +525,7 @@ private struct CollectionTree: View {
         return folders.filter { store.folderMatchesFilter($0.id, in: collection) }
     }
 
-    private var visibleRequests: [RequestItem] {
+    private var visibleRequests: [Request] {
         let requests = store.requests(in: nil, collection: collection)
         guard isFiltering else { return requests }
         return requests.filter { store.requestMatchesFilter($0) }
@@ -710,7 +710,7 @@ private struct FolderTree: View {
         return folders.filter { store.folderMatchesFilter($0.id, in: collection) }
     }
 
-    private var visibleRequests: [RequestItem] {
+    private var visibleRequests: [Request] {
         let requests = store.requests(in: folder.id, collection: collection)
         guard isFiltering else { return requests }
         return requests.filter { store.requestMatchesFilter($0) }
@@ -869,7 +869,7 @@ private struct FolderTree: View {
 
 private struct RequestRow: View {
     @Environment(AppStore.self) private var store
-    let request: RequestItem
+    let request: Request
     let depth: Int
     @State private var isHovering = false
     @State private var isRenaming = false

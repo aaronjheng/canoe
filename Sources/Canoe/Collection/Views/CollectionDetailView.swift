@@ -83,7 +83,7 @@ struct CollectionDetailView: View {
         store.vault.collections.first(where: { $0.id == draft.id })?.variables
     }
 
-    private var liveCollectionAuthorization: RequestAuthorization? {
+    private var liveCollectionAuthorization: Authorization? {
         store.vault.collections.first(where: { $0.id == draft.id })?.authorization
     }
 
@@ -124,7 +124,7 @@ struct CollectionDetailView: View {
                     // there is no parent to inherit from (and no inherit
                     // option in the picker, Postman-style).
                     inheritedSource: nil,
-                    availableTypes: RequestAuthType.allCases.filter { $0 != .inherit }
+                    availableTypes: AuthType.allCases.filter { $0 != .inherit }
                 )
             case .variables:
                 KeyValueEditor(
@@ -224,24 +224,24 @@ struct CollectionDetailView: View {
 
     /// Completion candidates with scope metadata for `{{` auto-completion.
     private var suggestions: [VariableSuggestion] {
-        var scopes: [RequestVariableScope] = []
+        var scopes: [VariableScope] = []
         if let workspace = collectionWorkspace {
             scopes.append(
-                RequestVariableScope(
+                VariableScope(
                     kind: .workspace, ownerID: workspace.id,
                     ownerName: workspace.name, variables: workspace.variables
                 )
             )
         }
         scopes.append(
-            RequestVariableScope(
+            VariableScope(
                 kind: .collection, ownerID: draft.id,
                 ownerName: draft.name, variables: draft.variables
             )
         )
         if let environment = store.activeEnvironment {
             scopes.append(
-                RequestVariableScope(
+                VariableScope(
                     kind: .environment, ownerID: environment.id,
                     ownerName: environment.name, variables: environment.variables
                 )

@@ -13,12 +13,12 @@ struct ConsoleEntry: Identifiable, Sendable {
     /// The URL actually sent.
     let url: String
     /// The headers actually sent; the Authorization value is masked.
-    let requestHeaders: [HTTPHeaderField]
+    let requestHeaders: [HTTPHeader]
     let requestBody: Data?
     let requestBodyTruncated: Bool
     /// nil when the request failed before a response arrived.
     let statusCode: Int?
-    let responseHeaders: [HTTPHeaderField]
+    let responseHeaders: [HTTPHeader]
     let responseBody: Data?
     let responseBodyTruncated: Bool
     let duration: TimeInterval?
@@ -27,10 +27,11 @@ struct ConsoleEntry: Identifiable, Sendable {
     /// Stored body cap: the console is for triage, not payload archives.
     static let bodyLimit = 512 * 1024
 
-    /// Errors are failed connections and non-2xx/3xx responses (Postman
-    /// marks both).
+    /// Errors are failed connections and non-2xx responses. Uses the same
+    /// 2xx range as `ResponseModel.isSuccess` so history badges and the
+    /// console never disagree.
     var isError: Bool {
-        statusCode.map { !(200..<400).contains($0) } ?? true
+        statusCode.map { !(200..<300).contains($0) } ?? true
     }
 
     var statusText: String {
@@ -139,13 +140,13 @@ struct ConsoleEntry: Identifiable, Sendable {
     }
 
     /// Headers as sent, with the Authorization credential masked.
-    static func maskedRequestHeaders(from urlRequest: URLRequest) -> [HTTPHeaderField] {
+    static func maskedRequestHeaders(from urlRequest: URLRequest) -> [HTTPHeader] {
         let headers = urlRequest.allHTTPHeaderFields ?? [:]
         let sorted = headers.sorted { $0.key < $1.key }
         return sorted.map { key, value in
             key.lowercased() == "authorization"
-                ? HTTPHeaderField(key: key, value: redactedAuthorizationValue(value))
-                : HTTPHeaderField(key: key, value: value)
+                ? HTTPHeader(key: key, value: redactedAuthorizationValue(value))
+                : HTTPHeader(key: key, value: value)
         }
     }
 }

@@ -3,7 +3,11 @@ import Foundation
 /// A single HTTP request definition. Embedded inside its parent collection's
 /// JSON file. `folderID` places the request inside a folder (nil = collection
 /// root).
-struct RequestItem: Identifiable, Codable, Hashable, Sendable {
+///
+/// String-backed storage (`method`, `type`, `bodyType`, …) keeps old vault
+/// files decoding when new cases are added; the typed computed wrappers
+/// (`httpMethod`, `requestType`, …) are what new code uses.
+struct Request: Identifiable, Codable, Hashable, Sendable {
     var id: UUID = UUID()
     var name: String = "New Request"
     var type: String = RequestType.http.rawValue
@@ -20,7 +24,7 @@ struct RequestItem: Identifiable, Codable, Hashable, Sendable {
     /// Defaults to inheriting the parent collection's Authorization
     /// (Postman behavior); files written before inheriting existed decode
     /// as explicit no-auth, preserving their old behavior.
-    var authType: String = RequestAuthType.inherit.rawValue
+    var authType: String = AuthType.inherit.rawValue
     var authUsername: String = ""
     var authPassword: String = ""
     var authToken: String = ""
@@ -69,7 +73,7 @@ struct RequestItem: Identifiable, Codable, Hashable, Sendable {
         formFields = try container.decodeIfPresent([FormField].self, forKey: .formFields) ?? []
         urlEncodedFields = try container.decodeIfPresent([FormField].self, forKey: .urlEncodedFields) ?? []
         binaryFilePath = try container.decodeIfPresent(String.self, forKey: .binaryFilePath) ?? ""
-        authType = try container.decodeIfPresent(String.self, forKey: .authType) ?? RequestAuthType.none.rawValue
+        authType = try container.decodeIfPresent(String.self, forKey: .authType) ?? AuthType.none.rawValue
         authUsername = try container.decodeIfPresent(String.self, forKey: .authUsername) ?? ""
         authPassword = try container.decodeIfPresent(String.self, forKey: .authPassword) ?? ""
         authToken = try container.decodeIfPresent(String.self, forKey: .authToken) ?? ""
@@ -101,14 +105,14 @@ struct RequestItem: Identifiable, Codable, Hashable, Sendable {
         set { bodyRawKind = newValue.rawValue }
     }
 
-    var requestAuthType: RequestAuthType {
-        get { RequestAuthType(rawValue: authType) ?? .none }
+    var requestAuthType: AuthType {
+        get { AuthType(rawValue: authType) ?? .none }
         set { authType = newValue.rawValue }
     }
 
     /// Compares everything except `updatedAt`, so the store can skip writes
     /// when the user did not actually change anything.
-    func isContentEqual(to other: RequestItem) -> Bool {
+    func isContentEqual(to other: Request) -> Bool {
         id == other.id
             && name == other.name
             && method == other.method
@@ -130,3 +134,5 @@ struct RequestItem: Identifiable, Codable, Hashable, Sendable {
             && params == other.params
     }
 }
+/// Transition alias for the pre-rename request name. Remove once all call sites use `Request` directly.
+typealias RequestItem = Request

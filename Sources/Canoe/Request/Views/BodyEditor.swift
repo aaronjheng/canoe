@@ -4,7 +4,7 @@ import SwiftUI
 /// Postman-style body editor: a type selector (none / form-data /
 /// x-www-form-urlencoded / raw / binary) over the matching editor.
 struct BodyEditor: View {
-    @Binding var request: RequestItem
+    @Binding var request: Request
     @Environment(AppStore.self) private var store
 
     /// Merged variable scope for `{{placeholder}}` highlighting.

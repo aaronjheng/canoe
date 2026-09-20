@@ -30,8 +30,8 @@ Root files: `CanoeApp` (process entry), `AppDelegate` (window, menu bar), `AppLo
 Area folders:
 
 - Feature areas, each holding whichever of `Models/` / `State/` / `Views/` / `Services/` it needs: `Workspace` (window chrome, sidebar, tabs, workspace screens), `Collection` (collections, folders), `Request` (request editor, auth/body editors, code snippets), `Response` (response viewer, history entries), `Environment` (environments), `Variables` (variables inspector, `{{...}}` resolution + scope models), `Settings` (Settings… window: sidebar, panes, appearance store)
-- Backends: `HTTP/` (URLSession client, multipart encoding), `Session/` (`AppStore` core state, `VaultStore` file persistence, `FileStore` atomic JSON primitive, `VaultConfig`)
-- Shared toolkit: `Components/` (reusable views like `KeyValueEditor` + the `HTTPMethod+Presentation` color mapping their badges use), `Editor/` (variable-highlighting text fields, completion popup, JSON syntax highlighting), `Theme/` (color/font/metrics tokens + light/dark switching)
+- Backends: `HTTP/` (URLSession client, multipart encoding), `Session/` split into `State/` (one `AppStore` coordinator + one `AppStore+<Domain>.swift` extension per domain: Navigation, Workspace, Collection, Request, Environment, Variables, Sending) and `Persistence/` (`VaultStore` file persistence, `VaultDrafts` unsaved edits, `FileStore` atomic JSON primitive, `VaultConfig`)
+- Shared toolkit: `Components/` (one file per group: badges, buttons, fields, inspector chrome, states, panel modifiers, plus `KeyValueEditor` and the `HTTPMethod+Presentation` color mapping), `Editor/` (variable-highlighting text fields, completion popup, JSON syntax highlighting), `Theme/` (color/font/metrics tokens + light/dark switching)
 
 Naming rule (for the main program under `Sources/Canoe/` only): no bucket names (`Utilities`, `Core`, `DesignSystem`, `Infrastructure`, …). If a folder needs "and misc" to describe it, split it instead.
 
@@ -42,7 +42,20 @@ Outer layers may use inner layers, never the reverse:
 - `Views/` (SwiftUI) may use anything below it.
 - `Session/` and persistence may use `Models/`, `HTTP/`.
 - `Models/`, `HTTP/` must never `import SwiftUI`. Presentation mapping for a model type lives in a `Type+Presentation.swift` next to the views that need it (e.g. `Components/HTTPMethod+Presentation.swift`).
-- `HTTP/` never references views, `AppStore`, or areas; areas never reference each other's `State/`.
+- `HTTP/` never references views, `AppStore`, or area `State/` - but it may use area `Models/` value types (`Request`, `Authorization`, `ResponseModel`, `VariableScope`, `VariableResolver`) to send requests. Shared `Components/` / `Editor/` may likewise use `Models/` value types.
+- Areas never reference each other's `State/`; cross-area sharing goes through `Models/` value types and `Session/` coordination.
+
+## Terminology
+
+Business terms and their canonical type names (JSON keys are unchanged by renames):
+
+- Request: `Request` (was `RequestItem`), stored inside its collection file
+- Environment: `EnvironmentProfile` (not `Environment` - that collides with `SwiftUI.Environment`), one file per environment
+- Auth: `AuthType` + `Authorization` (was `RequestAuthType` / `RequestAuthorization`); inheritance source is `AuthorizationSource.Kind` (`.folder` / `.collection`)
+- Variable scope: `VariableScope` (was `RequestVariableScope`), transient inspection model, never persisted; precedence workspace → collection → environment
+- Header: `HTTPHeader` for both request rows (persisted, `isEnabled`) and response/console display (transient)
+- Tabs: `OpenTab` (`.collection` is the collection variables editor - name kept for stored-tab compatibility), `SidebarTab`, `DetailSection`
+- Unsaved edits: pending snapshots in `AppStore` mirrored to `drafts.json` as `VaultDrafts`; structural changes (rename/add/delete) persist immediately
 
 ## Vault & Storage
 

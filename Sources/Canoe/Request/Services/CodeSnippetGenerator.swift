@@ -50,9 +50,9 @@ enum CodeSnippetGenerator {
     }
 
     static func generate(
-        request: RequestItem,
+        request: Request,
         variables: [String: String],
-        authorization: RequestAuthorization,
+        authorization: Authorization,
         language: CodeSnippetLanguage
     ) -> String {
         guard let prepared = prepare(request: request, variables: variables, authorization: authorization) else {
@@ -75,9 +75,9 @@ enum CodeSnippetGenerator {
     // MARK: - Resolution (mirrors HTTPClient.send)
 
     private static func prepare(
-        request: RequestItem,
+        request: Request,
         variables: [String: String],
-        authorization: RequestAuthorization
+        authorization: Authorization
     ) -> Prepared? {
         let resolvedURLString = VariableResolver.resolve(request.urlString, variables: variables)
             .trimmingCharacters(in: .whitespacesAndNewlines)

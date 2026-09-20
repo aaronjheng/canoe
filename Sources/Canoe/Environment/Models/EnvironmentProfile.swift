@@ -3,7 +3,7 @@ import Foundation
 /// A named set of variables that can be substituted into requests using
 /// the `{{variable}}` syntax. Persisted as one JSON file per environment.
 /// Environments are workspace-scoped: each belongs to exactly one workspace.
-struct EnvProfile: Identifiable, Codable, Hashable, Sendable {
+struct EnvironmentProfile: Identifiable, Codable, Hashable, Sendable {
     var id: UUID = UUID()
     var name: String = "New Environment"
     var orderIndex: Int = 0
@@ -31,3 +31,5 @@ struct EnvProfile: Identifiable, Codable, Hashable, Sendable {
         variables.resolvingDictionary()
     }
 }
+/// Transition alias for the pre-rename environment name. Remove once all call sites use `EnvironmentProfile` directly.
+typealias EnvProfile = EnvironmentProfile

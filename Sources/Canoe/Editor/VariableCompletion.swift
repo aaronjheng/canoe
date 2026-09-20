@@ -8,7 +8,7 @@ struct VariableSuggestion: Identifiable, Hashable, Sendable {
     let name: String
     /// Scope that wins resolution for this key; nil when derived from a
     /// plain resolved dictionary, which carries no scope metadata.
-    let scopeKind: RequestVariableScope.Kind?
+    let scopeKind: VariableScope.Kind?
     let scopeName: String?
     let isSecret: Bool
 
@@ -21,7 +21,7 @@ extension VariableSuggestion {
     /// in several scopes appears once, attributed to the scope whose value
     /// would win. Disabled rows and blank keys never resolve, so suggesting
     /// them would produce red placeholders - they are excluded.
-    static func suggestions(from scopes: [RequestVariableScope]) -> [VariableSuggestion] {
+    static func suggestions(from scopes: [VariableScope]) -> [VariableSuggestion] {
         var byName: [String: VariableSuggestion] = [:]
         for scope in scopes {
             for variable in scope.variables where variable.isEnabled {

@@ -58,7 +58,7 @@ struct VariablesSidebarView: View {
         filter.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func requestContent(for request: RequestItem) -> some View {
+    private func requestContent(for request: Request) -> some View {
         let scopes = store.variableScopesForRequest(request)
         let displayScopes = Array(scopes.reversed())
         let usedKeys = Set(store.placeholdersUsedByRequest(request))
@@ -151,7 +151,7 @@ struct VariablesSidebarView: View {
     /// For each key, the highest-precedence scope that defines it (the scope
     /// whose value actually wins). Scopes arrive lowest-first, so walking
     /// upward lets a higher scope overwrite a lower one.
-    private func overrideLabels(for scope: RequestVariableScope, in scopes: [RequestVariableScope]) -> [String: String] {
+    private func overrideLabels(for scope: VariableScope, in scopes: [VariableScope]) -> [String: String] {
         guard let index = scopes.firstIndex(where: { $0.id == scope.id }) else { return [:] }
         var labels: [String: String] = [:]
         for higher in scopes.dropFirst(index + 1) {
@@ -164,7 +164,7 @@ struct VariablesSidebarView: View {
         return labels
     }
 
-    private func openEditor(for scope: RequestVariableScope) {
+    private func openEditor(for scope: VariableScope) {
         guard let ownerID = scope.ownerID else { return }
         switch scope.kind {
         case .workspace: store.openWorkspaceVariables(ownerID)
@@ -184,9 +184,9 @@ struct VariablesSidebarView: View {
         usedKeys: Set<String>,
         resolvedVars: [String: String],
         blocked: Set<String>,
-        scopes: [RequestVariableScope]
+        scopes: [VariableScope]
     ) -> [ResolvedEntry] {
-        var winners: [String: (variable: Variable, source: RequestVariableScope.Kind)] = [:]
+        var winners: [String: (variable: Variable, source: VariableScope.Kind)] = [:]
         var definitionCounts: [String: Int] = [:]
         for scope in scopes.reversed() {
             var scopeWinners: [String: Variable] = [:]
@@ -213,7 +213,7 @@ struct VariablesSidebarView: View {
             .sorted { $0.key < $1.key }
     }
 
-    private func totalVisibleRows(in scopes: [RequestVariableScope]) -> Int {
+    private func totalVisibleRows(in scopes: [VariableScope]) -> Int {
         guard !query.isEmpty else { return 0 }
         return scopes.reduce(0) { count, scope in
             guard scope.ownerID != nil else { return count }
@@ -236,7 +236,7 @@ private func variableMatchesFilter(_ variable: Variable, query: String) -> Bool 
 /// actionable link.
 private struct ScopeSection: View {
     @Environment(AppStore.self) private var store
-    let scope: RequestVariableScope
+    let scope: VariableScope
     let query: String
     let usedKeys: Set<String>
     let overrideLabels: [String: String]
@@ -552,7 +552,7 @@ private struct ResolvedEntry: Identifiable {
     let key: String
     let value: String
     let variable: Variable
-    let source: RequestVariableScope.Kind?
+    let source: VariableScope.Kind?
 
     var id: String { key }
 }

@@ -7,8 +7,8 @@ struct ResponseViewerView: View {
     @State private var wordWrap = true
     @State private var headerFilter = ""
     @State private var responseSection: ResponseSection = .body
-    @State private var headerSort: [KeyPathComparator<HTTPHeaderField>] = []
-    @State private var headerSelection: HTTPHeaderField.ID?
+    @State private var headerSort: [KeyPathComparator<HTTPHeader>] = []
+    @State private var headerSelection: HTTPHeader.ID?
     /// Render cache keyed by response + body mode (see refreshBodyRender).
     @State private var bodyRenderKey = ""
     @State private var bodyRenderDisplay = BodyDisplay(text: "", totalCount: nil, isJSON: false)

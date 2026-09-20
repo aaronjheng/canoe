@@ -9,7 +9,7 @@ struct FolderEditSheet: View {
     let collection: Collection
     let folder: Folder
 
-    @State private var type: RequestAuthType
+    @State private var type: AuthType
     @State private var username: String
     @State private var password: String
     @State private var token: String
@@ -25,11 +25,11 @@ struct FolderEditSheet: View {
 
     /// The collection's settings, which this folder inherits when its type
     /// stays on inherit (the folder's parent chain ends here).
-    private var inheritedSource: AuthorizationInheritanceSource? {
-        AuthorizationInheritanceSource(
+    private var inheritedSource: AuthorizationSource? {
+        AuthorizationSource(
             ownerID: collection.id,
             ownerName: collection.name,
-            isFolder: false,
+            kind: .collection,
             authorization: collection.authorization
         )
     }
@@ -56,24 +56,24 @@ struct FolderEditSheet: View {
 
     /// Completion candidates with scope metadata for `{{` auto-completion.
     private var suggestions: [VariableSuggestion] {
-        var scopes: [RequestVariableScope] = []
+        var scopes: [VariableScope] = []
         if let workspace = collectionWorkspace {
             scopes.append(
-                RequestVariableScope(
+                VariableScope(
                     kind: .workspace, ownerID: workspace.id,
                     ownerName: workspace.name, variables: workspace.variables
                 )
             )
         }
         scopes.append(
-            RequestVariableScope(
+            VariableScope(
                 kind: .collection, ownerID: collection.id,
                 ownerName: collection.name, variables: collection.variables
             )
         )
         if let environment = store.activeEnvironment {
             scopes.append(
-                RequestVariableScope(
+                VariableScope(
                     kind: .environment, ownerID: environment.id,
                     ownerName: environment.name, variables: environment.variables
                 )
@@ -122,7 +122,7 @@ struct FolderEditSheet: View {
                 Button("Save") {
                     store.updateFolderAuthorization(
                         folder.id, in: collection.id,
-                        authorization: RequestAuthorization(
+                        authorization: Authorization(
                             type: type, username: username, password: password, token: token
                         )
                     )

@@ -5,7 +5,7 @@ import SwiftUI
 /// label-left / field-right. Values support `{{variables}}` and are resolved
 /// on send; a manually set Authorization header always wins over this helper.
 struct AuthEditor: View {
-    @Binding var request: RequestItem
+    @Binding var request: Request
     @Environment(AppStore.self) private var store
     @State private var folderEditTarget: FolderEditTarget?
 
@@ -21,14 +21,14 @@ struct AuthEditor: View {
 
     /// The nearest ancestor (Request → Folder → Collection) whose settings
     /// the request inherits, when its type is inherit.
-    private var inheritanceSource: AuthorizationInheritanceSource? {
-        store.authorizationInheritanceSource(for: request)
+    private var inheritanceSource: AuthorizationSource? {
+        store.authorizationSource(for: request)
     }
 
     /// "Edit in Parent": the folder's sheet, or the collection editor tab.
     private func editInParent() {
         guard let source = inheritanceSource else { return }
-        if source.isFolder {
+        if source.kind == .folder {
             guard let collection = store.collectionForRequest(request),
                 let folder = collection.folders.first(where: { $0.id == source.ownerID })
             else { return }
@@ -68,7 +68,7 @@ struct FolderEditTarget: Identifiable {
 /// the helper type; the other renders its fields - or, for the inherit type,
 /// a read-only echo of the settings the chain resolves to (Postman-style).
 struct AuthorizationForm: View {
-    @Binding var type: RequestAuthType
+    @Binding var type: AuthType
     @Binding var username: String
     @Binding var password: String
     @Binding var token: String
@@ -78,12 +78,12 @@ struct AuthorizationForm: View {
     let suggestions: [VariableSuggestion]
     /// When the type is inherit: the nearest ancestor's settings, echoed
     /// read-only with an "Inherited" badge (nil shows a generic note).
-    var inheritedSource: AuthorizationInheritanceSource?
+    var inheritedSource: AuthorizationSource?
     /// Action for the echo's "Edit in Parent" shortcut.
     var onEditInParent: (() -> Void)?
     /// Types offered in the picker. The collection is the top of the
     /// inheritance chain, so (Postman-style) it is not offered inherit there.
-    var availableTypes: [RequestAuthType] = RequestAuthType.allCases
+    var availableTypes: [AuthType] = AuthType.allCases
     /// Focus mirrors for the bordered fields below: the AppKit-backed editors
     /// report via `onFocusChange`, the SecureField via `@FocusState`. Without
     /// these the shared accent ring never lights up here.
@@ -208,12 +208,12 @@ struct AuthorizationForm: View {
                         )
                         .buttonStyle(IconButtonStyle())
                         .foregroundStyle(AppColor.accent)
-                        .help(source.isFolder ? "Open this folder's settings" : "Open the collection editor")
+                        .help(source.kind == .folder ? "Open this folder's settings" : "Open the collection editor")
                     }
                 }
                 switch source.authorization.type {
                 case .basic:
-                    echoRow("Auth type") { echoField { Text(RequestAuthType.basic.label) } }
+                    echoRow("Auth type") { echoField { Text(AuthType.basic.label) } }
                     echoRow("Username") {
                         echoField {
                             VariableHighlightEditor(
@@ -231,7 +231,7 @@ struct AuthorizationForm: View {
                         }
                     }
                 case .bearer:
-                    echoRow("Auth type") { echoField { Text(RequestAuthType.bearer.label) } }
+                    echoRow("Auth type") { echoField { Text(AuthType.bearer.label) } }
                     echoRow("Token") {
                         echoField {
                             VariableHighlightEditor(
@@ -243,7 +243,7 @@ struct AuthorizationForm: View {
                         }
                     }
                 case .none, .inherit:
-                    echoRow("Auth type") { echoField { Text(RequestAuthType.none.label) } }
+                    echoRow("Auth type") { echoField { Text(AuthType.none.label) } }
                     Text("\"\(source.ownerName)\" has no Authorization configured; requests under it send without one.")
                         .font(.callout)
                         .foregroundStyle(.secondary)

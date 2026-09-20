@@ -317,7 +317,7 @@ private struct ConsoleEntryDetail: View {
             .foregroundStyle(.secondary)
     }
 
-    private func headerList(_ headers: [HTTPHeaderField]) -> some View {
+    private func headerList(_ headers: [HTTPHeader]) -> some View {
         VStack(alignment: .leading, spacing: AppSpacing.xxSmall) {
             ForEach(headers) { header in
                 HStack(alignment: .top, spacing: 0) {

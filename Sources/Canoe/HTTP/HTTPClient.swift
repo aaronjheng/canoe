@@ -16,7 +16,7 @@ enum HTTPClientError: Error, LocalizedError {
     }
 }
 
-/// Executes a `RequestItem` (with variables resolved) using URLSession async
+/// Executes a `Request` (with variables resolved) using URLSession async
 /// and returns a transient `ResponseModel`.
 enum HTTPClient {
     /// Strips credentials when a redirect leaves the original host (or
@@ -61,9 +61,9 @@ enum HTTPClient {
     /// inherits - see `AppStore.authorizationForRequest`); a manually set
     /// Authorization header always wins over the helper.
     static func send(
-        request: RequestItem,
+        request: Request,
         variables: [String: String],
-        authorization: RequestAuthorization,
+        authorization: Authorization,
         onRequest: (@Sendable (URLRequest) -> Void)? = nil
     ) async throws -> ResponseModel {
         let resolvedURLString = VariableResolver.resolve(request.urlString, variables: variables)
@@ -165,9 +165,9 @@ enum HTTPClient {
 
         // `allHeaderFields` is a dictionary: iterate sorted so the stored
         // header order is deterministic across runs instead of hash order.
-        let headers = http.allHeaderFields.compactMap { (key, value) -> HTTPHeaderField? in
+        let headers = http.allHeaderFields.compactMap { (key, value) -> HTTPHeader? in
             guard let key = key as? String, let value = value as? String else { return nil }
-            return HTTPHeaderField(key: key, value: value)
+            return HTTPHeader(key: key, value: value)
         }
         .sorted {
             let order = $0.key.localizedCaseInsensitiveCompare($1.key)
@@ -213,7 +213,7 @@ enum HTTPClient {
         return data
     }
 
-    private static func buildBody(for request: RequestItem, variables: [String: String]) throws -> BuiltBody? {
+    private static func buildBody(for request: Request, variables: [String: String]) throws -> BuiltBody? {
         switch request.requestBodyType {
         case .none:
             return nil

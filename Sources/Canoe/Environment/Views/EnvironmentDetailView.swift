@@ -5,10 +5,10 @@ import SwiftUI
 /// "New Environment" creates a fresh one and opens it in a tab.
 struct EnvironmentDetailView: View {
     @Environment(AppStore.self) private var store
-    @State private var draft: EnvProfile
+    @State private var draft: EnvironmentProfile
     @FocusState private var isNameFocused: Bool
 
-    init(environment: EnvProfile) {
+    init(environment: EnvironmentProfile) {
         _draft = State(initialValue: environment)
     }
 
@@ -68,7 +68,7 @@ struct EnvironmentDetailView: View {
 
     /// The live environment: what the vault holds right now for this
     /// editor's id (see the adoption `onChange` above).
-    private var liveEnvironment: EnvProfile? {
+    private var liveEnvironment: EnvironmentProfile? {
         store.vault.environments.first(where: { $0.id == draft.id })
     }
 
@@ -91,17 +91,17 @@ struct EnvironmentDetailView: View {
     }
 
     private var suggestions: [VariableSuggestion] {
-        var scopes: [RequestVariableScope] = []
+        var scopes: [VariableScope] = []
         if let workspace = draftWorkspace {
             scopes.append(
-                RequestVariableScope(
+                VariableScope(
                     kind: .workspace, ownerID: workspace.id,
                     ownerName: workspace.name, variables: workspace.variables
                 )
             )
         }
         scopes.append(
-            RequestVariableScope(
+            VariableScope(
                 kind: .environment, ownerID: draft.id,
                 ownerName: draft.name, variables: draft.variables
             )

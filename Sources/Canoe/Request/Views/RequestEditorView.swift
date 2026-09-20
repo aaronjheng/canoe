@@ -6,9 +6,9 @@ import SwiftUI
 /// (Params / Headers / Body) and the matching editor below.
 struct RequestEditorView: View {
     @Environment(AppStore.self) private var store
-    let request: RequestItem
+    let request: Request
 
-    @State private var draft: RequestItem
+    @State private var draft: Request
     @State private var section: RequestSection = .params
 
     enum RequestSection: String, CaseIterable, Identifiable {
@@ -19,7 +19,7 @@ struct RequestEditorView: View {
         var id: String { rawValue }
     }
 
-    init(request: RequestItem) {
+    init(request: Request) {
         self.request = request
         _draft = State(initialValue: request)
     }
@@ -35,7 +35,7 @@ struct RequestEditorView: View {
         draft.headers.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count
     }
 
-    /// Shown on the Authorization tab. Unlike `RequestItem.hasAuthConfigured`
+    /// Shown on the Authorization tab. Unlike `Request.hasAuthConfigured`
     /// this sees inherited settings (what HTTPClient actually sends) and a
     /// manually set Authorization header, which always wins over the helper.
     private var isAuthConfigured: Bool {

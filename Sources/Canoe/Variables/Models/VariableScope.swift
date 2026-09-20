@@ -1,15 +1,20 @@
 import Foundation
 
-/// One scope of variables that applies to a request, as shown in the
+/// One variable scope that applies to a request, as shown in the
 /// "Variables in Request" inspector: the owning workspace, collection, or
-/// environment together with its raw (unmerged) variables.
-struct RequestVariableScope: Identifiable, Hashable, Sendable {
+/// environment together with its raw (unmerged) variables. Scopes are
+/// transient inspection models - they are never persisted.
+/// Precedence (low to high): workspace → collection → environment.
+struct VariableScope: Identifiable, Hashable, Sendable {
     /// Which layer of the Postman-style hierarchy the variables come from.
     /// `rawValue` doubles as the display label.
     enum Kind: String, Hashable, Sendable {
         case workspace = "Workspace"
         case collection = "Collection"
         case environment = "Environment"
+
+        /// Display label for the inspector section header.
+        var label: String { rawValue }
 
         var systemImage: String {
             switch self {
@@ -30,5 +35,8 @@ struct RequestVariableScope: Identifiable, Hashable, Sendable {
     /// can show why a variable does not resolve.
     let variables: [Variable]
 
-    var id: String { "\(kind.rawValue)-\(ownerID?.uuidString ?? "none")" }
+    var id: String { "\(kind.label)-\(ownerID?.uuidString ?? "none")" }
 }
+
+/// Transition alias for the pre-rename scope name. Remove once all call sites use `VariableScope` directly.
+typealias RequestVariableScope = VariableScope

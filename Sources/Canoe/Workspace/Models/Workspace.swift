@@ -12,12 +12,6 @@ struct Workspace: Identifiable, Codable, Hashable, Sendable {
     var createdAt: Date = Date()
     var variables: [Variable] = []
 
-    init(id: UUID = UUID(), name: String = "My Workspace", orderIndex: Int = 0) {
-        self.id = id
-        self.name = name
-        self.orderIndex = orderIndex
-    }
-
     enum CodingKeys: String, CodingKey {
         case id
         case name

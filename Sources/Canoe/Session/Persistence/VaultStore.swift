@@ -2,23 +2,6 @@ import AppKit
 import Foundation
 import Observation
 
-/// Unsaved edits mirrored to `drafts.json` so they survive relaunches
-/// without being written into the saved entity files. Keys are UUID strings
-/// (JSON objects need string keys).
-struct VaultDrafts: Codable {
-    var requests: [String: RequestItem] = [:]
-    var environments: [String: EnvProfile] = [:]
-    var workspaceVariables: [String: [Variable]] = [:]
-    var collectionVariables: [String: [Variable]] = [:]
-    var collectionAuthorizations: [String: RequestAuthorization] = [:]
-
-    var isEmpty: Bool {
-        requests.isEmpty && environments.isEmpty
-            && workspaceVariables.isEmpty && collectionVariables.isEmpty
-            && collectionAuthorizations.isEmpty
-    }
-}
-
 /// Where the synced vault files live. Drafts (`drafts.json`) and
 /// `settings.json` are always machine-local regardless of this choice.
 enum VaultLocation: String, Sendable {
@@ -48,7 +31,7 @@ final class VaultStore {
 
     var workspaces: [Workspace] = []
     var collections: [Collection] = []
-    var environments: [EnvProfile] = []
+    var environments: [EnvironmentProfile] = []
     var config = VaultConfig()
     var vaultURL: URL?
     var isReady = false
@@ -95,7 +78,7 @@ final class VaultStore {
         return workspaces.first { $0.id == id }
     }
 
-    var activeEnvironment: EnvProfile? {
+    var activeEnvironment: EnvironmentProfile? {
         guard let id = config.activeEnvironmentID else { return nil }
         return environments.first { $0.id == id }
     }
@@ -110,7 +93,7 @@ final class VaultStore {
     }
 
     /// Environments belonging to the active workspace.
-    var activeWorkspaceEnvironments: [EnvProfile] {
+    var activeWorkspaceEnvironments: [EnvironmentProfile] {
         guard let activeID = activeWorkspace?.id else { return [] }
         return
             environments
@@ -246,7 +229,7 @@ final class VaultStore {
 
             async let loadedWorkspacesTask = loadItems(Workspace.self, from: workspaceFiles)
             async let loadedCollectionsTask = loadItems(Collection.self, from: collectionFiles)
-            async let loadedEnvironmentsTask = loadItems(EnvProfile.self, from: envFiles)
+            async let loadedEnvironmentsTask = loadItems(EnvironmentProfile.self, from: envFiles)
             let (loadedWorkspaces, loadedCollections, loadedEnvironments) = await (
                 loadedWorkspacesTask, loadedCollectionsTask, loadedEnvironmentsTask
             )
@@ -277,7 +260,7 @@ final class VaultStore {
             // later, so legacy files carry no workspaceID. Attach them to the
             // active (or first) workspace and re-save with the scope.
             let legacyScopeTarget = config.activeWorkspaceID ?? workspaces.first?.id
-            var legacyEnvironments: [EnvProfile] = []
+            var legacyEnvironments: [EnvironmentProfile] = []
             for index in environments.indices where environments[index].workspaceID == nil {
                 environments[index].workspaceID = legacyScopeTarget
                 legacyEnvironments.append(environments[index])
@@ -411,7 +394,7 @@ final class VaultStore {
 
     // MARK: - Environment persistence
 
-    func saveEnvironment(_ environment: EnvProfile) async {
+    func saveEnvironment(_ environment: EnvironmentProfile) async {
         guard let environmentsDirectory else { return }
         let file = environmentsDirectory.appendingPathComponent("\(environment.id.uuidString).json")
         do {
@@ -686,7 +669,7 @@ final class VaultStore {
                 fields: ["version": version.localizedName ?? "unknown"])
             return
         }
-        guard var environment = try? JSONDecoder.iso.decode(EnvProfile.self, from: data) else {
+        guard var environment = try? JSONDecoder.iso.decode(EnvironmentProfile.self, from: data) else {
             AppLogger.error(
                 "Could not decode iCloud conflict version", category: "Vault",
                 fields: ["version": version.localizedName ?? "unknown"])

@@ -4,7 +4,7 @@ import Foundation
 struct ResponseModel: Identifiable, Sendable {
     let id = UUID()
     let statusCode: Int
-    let headers: [HTTPHeaderField]
+    let headers: [HTTPHeader]
     let body: Data
     let duration: TimeInterval
     let timestamp: Date

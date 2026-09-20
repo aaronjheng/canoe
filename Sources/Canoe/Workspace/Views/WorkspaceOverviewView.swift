@@ -45,7 +45,7 @@ struct WorkspaceOverviewView: View {
             .sorted { ($0.orderIndex, $0.id.uuidString) < ($1.orderIndex, $1.id.uuidString) }
     }
 
-    private var liveEnvironments: [EnvProfile] {
+    private var liveEnvironments: [EnvironmentProfile] {
         store.vault.environments
             .filter { $0.workspaceID == workspace.id }
             .sorted { ($0.orderIndex, $0.id.uuidString) < ($1.orderIndex, $1.id.uuidString) }

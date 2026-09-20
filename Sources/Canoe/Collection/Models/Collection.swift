@@ -1,6 +1,6 @@
 import Foundation
 
-/// A folder that groups related requests. Persisted as one JSON file per
+/// A collection groups related requests. Persisted as one JSON file per
 /// collection (including its folders, requests, and variables) inside the
 /// vault. Collection variables apply to every request it contains, losing
 /// only to environment variables of the same name (Postman-style scoping).
@@ -13,11 +13,11 @@ struct Collection: Identifiable, Codable, Hashable, Sendable {
     var orderIndex: Int = 0
     var createdAt: Date = Date()
     var folders: [Folder] = []
-    var requests: [RequestItem] = []
+    var requests: [Request] = []
     var variables: [Variable] = []
     /// Postman-style Authorization helper inherited by requests set to the
     /// inherit type. A manually set Authorization header always wins.
-    var authorization: RequestAuthorization = RequestAuthorization()
+    var authorization: Authorization = Authorization()
 
     init(
         id: UUID = UUID(),
@@ -55,8 +55,8 @@ extension Collection {
         orderIndex = try container.decodeIfPresent(Int.self, forKey: .orderIndex) ?? 0
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         folders = try container.decodeIfPresent([Folder].self, forKey: .folders) ?? []
-        requests = try container.decodeIfPresent([RequestItem].self, forKey: .requests) ?? []
+        requests = try container.decodeIfPresent([Request].self, forKey: .requests) ?? []
         variables = try container.decodeIfPresent([Variable].self, forKey: .variables) ?? []
-        authorization = try container.decodeIfPresent(RequestAuthorization.self, forKey: .authorization) ?? RequestAuthorization()
+        authorization = try container.decodeIfPresent(Authorization.self, forKey: .authorization) ?? Authorization()
     }
 }

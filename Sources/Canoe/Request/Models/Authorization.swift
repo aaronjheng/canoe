@@ -4,7 +4,7 @@ import Foundation
 /// inheriting from the parent collection, no auth, Basic
 /// (username/password), or Bearer token. Values support `{{variable}}`
 /// substitution and are resolved at send time.
-enum RequestAuthType: String, Codable, CaseIterable, Identifiable, Sendable {
+enum AuthType: String, Codable, CaseIterable, Identifiable, Sendable {
     /// Takes the Authorization from the parent collection.
     case inherit
     case none
@@ -27,14 +27,14 @@ enum RequestAuthType: String, Codable, CaseIterable, Identifiable, Sendable {
 /// fields each helper needs. Values support `{{variable}}` substitution
 /// and are resolved when a request is sent. Requests set to the
 /// `.inherit` type take their Authorization from here.
-struct RequestAuthorization: Codable, Hashable, Sendable {
-    var type: RequestAuthType = .none
+struct Authorization: Codable, Hashable, Sendable {
+    var type: AuthType = .none
     var username: String = ""
     var password: String = ""
     var token: String = ""
 
     init(
-        type: RequestAuthType = .none,
+        type: AuthType = .none,
         username: String = "",
         password: String = "",
         token: String = ""
@@ -47,7 +47,7 @@ struct RequestAuthorization: Codable, Hashable, Sendable {
 
     /// Lifts a request's stored flat fields into the shared shape, for
     /// send-time resolution of requests that do not inherit.
-    init(from request: RequestItem) {
+    init(from request: Request) {
         self.init(
             type: request.requestAuthType == .inherit ? .none : request.requestAuthType,
             username: request.authUsername,
@@ -70,10 +70,21 @@ struct RequestAuthorization: Codable, Hashable, Sendable {
 /// request's Authorization: Request → Folder → Collection, first level whose
 /// settings are not set to inherit. Names the owner so the UI can say where
 /// the settings come from.
-struct AuthorizationInheritanceSource: Sendable {
+struct AuthorizationSource: Sendable {
+    /// Which level of the hierarchy provides the settings.
+    enum Kind: Sendable {
+        case folder
+        case collection
+    }
+
     let ownerID: UUID
     let ownerName: String
-    /// True when the source is a folder, false when it is the collection.
-    let isFolder: Bool
-    let authorization: RequestAuthorization
+    let kind: Kind
+    let authorization: Authorization
 }
+
+/// Transition aliases for the pre-rename auth names. Remove once all call
+/// sites use `AuthType` / `Authorization` / `AuthorizationSource` directly.
+typealias RequestAuthType = AuthType
+typealias RequestAuthorization = Authorization
+typealias AuthorizationInheritanceSource = AuthorizationSource
