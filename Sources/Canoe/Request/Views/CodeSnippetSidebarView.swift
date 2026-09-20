@@ -20,10 +20,8 @@ struct CodeSnippetSidebarView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider()
             if store.selectedRequest != nil {
                 pickerBar
-                Divider()
                 codeArea
             } else {
                 emptyState
