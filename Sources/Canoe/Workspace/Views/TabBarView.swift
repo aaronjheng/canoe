@@ -10,6 +10,20 @@ struct TabBarView: View {
     @State private var hoveredTab: OpenTab?
     /// Which pill is being drag-reordered (see the per-pill onDrop).
     @State private var draggingTab: OpenTab?
+    /// Which pill was just dropped and is still flying its ghost into its
+    /// slot (pill hidden until the ghost lands, see `settleDrag`). Split
+    /// from `draggingTab` so a grab during the settle animation finalizes
+    /// it instantly instead of inheriting its state.
+    @State private var settlingTab: OpenTab?
+    /// Drag ghost state: the lifted pill's center in bar-local coordinates
+    /// (nil = no ghost), the grab offset captured at lift-off (cursor point
+    /// minus the pill's top-left corner, global space), the pill's frame
+    /// size, and a generation token so a settle scheduled by an earlier
+    /// drag can't tear down a later one of the same tab.
+    @State private var ghostCenter: CGPoint?
+    @State private var dragGrabOffset: CGSize = .zero
+    @State private var dragPillSize: CGSize?
+    @State private var dragGeneration = 0
     /// Reference geometry + hosting window for the double-click monitor.
     @State private var stripGeometry = TabStripGeometryBox()
     @State private var doubleClickMonitor: Any?
@@ -41,24 +55,79 @@ struct TabBarView: View {
                             // item-drag delays every click on the pill
                             // (NSItemProvider session setup), which read as
                             // a huge lag on tab switching. A thresholded
-                            // DragGesture keeps clicks instant; crossing a
-                            // pill boundary slides the tab live.
-                            .gesture(
-                                DragGesture(minimumDistance: 8, coordinateSpace: .named(Self.pillSpace))
+                            // high-priority DragGesture keeps clicks instant
+                            // (below the drag threshold the button still
+                            // wins) while claiming the pointer the moment
+                            // the threshold is crossed - plain .gesture is
+                            // blocked by the button's press recognition
+                            // until release, which collapsed the whole drag
+                            // into one teleport-at-drop. VS Code-style
+                            // feedback: the pill is lifted out as a ghost
+                            // that follows the grab point, while the strip
+                            // slides around the gap left in its slot - the
+                            // gap is the drop indicator, and it moves live
+                            // as the cursor crosses neighbor midpoints.
+                            .highPriorityGesture(
+                                DragGesture(minimumDistance: 8, coordinateSpace: .global)
                                     .onChanged { value in
-                                        guard let pillWidth = tabWidth else { return }
                                         let tabs = store.visibleOpenTabs
                                         guard tabs.count > 1 else { return }
-                                        if draggingTab == nil { draggingTab = tab }
-                                        // Slot the cursor is over: pill width
-                                        // plus the gap-separator-gap step.
-                                        let step = pillWidth + AppSpacing.xxSmall * 2 + 1
-                                        let slot = Int((value.location.x - AppSpacing.small) / step)
-                                        store.moveTab(tab, to: slot)
+                                        if draggingTab == nil {
+                                            // A grab while the previous ghost
+                                            // is still settling into its slot:
+                                            // finalize it instantly so this
+                                            // drag starts from a clean state.
+                                            settlingTab = nil
+                                            ghostCenter = nil
+                                            dragPillSize = nil
+                                            dragGeneration += 1
+                                            draggingTab = tab
+                                            if let frame = stripGeometry.pillFrames[tab] {
+                                                dragGrabOffset = CGSize(
+                                                    width: value.startLocation.x - frame.minX,
+                                                    height: value.startLocation.y - frame.minY)
+                                                dragPillSize = frame.size
+                                            }
+                                        }
+                                        ghostCenter = ghostCenter(at: value.location)
+                                        // Slot the cursor is over: the count of
+                                        // neighbor pills left of the cursor, so
+                                        // crossing a pill's midpoint slots the
+                                        // drag after it. The dragged pill's own
+                                        // frame is excluded - it's the gap.
+                                        let slot =
+                                            tabs
+                                            .filter { $0 != tab }
+                                            .compactMap { stripGeometry.pillFrames[$0]?.midX }
+                                            .filter { $0 < value.location.x }
+                                            .count
+                                        withAnimation(.smooth(duration: 0.2)) {
+                                            store.moveTab(tab, to: slot)
+                                        }
                                     }
-                                    .onEnded { _ in draggingTab = nil }
+                                    .onEnded { _ in settleDrag() }
                             )
-                            .opacity(draggingTab == tab ? 0.6 : 1)
+                            // Hidden while dragged or while its ghost is
+                            // still settling into the slot: the pill rides
+                            // above the strip as the ghost, and its slot
+                            // shows through as the gap marking where it will
+                            // land. Restored under the settled ghost.
+                            .opacity(draggingTab == tab || settlingTab == tab ? 0 : 1)
+                            // Landing indicator: an accent capsule on the
+                            // slot's leading edge - the exact boundary the
+                            // tab will insert at. Anchored to the hidden
+                            // pill, so it rides the same slide animation as
+                            // the gap and clears when the pill lands.
+                            // Attached after .opacity so the fade that hides
+                            // the pill doesn't dim it.
+                            .overlay(alignment: .leading) {
+                                if draggingTab == tab || settlingTab == tab {
+                                    Capsule()
+                                        .fill(AppColor.accent)
+                                        .frame(width: 3, height: 16)
+                                        .offset(x: -1)
+                                }
+                            }
                             // Global frame registry for the double-click
                             // monitor (empty-strip hit test).
                             .onGeometryChange(for: CGRect.self) { proxy in
@@ -77,12 +146,17 @@ struct TabBarView: View {
                                         && store.selectedTab != next
                                         && hoveredTab != tab
                                         && hoveredTab != next
+                                        && draggingTab != tab
+                                        && draggingTab != next
+                                        && settlingTab != tab
+                                        && settlingTab != next
                                 )
                             }
                         }
                         if let last = store.visibleOpenTabs.last {
                             TabSeparator(
                                 isVisible: store.selectedTab != last && hoveredTab != last
+                                    && draggingTab != last && settlingTab != last
                             )
                         }
                         // Postman-style: the "+" rides inline after the
@@ -101,8 +175,6 @@ struct TabBarView: View {
                     }
                     .padding(.horizontal, AppSpacing.small)
                     .padding(.vertical, AppSpacing.xSmall)
-                    // Reference space for the drag-reorder slot math.
-                    .coordinateSpace(name: Self.pillSpace)
                     // Opening a tab (or switching to one parked off-screen)
                     // must reveal it: scroll the minimum amount that brings
                     // the selected pill fully into view. `initial: true`
@@ -163,7 +235,43 @@ struct TabBarView: View {
         // The ScrollView is vertically greedy - pin the strip to its content
         // height so it never squeezes the request editor below.
         .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGRect.self) { proxy in
+            proxy.frame(in: .global)
+        } action: { frame in
+            stripGeometry.barFrame = frame
+        }
         .background(AppColor.controlBackground)
+        // VS Code-style drag ghost: the lifted pill rides above the whole
+        // bar (outside the clipping ScrollView) at the grab point, with a
+        // drop shadow to read as floating. Hit-test transparent - the
+        // active gesture owns the pointer.
+        .overlay {
+            if let tab = draggingTab ?? settlingTab, let center = ghostCenter, let size = dragPillSize {
+                TabPill(
+                    tab: tab,
+                    width: size.width,
+                    isSelected: store.selectedTab == tab,
+                    isSending: store.sendingTabs.contains(tab),
+                    isHovered: false,
+                    onHover: { _ in }
+                )
+                // Explicit size: the pill's inner frames are min-only, so a
+                // taller proposal (the .position overlay) would inflate the
+                // ghost past the gap it has to land in.
+                .frame(width: size.width, height: size.height)
+                // Opaque card backing: an unselected tab's pill fill is
+                // clear, which would leave the ghost as floating text. The
+                // strip's own background color keeps it reading as a lifted
+                // tile over whatever area the cursor crosses.
+                .background(
+                    AppColor.controlBackground,
+                    in: RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                )
+                .shadow(color: AppColor.popupShadow, radius: 10, y: 3)
+                .allowsHitTesting(false)
+                .position(x: center.x, y: center.y)
+            }
+        }
         .background {
             // ⌘1-9: jump to the Nth tab. The shortcuts live on hidden
             // buttons in the background (not the HStack): an HStack still
@@ -213,6 +321,14 @@ struct TabBarView: View {
         } message: {
             Text("Unsaved changes will be permanently discarded.")
         }
+        // Composite above the detail pane's later siblings: the drag ghost
+        // overflows the bar's bottom edge while the pointer dips into the
+        // request editor, and without this the editor (declared after the
+        // bar in detailPane's VStack) paints over the overflow - the same
+        // mechanism that pushed the tab drawer to a window-level overlay.
+        // The bar itself never overlaps its siblings, so nothing else
+        // changes visually.
+        .zIndex(1)
     }
 
     private var closeConfirmationTitle: String {
@@ -268,8 +384,42 @@ struct TabBarView: View {
         AppSpacing.small * 2 + 14
     }
 
-    /// Named coordinate space the reorder drag measures its cursor slot in.
-    private static let pillSpace = "CanoeTabPills"
+    /// Converts a global cursor point into the drag ghost's bar-local
+    /// center: the cursor minus the grab offset captured at lift-off (where
+    /// inside the pill the pointer pressed), shifted into the bar's space.
+    private func ghostCenter(at cursor: CGPoint) -> CGPoint? {
+        guard let size = dragPillSize else { return nil }
+        let bar = stripGeometry.barFrame
+        return CGPoint(
+            x: cursor.x - dragGrabOffset.width - bar.minX + size.width / 2,
+            y: cursor.y - dragGrabOffset.height - bar.minY + size.height / 2)
+    }
+
+    /// Drop: fly the ghost into the gap it will land in (the dragged pill's
+    /// slot, which its hidden frame tracks), then reveal the real pill. The
+    /// ghost ends exactly on top of the pill, so the hand-off is invisible.
+    /// The delayed clear is guarded by the tab and the generation counter so
+    /// a settle can't tear down a later drag of the same tab (a fresh grab
+    /// finalizes the settle synchronously; this task just self-destructs).
+    private func settleDrag() {
+        guard let tab = draggingTab else { return }
+        draggingTab = nil
+        settlingTab = tab
+        let bar = stripGeometry.barFrame
+        if let frame = stripGeometry.pillFrames[tab] {
+            withAnimation(.easeOut(duration: 0.12)) {
+                ghostCenter = CGPoint(x: frame.midX - bar.minX, y: frame.midY - bar.minY)
+            }
+        }
+        let generation = dragGeneration
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(130))
+            guard settlingTab == tab, dragGeneration == generation else { return }
+            settlingTab = nil
+            ghostCenter = nil
+            dragPillSize = nil
+        }
+    }
 
     /// Chrome-style new tab on double-clicking the empty part of the strip.
     /// Detected at the AppKit event level on purpose: a SwiftUI count-2 tap
@@ -798,10 +948,13 @@ private struct TabSeparator: View {
 
 /// Reference geometry + hosting window for the tab strip's double-click
 /// monitor (class, not state: updated per scroll frame without invalidating
-/// the view).
+/// the view) and for the drag ghost's global-to-bar-local conversion.
 private final class TabStripGeometryBox {
     var window: NSWindow?
     var stripFrame: CGRect = .zero
+    /// The whole tab bar (tab strip + trailing controls), the coordinate
+    /// base the drag ghost's center is expressed in.
+    var barFrame: CGRect = .zero
     var pillFrames: [OpenTab: CGRect] = [:]
     /// The inline "+" button: not a pill, but a double-click on it must not
     /// be treated as "empty strip" and mint a second request.
