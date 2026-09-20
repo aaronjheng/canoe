@@ -159,9 +159,17 @@ struct TabBarView: View {
                 store.toggleCodeSnippetSidebar()
             }
             .padding(.trailing, AppSpacing.small)
+        }
+        // The ScrollView is vertically greedy - pin the strip to its content
+        // height so it never squeezes the request editor below.
+        .fixedSize(horizontal: false, vertical: true)
+        .background(AppColor.controlBackground)
+        .background {
             // ⌘1-9: jump to the Nth tab. The shortcuts live on hidden
-            // buttons inside the strip, so they exist exactly while tabs
-            // are open (empty strip - no shortcuts to fight with).
+            // buttons in the background (not the HStack): an HStack still
+            // gaps zero-size children, so nine of them in a row ate ~36pt
+            // of trailing blank. They exist exactly while tabs are open
+            // (empty strip - no shortcuts to fight with).
             ForEach(1...9, id: \.self) { position in
                 Button("Select Tab \(position)") {
                     store.selectTab(atPosition: position)
@@ -172,10 +180,6 @@ struct TabBarView: View {
                 .accessibilityHidden(true)
             }
         }
-        // The ScrollView is vertically greedy - pin the strip to its content
-        // height so it never squeezes the request editor below.
-        .fixedSize(horizontal: false, vertical: true)
-        .background(AppColor.controlBackground)
         .background(TabStripWindowCapture { stripGeometry.window = $0 })
         .onAppear {
             store.pruneDanglingTabs()
