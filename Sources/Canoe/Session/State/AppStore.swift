@@ -50,6 +50,7 @@ final class AppStore {
     enum OpenTabStateKeys {
         static let openTabs = "openTabs"
         static let selectedTab = "selectedTab"
+        static let inspectorWidth = "inspectorWidth"
     }
 
     init() {
@@ -77,6 +78,16 @@ final class AppStore {
                 selectedTab = tab
             }
         }
+        let savedWidth = defaults.double(forKey: OpenTabStateKeys.inspectorWidth)
+        if savedWidth > 0 {
+            inspectorWidth = min(max(savedWidth, AppSize.inspectorMinWidth), AppSize.inspectorMaxWidth)
+        }
+    }
+
+    /// Persists the dragged inspector width (called on drag end, not per
+    /// frame, so typing-speed writes never burst).
+    func saveInspectorWidth() {
+        UserDefaults.standard.set(inspectorWidth, forKey: OpenTabStateKeys.inspectorWidth)
     }
 
     /// Whether the left sidebar (collections/history) is shown. Toggled from
@@ -90,6 +101,11 @@ final class AppStore {
     /// Whether the "Code Snippet" inspector is shown on the right. The right
     /// edge hosts one inspector at a time - opening one closes the other.
     var showCodeSnippetSidebar = false
+
+    /// Width of the right inspector, adjustable by dragging its leading
+    /// edge (both inspector panels share it). Persisted across launches
+    /// like the other window chrome.
+    var inspectorWidth: CGFloat = AppSize.inspectorWidth
 
     /// Open tabs (requests and/or environments) in the workspace detail area.
     var openTabs: [OpenTab] = []

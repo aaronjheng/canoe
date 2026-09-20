@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ContentView: View {
@@ -11,6 +12,8 @@ struct ContentView: View {
     /// panel: the drawer floats at window level too (see `tabDrawerOverlay`).
     @State private var isTabDrawerShown = false
     @State private var tabDrawerAnchor: Anchor<CGRect>?
+    /// Inspector width at drag start; the drag applies deltas against it.
+    @State private var inspectorDragStartWidth: CGFloat?
 
     var body: some View {
         @Bindable var store = store
@@ -115,9 +118,9 @@ struct ContentView: View {
         // Plain HSplitView instead of NavigationSplitView: the latter injects
         // an unremovable sidebar toggle into the window toolbar. The
         // "Variables in Request" inspector sits OUTSIDE the split view as a
-        // fixed-width HStack pane - a conditionally-presented HSplitView pane
-        // breaks the split view's sizing and collapses the whole layout to
-        // its ideal height.
+        // manually-resized HStack pane - a conditionally-presented HSplitView
+        // pane breaks the split view's sizing and collapses the whole layout
+        // to its ideal height.
         HStack(spacing: 0) {
             HSplitView {
                 SidebarView()
@@ -141,13 +144,60 @@ struct ContentView: View {
             if store.showVariablesSidebar {
                 Divider()
                 VariablesSidebarView()
-                    .frame(width: AppSize.inspectorWidth)
+                    .frame(width: store.inspectorWidth)
+                    .overlay(alignment: .leading) { inspectorResizeHandle }
             } else if store.showCodeSnippetSidebar {
                 Divider()
                 CodeSnippetSidebarView()
-                    .frame(width: AppSize.inspectorWidth)
+                    .frame(width: store.inspectorWidth)
+                    .overlay(alignment: .leading) { inspectorResizeHandle }
             }
         }
+    }
+
+    /// Drag handle on the inspector's leading edge (VSCode-style splitter):
+    /// drag to resize between the min/max widths, double-click to reset to
+    /// the default. The inspector sits outside the HSplitView (a
+    /// conditionally-presented split pane breaks its sizing), so the
+    /// splitter is manual.
+    private var inspectorResizeHandle: some View {
+        Color.clear
+            .frame(width: 7)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.resizeLeftRight.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .gesture(
+                // Global coordinates on purpose: the handle itself moves
+                // with the width it controls, so a local-space translation
+                // feeds back into the layout and oscillates (the tab strip
+                // and the trailing toggles jitter). Global space keeps the
+                // delta a pure function of the pointer.
+                DragGesture(minimumDistance: 2, coordinateSpace: .global)
+                    .onChanged { value in
+                        if inspectorDragStartWidth == nil {
+                            inspectorDragStartWidth = store.inspectorWidth
+                        }
+                        let start = inspectorDragStartWidth ?? store.inspectorWidth
+                        store.inspectorWidth = min(
+                            max(start - value.translation.width, AppSize.inspectorMinWidth),
+                            AppSize.inspectorMaxWidth
+                        )
+                    }
+                    .onEnded { _ in
+                        inspectorDragStartWidth = nil
+                        store.saveInspectorWidth()
+                    }
+            )
+            .onTapGesture(count: 2) {
+                store.inspectorWidth = AppSize.inspectorWidth
+                store.saveInspectorWidth()
+            }
+            .help("Drag to resize the inspector (double-click to reset)")
     }
 
     private var detailPane: some View {

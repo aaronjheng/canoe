@@ -52,6 +52,9 @@ enum AppSize {
     static let sidebarMaxWidth: CGFloat = 360
     /// Right-hand "Variables in Request" inspector (fixed width).
     static let inspectorWidth: CGFloat = 300
+    /// Drag range of the resizable right inspector.
+    static let inspectorMinWidth: CGFloat = 240
+    static let inspectorMaxWidth: CGFloat = 520
     /// Settings window sidebar column.
     static let settingsSidebarWidth: CGFloat = 215
     /// Settings window detail pane minimum width.
