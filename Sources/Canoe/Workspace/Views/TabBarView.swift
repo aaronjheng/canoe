@@ -153,15 +153,11 @@ struct TabBarView: View {
                                 )
                             }
                         }
-                        if let last = store.visibleOpenTabs.last {
-                            TabSeparator(
-                                isVisible: store.selectedTab != last && hoveredTab != last
-                                    && draggingTab != last && settlingTab != last
-                            )
-                        }
                         // Postman-style: the "+" rides inline after the
                         // last tab (inside the scroll area) instead of
-                        // camping on the trailing controls.
+                        // camping on the trailing controls. No separator
+                        // before it - the hairline read as clutter next to
+                        // the button.
                         Button("New Request Tab", systemImage: "plus") {
                             store.addRequest()
                         }
