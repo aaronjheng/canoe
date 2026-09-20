@@ -124,6 +124,7 @@ extension AppStore {
         guard vault.collections[idx].authorization != authorization else { return }
         vault.collections[idx].authorization = authorization
         pendingCollectionAuthorizations[id] = authorization
+        if previewTab == .collection(id) { previewTab = nil }
         scheduleDraftPersistence()
     }
 
@@ -138,6 +139,7 @@ extension AppStore {
         guard canonicalVariables(vault.collections[idx].variables) != canonicalVariables(variables) else { return }
         vault.collections[idx].variables = variables
         pendingCollectionVariables[id] = variables
+        if previewTab == .collection(id) { previewTab = nil }
         scheduleDraftPersistence()
     }
 
@@ -201,6 +203,8 @@ extension AppStore {
         guard let idx = vault.collections.firstIndex(where: { $0.id == id }) else { return }
         guard vault.collections[idx].name != trimmed else { return }
         vault.collections[idx].name = trimmed
+        // A rename is an edit: it pins a live preview like any other.
+        if previewTab == .collection(id) { previewTab = nil }
         let updated = vault.collections[idx]
         Task { await vault.writeCollection(persistable(updated)) }
     }

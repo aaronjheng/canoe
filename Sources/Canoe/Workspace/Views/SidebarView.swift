@@ -212,7 +212,7 @@ private struct EnvironmentRow: View {
 
     var body: some View {
         Button {
-            store.openTab(.environment(env.id))
+            store.preview(.environment(env.id))
         } label: {
             HStack(spacing: AppSpacing.xSmall) {
                 Text(env.name)
@@ -238,6 +238,11 @@ private struct EnvironmentRow: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
+        // Double-click pins the preview tab (same instant-click reasoning
+        // as the request rows).
+        .simultaneousGesture(
+            TapGesture(count: 2).onEnded { store.pin(.environment(env.id)) }
+        )
         .contextMenu {
             Button("Set Active") { store.setActiveEnvironment(env.id) }
             Button("Duplicate") { store.duplicateEnvironment(env.id) }
@@ -607,7 +612,7 @@ private struct CollectionTree: View {
                 // chevron toggles the tree. A tap on the chevron reaches the
                 // inner button alone, anywhere else opens the page.
                 Button {
-                    store.openTab(.collection(collection.id))
+                    store.preview(.collection(collection.id))
                     store.setSidebarNodeExpanded(collection.id, true)
                 } label: {
                     HStack(spacing: AppSpacing.xSmall) {
@@ -638,6 +643,11 @@ private struct CollectionTree: View {
                 .buttonStyle(.plain)
                 .onHover { isHoveringHeader = $0 }
                 .help("Open \(collection.name)")
+                // Double-click pins the preview tab (same instant-click
+                // reasoning as the request rows).
+                .simultaneousGesture(
+                    TapGesture(count: 2).onEnded { store.pin(.collection(collection.id)) }
+                )
                 .contextMenu {
                     Button("Add Request", systemImage: "plus") {
                         store.addRequest(in: collection.id)

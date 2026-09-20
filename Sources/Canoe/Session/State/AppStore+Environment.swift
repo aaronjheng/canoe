@@ -80,6 +80,8 @@ extension AppStore {
         guard vault.environments[idx] != environment else { return }
         vault.environments[idx] = environment
         pendingEnvironmentSnapshots[environment.id] = environment
+        // Editing pins a live preview tab (same rule as requests).
+        if previewTab == .environment(environment.id) { previewTab = nil }
         scheduleDraftPersistence()
     }
 

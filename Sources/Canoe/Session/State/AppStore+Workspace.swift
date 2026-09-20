@@ -151,6 +151,8 @@ extension AppStore {
         guard canonicalVariables(vault.workspaces[idx].variables) != canonicalVariables(variables) else { return }
         vault.workspaces[idx].variables = variables
         pendingWorkspaceVariables[id] = variables
+        // Editing pins a live preview tab (same rule as requests).
+        if previewTab == .workspaceVariables(id) { previewTab = nil }
         scheduleDraftPersistence()
     }
 

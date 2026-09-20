@@ -96,12 +96,11 @@ extension AppStore {
         openTab(.request(id))
     }
 
-    /// Single-clicks a sidebar request (VSCode-style preview): an already
-    /// open tab is selected; otherwise the live preview tab is reused, or a
-    /// new preview tab is opened when there is none. A dirty preview holds
+    /// Single-clicks a sidebar row (VSCode-style preview): an already open
+    /// tab is selected; otherwise the live preview tab is reused, or a new
+    /// preview tab is opened when there is none. A dirty preview holds
     /// unsaved edits, so it is pinned in place instead of replaced.
-    func previewRequest(_ id: UUID) {
-        let tab: OpenTab = .request(id)
+    func preview(_ tab: OpenTab) {
         if openTabs.contains(tab) {
             selectedTab = tab
             persistOpenTabs()
@@ -124,11 +123,15 @@ extension AppStore {
         persistOpenTabs()
     }
 
-    /// Double-clicks a sidebar request: pins the tab to the request. A live
-    /// preview of the same request is pinned in place; otherwise a pinned
-    /// tab is opened (or selected). Any other preview tab is left alone.
-    func pinRequest(_ id: UUID) {
-        let tab: OpenTab = .request(id)
+    /// Single-clicks a sidebar request (preview). See `preview(_:)`.
+    func previewRequest(_ id: UUID) {
+        preview(.request(id))
+    }
+
+    /// Double-clicks a sidebar row: pins the tab. A live preview of the same
+    /// tab is pinned in place; otherwise a pinned tab is opened (or
+    /// selected). Any other preview tab is left alone.
+    func pin(_ tab: OpenTab) {
         if previewTab == tab {
             previewTab = nil
         }
@@ -139,10 +142,9 @@ extension AppStore {
         persistOpenTabs()
     }
 
-    /// Pins a tab pill (double-clicked in the strip). No-op unless it is the
-    /// live preview tab.
-    func pinTab(_ tab: OpenTab) {
-        if previewTab == tab { previewTab = nil }
+    /// Double-clicks a sidebar request (pin). See `pin(_:)`.
+    func pinRequest(_ id: UUID) {
+        pin(.request(id))
     }
 
     /// Opens (or focuses) an environment tab.

@@ -287,7 +287,7 @@ struct TabBarView: View {
         // Double-clicking the preview pill pins it (VSCode behavior);
         // double-clicks on pinned pills are already where they belong.
         if let hit = stripGeometry.pillFrames.first(where: { $0.value.contains(point) }) {
-            store.pinTab(hit.key)
+            store.pin(hit.key)
             return true
         }
         guard stripGeometry.stripFrame.contains(point) else { return false }

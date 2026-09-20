@@ -94,7 +94,7 @@ final class AppStore {
     /// Open tabs (requests and/or environments) in the workspace detail area.
     var openTabs: [OpenTab] = []
     /// The single-click preview tab (VSCode-style): shown in italic, reused
-    /// by the next previewed request, pinned on double-click or first edit.
+    /// by the next previewed tab, pinned on double-click or first edit.
     /// Transient - never persisted; after a relaunch every tab opens pinned.
     var previewTab: OpenTab?
     /// Response/error/send state, keyed by tab so each tab keeps its own.
