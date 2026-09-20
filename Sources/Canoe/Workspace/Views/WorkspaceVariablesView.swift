@@ -23,9 +23,9 @@ struct WorkspaceVariablesView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: AppSpacing.small) {
-                Image(systemName: "square.stack.3d.up.fill")
+                Image(systemName: "curlybraces")
                     .foregroundStyle(AppColor.accent)
-                Text(draft.name)
+                Text("Variables")
                     .font(AppFont.panelTitle)
                     .lineLimit(1)
                     .truncationMode(.tail)

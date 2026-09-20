@@ -21,8 +21,6 @@ struct WorkspaceOverviewView: View {
             .padding(.horizontal, AppSpacing.medium)
             .padding(.vertical, AppSpacing.small)
 
-            Divider()
-
             ScrollView {
                 overviewStats
                     .padding(AppSpacing.medium)
