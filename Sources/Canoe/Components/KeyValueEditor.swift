@@ -80,12 +80,23 @@ struct KeyValueEditor<T: KVItem>: View {
     /// Fixed widths for the non-text columns; Key and Value split the
     /// remaining width equally, matching the header labels above. Reorder
     /// tables merge the drag grip and the checkbox into one leading column
-    /// (two icons, one cell) so the grid carries one hairline fewer.
+    /// (two icons, one cell) so the grid carries one hairline fewer; the
+    /// secret eye and the delete button merge the same way into one
+    /// trailing column.
     private let toggleColumnWidth: CGFloat = 32
     private let gripGlyphWidth: CGFloat = 14
     private let deleteColumnWidth: CGFloat = 26
     private var secretColumnWidth: CGFloat { secretKeyPath == nil ? 0 : 26 }
     private var leadingColumnWidth: CGFloat { allowsReorder ? 38 : toggleColumnWidth }
+    /// Merged trailing icon column. Measured (offscreen render, opaque
+    /// pixels, 32pt row): eye/eye.slash 13.3pt, trash 9.7pt, fitted group
+    /// with the 2pt gap 27pt. The leading column's fitted group is 28pt in
+    /// a 38pt column (5pt insets each side), so 27 + 2×5 = 37pt gives the
+    /// trailing group the identical 2pt gap and 5pt side insets.
+    /// Tables without a secret column keep the lone 26pt delete cell.
+    private var trailingColumnWidth: CGFloat {
+        secretColumnWidth > 0 ? 37 : deleteColumnWidth
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -139,7 +150,7 @@ struct KeyValueEditor<T: KVItem>: View {
                     keyFocus: .key(item.id),
                     valueFocus: .value(item.id),
                     leadingColumnWidth: leadingColumnWidth,
-                    deleteColumnWidth: deleteColumnWidth,
+                    trailingColumnWidth: trailingColumnWidth,
                     onDelete: { [id = item.id] in
                         items.removeAll { $0.id == id }
                         if ghost?.id == id { ghost = nil }
@@ -174,7 +185,7 @@ struct KeyValueEditor<T: KVItem>: View {
                 keyFocus: .ghostKey,
                 valueFocus: .ghostValue,
                 leadingColumnWidth: leadingColumnWidth,
-                deleteColumnWidth: deleteColumnWidth,
+                trailingColumnWidth: trailingColumnWidth,
                 onEditingEnded: { ghost = nil },
                 allowsReorder: allowsReorder
             )
@@ -198,9 +209,10 @@ struct KeyValueEditor<T: KVItem>: View {
     }
 
     private var headerRow: some View {
-        // Icon columns (leading checkbox/grip, secret, delete) get no header
-        // cells: empty ruled boxes read as missing labels. A single indent
-        // keeps the text labels over their columns instead.
+        // Icon columns (merged leading grip/checkbox, merged trailing
+        // eye/delete) get no header cells: empty ruled boxes read as
+        // missing labels. Indents keep the text labels over their columns
+        // instead.
         HStack(spacing: 0) {
             Color.clear.frame(width: leadingIconWidth)
             headerLabel(keyHeader)
@@ -217,10 +229,10 @@ struct KeyValueEditor<T: KVItem>: View {
         leadingColumnWidth + 1
     }
 
-    /// Reserve the same trailing columns and hairlines as the body so Key
-    /// and Value divide the same remaining width in both header and rows.
+    /// Reserve the trailing merged column and its hairline so Key and
+    /// Value divide the same remaining width in both header and rows.
     private var trailingIconWidth: CGFloat {
-        1 + (secretColumnWidth > 0 ? secretColumnWidth + 1 : 0) + deleteColumnWidth
+        1 + trailingColumnWidth
     }
 
     private func headerLabel(_ text: String) -> some View {
@@ -369,8 +381,9 @@ struct KeyValueEditor<T: KVItem>: View {
 
 // MARK: - Row
 
-/// One table row: checkbox, borderless key/value cells split by hairlines,
-/// and a delete button that only appears while hovering (Postman-style).
+/// One table row: merged leading cell (grip + checkbox), borderless
+/// key/value cells split by hairlines, and a merged trailing cell (secret
+/// eye + delete, the latter appearing only while hovering, Postman-style).
 private struct KVRow: View {
     @Binding var isEnabled: Bool
     @Binding var key: String
@@ -389,7 +402,9 @@ private struct KVRow: View {
     /// Width of the merged leading column: drag grip (when reorder is on)
     /// plus the enabled checkbox share one cell and one hairline.
     let leadingColumnWidth: CGFloat
-    let deleteColumnWidth: CGFloat
+    /// Width of the merged trailing column: secret eye (variables tables
+    /// only) plus the delete button share one cell and one hairline.
+    let trailingColumnWidth: CGFloat
     private let gripGlyphWidth: CGFloat = 14
     /// nil for real rows; the trailing ghost row reports its editing session's
     /// end through this so the table can reset the ghost buffer.
@@ -493,12 +508,7 @@ private struct KVRow: View {
                 )
             }
             verticalRule
-            if secretColumnWidth > 0 {
-                secretColumn
-                    .frame(width: secretColumnWidth)
-                verticalRule
-            }
-            deleteColumn
+            trailingColumn
         }
         .frame(height: AppSize.toolbarHeight)
         .contentShape(Rectangle())
@@ -531,10 +541,26 @@ private struct KVRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// One merged trailing cell: the secret eye (variables tables only)
+    /// and the delete button share a single column and hairline, mirroring
+    /// the merged leading grip+checkbox cell exactly: one `xxSmall`-spaced
+    /// group, fitted and centered, so the glyph gap and the side insets
+    /// match the leading column. The ghost row reserves the same width so
+    /// its cells line up with the real rows.
+    private var trailingColumn: some View {
+        HStack(spacing: AppSpacing.xxSmall) {
+            if secretColumnWidth > 0 {
+                secretCell
+            }
+            deleteCell
+        }
+        .frame(width: trailingColumnWidth)
+    }
+
     /// Eye button toggling the row's secret flag; the ghost row only
     /// reserves the space.
     @ViewBuilder
-    private var secretColumn: some View {
+    private var secretCell: some View {
         if let isSecret {
             Button {
                 isSecret.wrappedValue.toggle()
@@ -542,17 +568,18 @@ private struct KVRow: View {
                 Image(systemName: isSecret.wrappedValue ? "eye.slash" : "eye")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(maxHeight: .infinity)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(isSecret.wrappedValue ? "Hidden (secret)" : "Shown (toggle to hide)")
         } else {
             Color.clear
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
-    private var deleteColumn: some View {
+    private var deleteCell: some View {
         Group {
             if let onDelete {
                 Button {
@@ -561,7 +588,7 @@ private struct KVRow: View {
                     Image(systemName: "trash")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .frame(maxHeight: .infinity)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -570,9 +597,9 @@ private struct KVRow: View {
                 .help("Remove row")
             } else {
                 Color.clear
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .frame(width: deleteColumnWidth)
     }
 
     private var verticalRule: some View {
