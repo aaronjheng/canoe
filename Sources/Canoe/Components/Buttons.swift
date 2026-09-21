@@ -60,13 +60,17 @@ struct ToolbarButtonStyle: ButtonStyle {
 /// callers keep custom tints (accent toggles, success checkmarks). Same
 /// hover family as `ToolbarToggleButton` and the tree rows. Disabled
 /// buttons get no hover fill - a control that cannot act must not pretend
-/// it is interactive.
+/// it is interactive. Icon-only labels square into a fixed glyph box, so
+/// every hover pill is the same size (SF Symbols have varying widths);
+/// labels that carry text opt out via `iconSquare: false`.
 struct IconButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
+    var iconSquare = true
     @State private var isHovering = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .iconGlyphBox(active: iconSquare)
             .padding(AppSpacing.compact - AppSpacing.xxSmall)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
@@ -112,6 +116,33 @@ struct ToolbarToggleButton: View {
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         .help(help)
+    }
+}
+
+// MARK: - Icon glyph box
+
+/// Squares an icon-only label so every `IconButtonStyle` hover pill shares
+/// one size regardless of each SF Symbol's intrinsic width.
+private struct IconGlyphBoxModifier: ViewModifier {
+    let isActive: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isActive {
+            content.frame(
+                width: AppSize.iconButtonGlyphBox,
+                height: AppSize.iconButtonGlyphBox,
+                alignment: .center
+            )
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    fileprivate func iconGlyphBox(active: Bool) -> some View {
+        modifier(IconGlyphBoxModifier(isActive: active))
     }
 }
 

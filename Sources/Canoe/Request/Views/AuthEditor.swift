@@ -206,7 +206,7 @@ struct AuthorizationForm: View {
                                     .font(.subheadline)
                             }
                         )
-                        .buttonStyle(IconButtonStyle())
+                        .buttonStyle(IconButtonStyle(iconSquare: false))
                         .foregroundStyle(AppColor.accent)
                         .help(source.kind == .folder ? "Open this folder's settings" : "Open the collection editor")
                     }

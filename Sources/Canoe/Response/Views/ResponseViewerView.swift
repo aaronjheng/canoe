@@ -4,7 +4,7 @@ import SwiftUI
 struct ResponseViewerView: View {
     @Environment(AppStore.self) private var store
     @State private var bodyMode: BodyMode = .pretty
-    @State private var wordWrap = true
+    @State private var wordWrap = false
     @State private var headerFilter = ""
     @State private var responseSection: ResponseSection = .body
     @State private var headerSort: [KeyPathComparator<HTTPHeader>] = []
@@ -352,13 +352,23 @@ struct ResponseViewerView: View {
             .fixedSize()
             Spacer()
             HStack(spacing: AppSpacing.small) {
-                Button("Toggle Word Wrap", systemImage: "text.wordwrap") {
+                // `text.wordwrap` does not exist in this OS's SF Symbols set
+                // (the button renders an empty glyph); `arrow.turn.down.left`
+                // is the wrap-arrow editors use.
+                Button("Toggle Word Wrap", systemImage: "arrow.turn.down.left") {
                     wordWrap.toggle()
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(IconButtonStyle())
                 .foregroundStyle(wordWrap ? AppColor.accent : .secondary)
                 .help(wordWrap ? "Disable word wrap" : "Enable word wrap")
+                Button("Find in Response", systemImage: "magnifyingglass") {
+                    findVisible = true
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(IconButtonStyle())
+                .foregroundStyle(findVisible ? AppColor.accent : .secondary)
+                .help("Find in Response (⌘F)")
                 Button("Copy Body", systemImage: "doc.on.doc") {
                     copyToPasteboard(fullBodyText(response, display: display))
                 }

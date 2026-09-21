@@ -72,6 +72,10 @@ enum AppSize {
     /// Compact 16px control box in tab pills (spinner, close button) and the
     /// sidebar tree icons.
     static let compactControl: CGFloat = 16
+    /// Fixed glyph box for icon-only `IconButtonStyle` labels: wide enough
+    /// for the widest toolbar symbol at body size, so every hover pill is
+    /// identical (pill = box + 2 × (compact - xxSmall) = 26pt).
+    static let iconButtonGlyphBox: CGFloat = 18
     /// Dirty-dot diameter in tab pills and the tab-switcher rows.
     static let dirtyDot: CGFloat = 8
     /// Tab-switcher search popup width (matches the sidebar max width).

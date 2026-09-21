@@ -163,7 +163,7 @@ private struct FormDataEditor: View {
                 Label("Add Row", systemImage: "plus")
                     .foregroundStyle(.secondary)
             }
-            .buttonStyle(IconButtonStyle())
+            .buttonStyle(IconButtonStyle(iconSquare: false))
         }
     }
 }
