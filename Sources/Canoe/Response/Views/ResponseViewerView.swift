@@ -275,6 +275,37 @@ struct ResponseViewerView: View {
                     bodyToolbar(response, display: display)
                     Divider()
                     bodyScroll(display, rendered: effectiveRender, matchCount: matchCount, currentIndex: currentIndex)
+                    // ⌘F: open the find bar. Lives inside the body content, so
+                    // the shortcut exists exactly while a body is on screen.
+                    // The shortcut buttons MUST stay inside this VStack as
+                    // zero-size rows: as Group siblings of the VStack they
+                    // would each become their own flexible row under the
+                    // shared .frame(maxHeight: .infinity) below, splitting the
+                    // pane's height four ways and collapsing the body
+                    // viewport to a quarter of the response pane.
+                    Button("Find in Response") {
+                        findVisible = true
+                    }
+                    .keyboardShortcut("f", modifiers: .command)
+                    .frame(width: 0, height: 0)
+                    .opacity(0)
+                    .accessibilityHidden(true)
+                    // ⌘G / ⇧⌘G: next / previous match (VS Code convention).
+                    // No-op while find is closed (no matches counted).
+                    Button("Next Match") {
+                        stepFind(1, matchCount: matchCount)
+                    }
+                    .keyboardShortcut("g", modifiers: .command)
+                    .frame(width: 0, height: 0)
+                    .opacity(0)
+                    .accessibilityHidden(true)
+                    Button("Previous Match") {
+                        stepFind(-1, matchCount: matchCount)
+                    }
+                    .keyboardShortcut("g", modifiers: [.command, .shift])
+                    .frame(width: 0, height: 0)
+                    .opacity(0)
+                    .accessibilityHidden(true)
                 }
                 .task(id: rangesKey) {
                     guard findActive else {
@@ -297,31 +328,6 @@ struct ResponseViewerView: View {
                 .onChange(of: findQuery) { _, _ in
                     findCurrentIndex = 0
                 }
-                // ⌘F: open the find bar. Lives inside the body content, so
-                // the shortcut exists exactly while a body is on screen.
-                Button("Find in Response") {
-                    findVisible = true
-                }
-                .keyboardShortcut("f", modifiers: .command)
-                .frame(width: 0, height: 0)
-                .opacity(0)
-                .accessibilityHidden(true)
-                // ⌘G / ⇧⌘G: next / previous match (VS Code convention).
-                // No-op while find is closed (no matches counted).
-                Button("Next Match") {
-                    stepFind(1, matchCount: matchCount)
-                }
-                .keyboardShortcut("g", modifiers: .command)
-                .frame(width: 0, height: 0)
-                .opacity(0)
-                .accessibilityHidden(true)
-                Button("Previous Match") {
-                    stepFind(-1, matchCount: matchCount)
-                }
-                .keyboardShortcut("g", modifiers: [.command, .shift])
-                .frame(width: 0, height: 0)
-                .opacity(0)
-                .accessibilityHidden(true)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
