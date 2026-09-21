@@ -29,6 +29,10 @@ struct ResponseViewerView: View {
     /// it instead of rescanning a 200K body.
     @State private var findMatchRangesKey = ""
     @State private var findMatchRanges: [Range<String.Index>] = []
+    /// Whether the body scroll view has moved away from the top: drives the
+    /// toolbar/content hairline (Postman draws the same line once the
+    /// content scrolls under the toolbar).
+    @State private var isBodyScrolledPastTop = false
 
     /// Max characters rendered in the body pane. Beyond this a single SwiftUI
     /// `Text` becomes sluggish, so the view shows a prefix plus a notice.
@@ -273,7 +277,6 @@ struct ResponseViewerView: View {
                             .padding(.top, AppSpacing.xSmall)
                     }
                     bodyToolbar(response, display: display)
-                    Divider()
                     bodyScroll(display, rendered: effectiveRender, matchCount: matchCount, currentIndex: currentIndex)
                     // ⌘F: open the find bar. Lives inside the body content, so
                     // the shortcut exists exactly while a body is on screen.
@@ -404,6 +407,23 @@ struct ResponseViewerView: View {
                     .padding(AppSpacing.medium)
             }
             .background(AppColor.codeBackground)
+            // Scroll state for the toolbar/content hairline above: visible
+            // once the content has moved under the toolbar, hidden at the
+            // top (a 1pt threshold ignores float noise; bounce above the top
+            // stays hidden).
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y + geometry.contentInsets.top > 1
+            } action: { _, isPastTop in
+                isBodyScrolledPastTop = isPastTop
+            }
+            // Postman-style scrolled-under affordance: hairline plus a short
+            // shadow fading over the content. Overlaid, not laid out, so
+            // crossing the scroll threshold never shifts the content.
+            .overlay(alignment: .top) {
+                if isBodyScrolledPastTop {
+                    BodyToolbarEdgeShadow()
+                }
+            }
             // The find widget overlays the body area itself (below the
             // toolbar/banner): an ErrorBanner's dismiss stays clickable while
             // find is open.
@@ -666,5 +686,27 @@ struct ResponseViewerView: View {
         if mime.contains("html") { return "html" }
         if mime.hasPrefix("text/") { return "txt" }
         return "bin"
+    }
+}
+
+/// Postman-style scrolled-under affordance for the body toolbar: a hairline
+/// at the content's top edge plus a short shadow fading downward, so the
+/// body reads as sliding under the toolbar once it scrolls. Pure overlay -
+/// no layout impact, no hit testing.
+private struct BodyToolbarEdgeShadow: View {
+    var body: some View {
+        VStack(spacing: 0) {
+            Divider()
+            LinearGradient(
+                stops: [
+                    .init(color: .black.opacity(0.12), location: 0),
+                    .init(color: .black.opacity(0), location: 1),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 7)
+        }
+        .allowsHitTesting(false)
     }
 }
