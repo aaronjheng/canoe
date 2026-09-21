@@ -80,6 +80,10 @@ struct RequestEditorView: View {
     // owns keyboard focus (first responder is managed inside the editors),
     // and an unregistered @FocusState made writes no-ops and reads unreliable.
     @State private var urlFieldFocused: URLFieldFocus?
+    /// Whether the pointer is over the URL bar: drives its hover fill (the
+    /// method picker's own hover signal, so the two halves of the bar read
+    /// as one control).
+    @State private var isURLBarHovered = false
     /// Whether the method dropdown panel is open.
     @State private var isMethodMenuVisible = false
     /// Method under the pointer in the dropdown (hover highlight).
@@ -543,14 +547,31 @@ struct RequestEditorView: View {
             focus: $urlFieldFocused,
             focusValue: .url,
             autoFocusOnUpdate: false,
-            onCommit: { urlFieldFocused = nil }
+            onCommit: { urlFieldFocused = nil },
+            onHoverChanged: { hover in
+                // TEMP-DEBUG: verifies the AppKit hover reports reach here.
+                AppLogger.info("URLBAR hover=\(hover)", category: "Request")
+                isURLBarHovered = hover
+            }
         )
         .padding(.horizontal, AppSpacing.compact)
         .padding(.vertical, 3)
-        .background(AppColor.urlFieldBackground, in: shape)
+        // Background tiers mirror the method picker (the other half of the
+        // bar): gray wash at rest, deeper gray on hover, bright white while
+        // focused (with the accent border).
+        .background(
+            urlFieldFocused == .url
+                ? AppColor.urlFieldBackground
+                : (isURLBarHovered ? AppColor.subtleBackground : AppColor.fieldBackground),
+            in: shape
+        )
         .overlay {
             shape
                 .strokeBorder(
+                    // Both halves of the bar share the same border tier: the
+                    // method picker's idle/hover border never changes, so the
+                    // URL bar keeps its border constant too and signals hover
+                    // through the fill instead.
                     urlFieldFocused == .url ? AppColor.accent : AppColor.borderStrong,
                     lineWidth: urlFieldFocused == .url ? 2 : 1
                 )

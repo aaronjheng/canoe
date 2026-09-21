@@ -75,6 +75,11 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
     /// all, so the next keystroke overwrote the whole text).
     var focus: Binding<FocusValue?>?
     var focusValue: FocusValue?
+    /// Hover reports from the AppKit field (see
+    /// `LayoutObservingScrollView.onHoverChanged`): SwiftUI's `.onHover`
+    /// never fires above a nested AppKit text view, so containers that need
+    /// hover state over the editor get it reported from the field itself.
+    var onHoverChanged: ((Bool) -> Void)?
     /// Whether the AppKit field may grab first responder during SwiftUI
     /// updates. The key/value table needs it (ghost-row focus moves); a
     /// single-line display surface whose popup owns the keystrokes must opt
@@ -136,6 +141,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         onEditingEnded: (() -> Void)? = nil,
         onFocusChange: ((Bool) -> Void)? = nil,
         onCommit: (() -> Void)? = nil,
+        onHoverChanged: ((Bool) -> Void)? = nil,
         syntax: BodySyntax = .plain,
         onCaretChange: ((Int) -> Void)? = nil,
         incomingCaretLocation: Int? = nil
@@ -151,6 +157,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         self.placeholderLeadingPadding = placeholderLeadingPadding
         self.focus = focus
         self.focusValue = focusValue
+        self.onHoverChanged = onHoverChanged
         self.autoFocusOnUpdate = autoFocusOnUpdate
         self.isEditable = isEditable
         self.onEditingEnded = onEditingEnded
@@ -198,7 +205,8 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
                         // (measured 39, frame stayed 24). Defer one runloop so
                         // it applies; ordering is preserved (FIFO).
                         DispatchQueue.main.async { urlContentHeight = newHeight }
-                    }
+                    },
+                    onHoverChanged: onHoverChanged
                 )
                 .frame(
                     height: focus?.wrappedValue == focusValue
@@ -570,6 +578,9 @@ private struct WrappingURLField<FocusValue: Hashable>: NSViewRepresentable {
     let isFocusedNow: Bool
     let onCommit: (() -> Void)?
     let onContentHeightChange: ((CGFloat) -> Void)?
+    /// Hover reports from the field's scroll view (see
+    /// `LayoutObservingScrollView.onHoverChanged`).
+    let onHoverChanged: ((Bool) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -633,6 +644,7 @@ private struct WrappingURLField<FocusValue: Hashable>: NSViewRepresentable {
         textView.delegate = coordinator
 
         let scrollView = LayoutObservingScrollView()
+        scrollView.onHoverChanged = onHoverChanged
         scrollView.documentView = textView
         scrollView.hasVerticalScroller = false
         scrollView.hasHorizontalScroller = false
@@ -1204,10 +1216,41 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
 /// content-height changes caused by width changes (window resizes).
 private final class LayoutObservingScrollView: NSScrollView {
     var onLayout: (() -> Void)?
+    /// Hover reports for boxed-field feedback over AppKit text content:
+    /// SwiftUI's `.onHover` never fires above a nested AppKit text view, so
+    /// containers that need hover state get it reported from here instead.
+    var onHoverChanged: ((Bool) -> Void)?
 
     override func layout() {
         super.layout()
         onLayout?()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        // Install once, when a consumer wants hover; `.inVisibleRect` keeps
+        // the area tracking the scroll view's bounds without manual updates.
+        let needsHoverArea =
+            onHoverChanged != nil
+            && trackingAreas.allSatisfy {
+                $0.options.isDisjoint(with: .mouseEnteredAndExited)
+            }
+        if needsHoverArea {
+            addTrackingArea(
+                NSTrackingArea(
+                    rect: .zero,
+                    options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                    owner: self,
+                    userInfo: nil))
+        }
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        onHoverChanged?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        onHoverChanged?(false)
     }
 }
 
