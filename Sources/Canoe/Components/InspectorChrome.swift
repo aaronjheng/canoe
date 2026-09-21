@@ -48,25 +48,37 @@ struct InspectorSwitcher: View {
     }
 }
 
-/// Shared right-edge inspector header: the switcher stays centered with
-/// the close button pinned trailing, identical in both panels.
+/// Shared right-edge inspector header, Postman-style: the switcher stays
+/// centered with the close button pinned trailing, and a bold title bar
+/// below names the active panel ("Variables in Request", "Code Snippet"),
+/// identical placement in both panels.
 struct InspectorHeader: View {
+    /// Title of the active panel, shown under the switcher row.
+    let title: String
     let closeHelp: String
     let onClose: () -> Void
 
     var body: some View {
-        ZStack {
-            InspectorSwitcher()
-            HStack {
-                Spacer(minLength: 0)
-                Button("Hide", systemImage: "xmark", action: onClose)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.secondary)
-                    .help(closeHelp)
+        VStack(spacing: 0) {
+            ZStack {
+                InspectorSwitcher()
+                HStack {
+                    Spacer(minLength: 0)
+                    Button("Hide", systemImage: "xmark", action: onClose)
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(.secondary)
+                        .help(closeHelp)
+                }
             }
+            .padding(.horizontal, AppSpacing.medium)
+            .frame(minHeight: AppSize.toolbarHeight)
+            Text(title)
+                .font(AppFont.panelTitle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, AppSpacing.medium)
+                .padding(.top, AppSpacing.xSmall)
+                .padding(.bottom, AppSpacing.small)
         }
-        .padding(.horizontal, AppSpacing.medium)
-        .frame(minHeight: AppSize.toolbarHeight)
     }
 }

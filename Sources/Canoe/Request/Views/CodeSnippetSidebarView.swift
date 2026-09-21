@@ -36,7 +36,7 @@ struct CodeSnippetSidebarView: View {
     // MARK: - Header
 
     private var header: some View {
-        InspectorHeader(closeHelp: "Hide Code Snippet") {
+        InspectorHeader(title: "Code Snippet", closeHelp: "Hide Code Snippet") {
             store.showCodeSnippetSidebar = false
         }
     }
