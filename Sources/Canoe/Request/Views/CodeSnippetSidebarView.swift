@@ -2,9 +2,10 @@ import AppKit
 import SwiftUI
 
 /// The "Code Snippet" inspector on the right edge of the detail area
-/// (Postman-style): renders the currently selected request as
-/// copy-pasteable HTTP / cURL / HTTPie code, with variables already resolved
-/// exactly as a real send would resolve them.
+/// (Postman-style): renders the currently selected request as HTTP / cURL /
+/// HTTPie code with `{{variables}}` left verbatim - resolved or not - so the
+/// pane shows the request as authored; copying is what resolves them,
+/// exactly as a real send would.
 ///
 /// Without a request it shows an actionable empty state pointing at the
 /// sidebar instead of an empty panel.
@@ -73,13 +74,26 @@ struct CodeSnippetSidebarView: View {
         .help("Copy snippet to the clipboard")
     }
 
+    /// The pane's snippet: the request as authored - `{{variables}}` stay
+    /// verbatim whether or not they resolve.
     private var code: String {
+        snippet(resolvesVariables: false)
+    }
+
+    /// The clipboard's snippet: variables resolved exactly as a real send
+    /// would resolve them.
+    private var resolvedCode: String {
+        snippet(resolvesVariables: true)
+    }
+
+    private func snippet(resolvesVariables: Bool) -> String {
         guard let request = store.selectedRequest else { return "" }
         return CodeSnippetGenerator.generate(
             request: request,
-            variables: store.variablesForRequest(request),
+            variables: resolvesVariables ? store.variablesForRequest(request) : [:],
             authorization: store.authorizationForRequest(request),
-            language: CodeSnippetLanguage(rawValue: languageRaw) ?? .curl
+            language: CodeSnippetLanguage(rawValue: languageRaw) ?? .curl,
+            resolvesVariables: resolvesVariables
         )
     }
 
@@ -136,7 +150,7 @@ struct CodeSnippetSidebarView: View {
 
     private func copySnippet() {
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(code, forType: .string)
+        NSPasteboard.general.setString(resolvedCode, forType: .string)
         copied = true
         Task {
             try? await Task.sleep(for: .seconds(1.5))

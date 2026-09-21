@@ -15,9 +15,10 @@ enum CodeSnippetLanguage: String, CaseIterable, Identifiable {
 enum CodeSnippetGenerator {
     // MARK: - Prepared request
 
-    /// A fully resolved request: variables applied, URL composed, auth folded
-    /// into headers. The body stays semantic so each formatter can pick its
-    /// native representation (e.g. `--data-urlencode` vs pre-encoded pairs).
+    /// A request staged for formatting: variables applied or kept verbatim
+    /// (per the resolution policy), URL composed, auth folded into headers.
+    /// The body stays semantic so each formatter can pick its native
+    /// representation (e.g. `--data-urlencode` vs pre-encoded pairs).
     private struct Prepared {
         let method: String
         let url: String
@@ -49,13 +50,26 @@ enum CodeSnippetGenerator {
         }
     }
 
+    /// - Parameters:
+    ///   - resolvesVariables: `true` resolves `{{variables}}` exactly as a
+    ///     real send would (the copy action); `false` keeps every
+    ///     placeholder verbatim whether or not it resolves (the on-screen
+    ///     snippet).
     static func generate(
         request: Request,
         variables: [String: String],
         authorization: Authorization,
-        language: CodeSnippetLanguage
+        language: CodeSnippetLanguage,
+        resolvesVariables: Bool = true
     ) -> String {
-        guard let prepared = prepare(request: request, variables: variables, authorization: authorization) else {
+        guard
+            let prepared = prepare(
+                request: request,
+                variables: variables,
+                authorization: authorization,
+                resolvesVariables: resolvesVariables
+            )
+        else {
             return "# Add a URL to generate a snippet"
         }
         switch language {
@@ -77,51 +91,98 @@ enum CodeSnippetGenerator {
     private static func prepare(
         request: Request,
         variables: [String: String],
-        authorization: Authorization
+        authorization: Authorization,
+        resolvesVariables: Bool
     ) -> Prepared? {
-        let resolvedURLString = VariableResolver.resolve(request.urlString, variables: variables)
+        // One resolution seam: resolve mode runs the real send's variable
+        // lookup; keep mode hands every string back verbatim so `{{name}}`
+        // survives into the snippet.
+        let resolve = { (string: String) -> String in
+            resolvesVariables ? VariableResolver.resolve(string, variables: variables) : string
+        }
+        let rawURLString = resolve(request.urlString)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !resolvedURLString.isEmpty else { return nil }
+        guard !rawURLString.isEmpty else { return nil }
         // Bare hosts get the same https:// convenience as real sends.
-        let withScheme = resolvedURLString.contains("://") ? resolvedURLString : "https://\(resolvedURLString)"
-        guard var components = URLComponents(string: withScheme) else { return nil }
+        let withScheme = rawURLString.contains("://") ? rawURLString : "https://\(rawURLString)"
 
         let enabledParams = request.params.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-        if !enabledParams.isEmpty {
-            var queryItems = components.queryItems ?? []
-            for param in enabledParams {
-                let name = VariableResolver.resolve(param.key, variables: variables)
-                guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-                queryItems.append(
-                    URLQueryItem(
-                        name: name,
-                        value: VariableResolver.resolve(param.value, variables: variables)
-                    ))
-            }
-            components.queryItems = queryItems
-        }
-        guard let url = components.url else { return nil }
 
-        var pathWithQuery = url.path.isEmpty ? "/" : url.path
-        if let query = url.query { pathWithQuery += "?\(query)" }
-        let isDefaultPort =
-            (url.scheme == "https" && url.port == 443) || (url.scheme == "http" && url.port == 80)
-        let host = url.host ?? ""
+        var url: String
+        var pathWithQuery: String
         let hostHeader: String
-        if let port = url.port, !isDefaultPort {
-            hostHeader = "\(host):\(port)"
+        // The URLComponents round-trip validates and percent-encodes, so it
+        // can only run on fully resolved text: `{{placeholders}}` are not
+        // legal URL characters and would come back mangled as %7B/%7D.
+        // Anything still carrying them - keep mode, or resolve mode with
+        // undefined/cyclic variables - composes verbatim instead, which is
+        // also how the wire would carry them.
+        let composesVerbatim =
+            !resolvesVariables
+            || withScheme.contains("{{")
+            || enabledParams.contains {
+                resolve($0.key).contains("{{") || resolve($0.value).contains("{{")
+            }
+        if !composesVerbatim {
+            guard var components = URLComponents(string: withScheme) else { return nil }
+            if !enabledParams.isEmpty {
+                var queryItems = components.queryItems ?? []
+                for param in enabledParams {
+                    let name = resolve(param.key)
+                    guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+                    queryItems.append(
+                        URLQueryItem(
+                            name: name,
+                            value: resolve(param.value)
+                        ))
+                }
+                components.queryItems = queryItems
+            }
+            guard let composed = components.url else { return nil }
+            url = composed.absoluteString
+            pathWithQuery = composed.path.isEmpty ? "/" : composed.path
+            if let query = composed.query { pathWithQuery += "?\(query)" }
+            let isDefaultPort =
+                (composed.scheme == "https" && composed.port == 443) || (composed.scheme == "http" && composed.port == 80)
+            let host = composed.host ?? ""
+            if let port = composed.port, !isDefaultPort {
+                hostHeader = "\(host):\(port)"
+            } else {
+                hostHeader = host
+            }
         } else {
-            hostHeader = host
+            // Compose the pieces as authored and append the enabled params
+            // verbatim (no percent-encoding - the snippet carries the
+            // request, placeholders included).
+            guard let schemeEnd = withScheme.range(of: "://") else { return nil }
+            let authorityAndRest = withScheme[schemeEnd.upperBound...]
+            let authorityEnd = authorityAndRest.firstIndex(where: { $0 == "/" || $0 == "?" }) ?? authorityAndRest.endIndex
+            hostHeader = String(authorityAndRest[..<authorityEnd])
+            pathWithQuery = String(authorityAndRest[authorityEnd...])
+            url = withScheme
+            let queryString = enabledParams.compactMap { param -> String? in
+                let name = resolve(param.key)
+                guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+                return "\(name)=\(resolve(param.value))"
+            }.joined(separator: "&")
+            if !queryString.isEmpty {
+                let separator = pathWithQuery.contains("?") ? "&" : "?"
+                url += "\(separator)\(queryString)"
+                pathWithQuery += "\(separator)\(queryString)"
+            }
+            if !pathWithQuery.hasPrefix("/") {
+                pathWithQuery = "/" + pathWithQuery
+            }
         }
 
         var headers: [(key: String, value: String)] = []
         var hasContentType = false
         var hasAuthorization = false
         for header in request.headers where header.isEnabled {
-            let key = VariableResolver.resolve(header.key, variables: variables)
+            let key = resolve(header.key)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard !key.isEmpty else { continue }
-            headers.append((key: key, value: VariableResolver.resolve(header.value, variables: variables)))
+            headers.append((key: key, value: resolve(header.value)))
             if key.lowercased() == "content-type" { hasContentType = true }
             if key.lowercased() == "authorization" { hasAuthorization = true }
         }
@@ -135,14 +196,14 @@ enum CodeSnippetGenerator {
                 // as none here.
                 break
             case .basic:
-                let username = VariableResolver.resolve(authorization.username, variables: variables)
-                let password = VariableResolver.resolve(authorization.password, variables: variables)
+                let username = resolve(authorization.username)
+                let password = resolve(authorization.password)
                 if !username.isEmpty || !password.isEmpty {
                     let credentials = Data("\(username):\(password)".utf8).base64EncodedString()
                     headers.append((key: "Authorization", value: "Basic \(credentials)"))
                 }
             case .bearer:
-                let token = VariableResolver.resolve(authorization.token, variables: variables)
+                let token = resolve(authorization.token)
                 if !token.isEmpty {
                     headers.append((key: "Authorization", value: "Bearer \(token)"))
                 }
@@ -154,13 +215,13 @@ enum CodeSnippetGenerator {
         case .none:
             body = .none
         case .raw:
-            let content = VariableResolver.resolve(request.bodyText, variables: variables)
+            let content = resolve(request.bodyText)
             if content.isEmpty {
                 body = .none
             } else {
                 body = .raw(content: content)
                 if !hasContentType {
-                    let contentType = VariableResolver.resolve(request.bodyContentType, variables: variables)
+                    let contentType = resolve(request.bodyContentType)
                         .trimmingCharacters(in: .whitespacesAndNewlines)
                     if !contentType.isEmpty {
                         headers.append((key: "Content-Type", value: contentType))
@@ -171,11 +232,11 @@ enum CodeSnippetGenerator {
             let pairs = request.urlEncodedFields
                 .filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                 .compactMap { field -> (key: String, value: String)? in
-                    let key = VariableResolver.resolve(field.key, variables: variables)
+                    let key = resolve(field.key)
                     guard !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
                     return (
                         key: key,
-                        value: VariableResolver.resolve(field.value, variables: variables)
+                        value: resolve(field.value)
                     )
                 }
             body = pairs.isEmpty ? .none : .urlEncoded(pairs: pairs)
@@ -183,10 +244,10 @@ enum CodeSnippetGenerator {
             let fields = request.formFields
                 .filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                 .compactMap { field -> Prepared.Body.Field? in
-                    let name = VariableResolver.resolve(field.key, variables: variables)
+                    let name = resolve(field.key)
                     guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
                     if field.fieldKind == .file {
-                        let path = VariableResolver.resolve(field.value, variables: variables)
+                        let path = resolve(field.value)
                         return Prepared.Body.Field(
                             name: name,
                             file: FileRef(
@@ -200,12 +261,12 @@ enum CodeSnippetGenerator {
                     return Prepared.Body.Field(
                         name: name,
                         file: nil,
-                        value: VariableResolver.resolve(field.value, variables: variables)
+                        value: resolve(field.value)
                     )
                 }
             body = fields.isEmpty ? .none : .multipart(fields: fields)
         case .binary:
-            let path = VariableResolver.resolve(request.binaryFilePath, variables: variables)
+            let path = resolve(request.binaryFilePath)
             if path.isEmpty {
                 body = .none
             } else {
@@ -218,7 +279,7 @@ enum CodeSnippetGenerator {
 
         return Prepared(
             method: request.method.uppercased(),
-            url: url.absoluteString,
+            url: url,
             host: hostHeader,
             pathWithQuery: pathWithQuery,
             headers: headers,
@@ -249,7 +310,7 @@ enum CodeSnippetGenerator {
         case .urlEncoded(let pairs):
             bodyText =
                 pairs
-                .map { "\(percentEncode($0.key))=\(percentEncode($0.value))" }
+                .map { "\(formEncode($0.key))=\(formEncode($0.value))" }
                 .joined(separator: "&")
         case .binary:
             // A raw HTTP message cannot inline binary content; curl/HTTPie
@@ -352,6 +413,13 @@ enum CodeSnippetGenerator {
     }
 
     // MARK: - Escaping helpers
+
+    /// Percent-encodes a urlencoded-form pair - unless it still carries a
+    /// `{{placeholder}}` (an unresolved variable), which must survive
+    /// verbatim instead of coming back as %7B/%7D soup.
+    private static func formEncode(_ string: String) -> String {
+        string.contains("{{") ? string : percentEncode(string)
+    }
 
     private static func shellSingleQuoted(_ string: String) -> String {
         "'" + string.replacingOccurrences(of: "'", with: "'\\''") + "'"
