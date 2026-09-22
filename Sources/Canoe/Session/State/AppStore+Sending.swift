@@ -105,13 +105,20 @@ extension AppStore {
                 guard !Task.isCancelled else { return }
                 responsesByTab[tab] = response
                 recordResponseHistory(response, for: tab)
+                // The console logs the address actually requested:
+                // variables resolved (and query params merged) by the HTTP
+                // client, with a resolved fallback so it never shows
+                // {{placeholders}}. History keeps the raw template.
+                let sentURLString =
+                    sentRequest.withLock { $0 }?.url?.absoluteString
+                    ?? VariableResolver.resolve(request.urlString, variables: variables)
                 recordHistory(request: request, response: response)
                 recordConsoleEntry(
                     ConsoleEntry(
                         date: response.timestamp,
                         requestName: request.name,
                         method: request.httpMethod.rawValue,
-                        url: sentRequest.withLock { $0 }?.url?.absoluteString ?? request.urlString,
+                        url: sentURLString,
                         requestHeaders: sentRequest.withLock { $0 }.map(ConsoleEntry.maskedRequestHeaders(from:)) ?? [],
                         requestBody: ConsoleEntry.capped(sentRequest.withLock { $0 }?.httpBody).data,
                         requestBodyTruncated: ConsoleEntry.capped(sentRequest.withLock { $0 }?.httpBody).truncated,
@@ -138,8 +145,8 @@ extension AppStore {
                 viewingHistoryIndexByTab[tab] = nil
                 recordHistory(request: request, error: true)
                 // Failures before onRequest (invalid URL, body build) never
-                // capture the assembled URLRequest - log the resolved URL so
-                // the console does not show raw {{placeholders}}.
+                // capture the assembled URLRequest - resolve the URL so the
+                // console does not show raw {{placeholders}}.
                 let fallbackURL =
                     sentRequest.withLock { $0 }?.url?.absoluteString
                     ?? VariableResolver.resolve(request.urlString, variables: variables)
@@ -173,6 +180,9 @@ extension AppStore {
         responseHistoryByTab[tab] = history
     }
 
+    /// Records a completed send in the history. The URL is the request's
+    /// raw template exactly as entered (Postman-style) - the resolved
+    /// address is only for the console.
     func recordHistory(request: Request, response: ResponseModel) {
         let entry = HistoryEntry(
             requestID: request.id,
@@ -185,6 +195,7 @@ extension AppStore {
         )
         history.insert(entry, at: 0)
         if history.count > historyLimit { history.removeLast() }
+        scheduleHistoryPersistence()
     }
 
     func recordHistory(request: Request, error: Bool) {
@@ -199,6 +210,7 @@ extension AppStore {
         )
         history.insert(entry, at: 0)
         if history.count > historyLimit { history.removeLast() }
+        scheduleHistoryPersistence()
     }
 
     /// Appends a network activity entry to the console log, trimming the
@@ -215,8 +227,27 @@ extension AppStore {
         consoleEntries.removeAll()
     }
 
+    /// Removes a single entry (the history row's hover delete) and mirrors
+    /// the change to disk.
+    func removeHistoryEntry(_ entry: HistoryEntry) {
+        history.removeAll { $0.id == entry.id }
+        scheduleHistoryPersistence()
+    }
+
     func clearHistory() {
         history.removeAll()
+        scheduleHistoryPersistence()
+    }
+
+    /// Mirrors the in-memory history to history.json (debounced, like the
+    /// drafts mirror) so it survives relaunches.
+    func scheduleHistoryPersistence() {
+        historySaveTask?.cancel()
+        historySaveTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled, let self else { return }
+            await self.vault.saveHistory(self.history)
+        }
     }
 
 }

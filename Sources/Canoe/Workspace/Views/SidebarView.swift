@@ -270,6 +270,10 @@ private struct EnvironmentRow: View {
 private struct HistoryView: View {
     @Environment(AppStore.self) private var store
     @State private var showClearConfirm = false
+    /// Collapsed day buckets (by day-start). In-memory only: the bucket a
+    /// key like "Yesterday" points at shifts with real time, so persisting
+    /// it would relabel tomorrow's entries.
+    @State private var collapsedDays: Set<Date> = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -311,8 +315,19 @@ private struct HistoryView: View {
                 // one row language for hover, padding, and selection.
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(store.history) { entry in
-                            HistoryRow(entry: entry)
+                        ForEach(historyDayGroups(store.history)) { group in
+                            GroupHeader(
+                                title: group.title,
+                                count: group.entries.count,
+                                isExpanded: !collapsedDays.contains(group.id),
+                                onToggle: { toggleDay(group.id) },
+                                actions: {}
+                            )
+                            if !collapsedDays.contains(group.id) {
+                                ForEach(group.entries) { entry in
+                                    HistoryRow(entry: entry)
+                                }
+                            }
                         }
                     }
                     .padding(.horizontal, AppSpacing.xSmall)
@@ -322,6 +337,52 @@ private struct HistoryView: View {
             }
         }
     }
+
+    private func toggleDay(_ day: Date) {
+        if collapsedDays.contains(day) {
+            collapsedDays.remove(day)
+        } else {
+            collapsedDays.insert(day)
+        }
+    }
+}
+
+/// A calendar-day bucket of history entries, titled like Postman's history
+/// ("Today", "Yesterday", then the date).
+private struct HistoryDayGroup: Identifiable {
+    let dayStart: Date
+    let title: String
+    var entries: [HistoryEntry]
+
+    var id: Date { dayStart }
+}
+
+/// Buckets history entries (newest first, as stored) into calendar days in
+/// the same order - the newest day comes first, matching the flat list it
+/// replaces.
+private func historyDayGroups(_ entries: [HistoryEntry]) -> [HistoryDayGroup] {
+    let calendar = Calendar.current
+    let thisYear = calendar.component(.year, from: Date())
+    var groups: [HistoryDayGroup] = []
+    for entry in entries {
+        let dayStart = calendar.startOfDay(for: entry.timestamp)
+        if let last = groups.last, last.dayStart == dayStart {
+            groups[groups.count - 1].entries.append(entry)
+            continue
+        }
+        let title: String
+        if calendar.isDateInToday(entry.timestamp) {
+            title = "Today"
+        } else if calendar.isDateInYesterday(entry.timestamp) {
+            title = "Yesterday"
+        } else if calendar.component(.year, from: entry.timestamp) == thisYear {
+            title = entry.timestamp.formatted(.dateTime.month(.wide).day())
+        } else {
+            title = entry.timestamp.formatted(.dateTime.year().month(.wide).day())
+        }
+        groups.append(HistoryDayGroup(dayStart: dayStart, title: title, entries: [entry]))
+    }
+    return groups
 }
 
 // MARK: - Tree helpers (Collections)
@@ -1029,42 +1090,53 @@ private struct HistoryRow: View {
     }
 
     var body: some View {
-        Button {
-            if let id = entry.requestID { store.openRequest(id) }
-        } label: {
-            HStack(spacing: AppSpacing.xSmall) {
-                MethodTag(method: entry.method)
-                VStack(alignment: .leading, spacing: AppSpacing.xxSmall) {
-                    Text(entry.name)
+        HStack(spacing: 0) {
+            Button {
+                if let id = entry.requestID { store.openRequest(id) }
+            } label: {
+                HStack(spacing: AppSpacing.xSmall) {
+                    // Fixed-width method column so URLs start on a shared
+                    // edge (fits DELETE; wider tags just push their URL
+                    // over). Leading indent lands the column on the
+                    // GroupHeader content column (chevron + gap), so
+                    // entries sit deeper than the day title, Postman-style.
+                    MethodTag(method: entry.method)
+                        .frame(minWidth: 38, alignment: .leading)
+                        .padding(.leading, AppSpacing.medium + AppSize.treeChevronWidth)
+                    Text(entry.urlString)
                         .font(AppFont.sidebarRow)
                         .lineLimit(1)
-                    Text(entry.urlString)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
-                if entry.statusCode > 0 {
-                    Text("\(entry.statusCode)")
-                        .font(AppFont.countBadge)
-                        .monospacedDigit()
-                        .foregroundStyle(AppColor.statusColor(entry.statusCode))
-                }
+                .padding(.horizontal, AppSpacing.xSmall)
+                .padding(.vertical, AppSpacing.xSmall)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, AppSpacing.xSmall)
-            .padding(.vertical, AppSpacing.xSmall)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                    .fill(isHovering ? AppColor.subtleBackground : .clear)
-            )
-            .contentShape(Rectangle())
-            .foregroundStyle(requestExists ? .primary : .tertiary)
-            .opacity(requestExists ? 1 : AppOpacity.disabled)
+            .buttonStyle(.plain)
+            .disabled(!requestExists)
+
+            if isHovering {
+                Button {
+                    store.removeHistoryEntry(entry)
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("Remove from history")
+                .padding(.trailing, AppSpacing.xSmall)
+            }
         }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                .fill(isHovering ? AppColor.subtleBackground : .clear)
+        )
+        .foregroundStyle(requestExists ? .primary : .tertiary)
+        .opacity(requestExists ? 1 : AppOpacity.disabled)
         .onHover { isHovering = $0 }
-        .disabled(!requestExists)
         .help(
             requestExists
                 ? "\(entry.urlString) · \(entry.timestamp.formatted(date: .abbreviated, time: .shortened))" : "Original request was deleted"

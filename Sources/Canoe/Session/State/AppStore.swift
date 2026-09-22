@@ -173,6 +173,9 @@ final class AppStore {
     /// Debounced writer for the drafts mirror; cancelled/rescheduled on
     /// every edit so typing does not rewrite drafts.json per keystroke.
     @ObservationIgnored var draftSaveTask: Task<Void, Never>?
+    /// Debounced writer for the history mirror; rescheduled on every
+    /// recorded entry so a burst of sends rewrites history.json once.
+    @ObservationIgnored var historySaveTask: Task<Void, Never>?
     /// In-flight Save-all (⌘S) task, if any. Tracked so the quit path can
     /// wait for the vault writes to land before the process exits: the
     /// pending snapshots are cleared up front, so quitting mid-save would

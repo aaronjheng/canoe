@@ -70,6 +70,12 @@ final class VaultStore {
     private var draftsFileURL: URL? {
         localRoot()?.appendingPathComponent("drafts.json")
     }
+    /// Request history, mirrored so it survives relaunches. Machine-local
+    /// like drafts: history is per-device activity, and its whole-file
+    /// rewrites (one per send) would fight across synced devices.
+    private var historyFileURL: URL? {
+        localRoot()?.appendingPathComponent("history.json")
+    }
 
     // MARK: - Derived
 
@@ -454,6 +460,36 @@ final class VaultStore {
             try await FileStore.write(drafts, to: draftsFileURL)
         } catch {
             AppLogger.error("Failed to save drafts: \(error)", category: "Vault")
+        }
+    }
+
+    // MARK: - History persistence
+
+    /// Reads the request history persisted by a previous session, newest
+    /// first, trimmed to the in-memory cap (in case an older build saved
+    /// more).
+    func loadHistory(limit: Int) async -> [HistoryEntry] {
+        guard let historyFileURL else { return [] }
+        guard let data = try? await FileStore.readDataIfExists(at: historyFileURL), !data.isEmpty else {
+            return []
+        }
+        do {
+            let entries = try JSONDecoder.iso.decode([HistoryEntry].self, from: data)
+            return Array(entries.prefix(limit))
+        } catch {
+            AppLogger.error("Failed to load history: \(error)", category: "Vault")
+            return []
+        }
+    }
+
+    /// Mirrors the request history to disk (atomic; the caller decides
+    /// when - debounced on each recorded entry, immediate on quit).
+    func saveHistory(_ entries: [HistoryEntry]) async {
+        guard let historyFileURL else { return }
+        do {
+            try await FileStore.write(entries, to: historyFileURL)
+        } catch {
+            AppLogger.error("Failed to save history: \(error)", category: "Vault")
         }
     }
 

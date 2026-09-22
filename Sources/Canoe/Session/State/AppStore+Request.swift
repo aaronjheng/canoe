@@ -163,6 +163,9 @@ extension AppStore {
         applyWorkspaceVariableDrafts(drafts.workspaceVariables)
         applyCollectionVariableDrafts(drafts.collectionVariables)
         applyCollectionAuthorizationDrafts(drafts.collectionAuthorizations)
+        // Restores the per-device request history mirrored by the last
+        // session (machine-local, like the drafts above).
+        history = await vault.loadHistory(limit: historyLimit)
         pruneSidebarExpansionState()
         // Drop restored tabs whose entities no longer exist (deleted here or
         // on another device) and persist the pruned set back.
@@ -510,13 +513,16 @@ extension AppStore {
     }
 
     /// Quit path: waits for an in-flight Save-all to land, then flushes the
-    /// draft mirror and calls `completion`. Drafts are flushed last so the
-    /// mirror reflects the post-save state (empty when everything saved).
+    /// draft mirror and the history mirror and calls `completion`. Drafts are
+    /// flushed last so the mirror reflects the post-save state (empty when
+    /// everything saved).
     /// (Sidebar expansion state needs no flush: it is written through to
     /// UserDefaults on every toggle.)
     func flushAllWritesForQuit(completion: @escaping () -> Void) {
         draftSaveTask?.cancel()
         draftSaveTask = nil
+        historySaveTask?.cancel()
+        historySaveTask = nil
         let save = saveAllTask
         Task { [weak self] in
             await save?.value
@@ -524,6 +530,7 @@ extension AppStore {
                 completion()
                 return
             }
+            await self.vault.saveHistory(self.history)
             await self.vault.saveDrafts(self.currentDrafts)
             completion()
         }
