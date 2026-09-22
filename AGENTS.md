@@ -70,6 +70,19 @@ Business terms and their canonical type names (JSON keys are unchanged by rename
 - Run `just lint` to check code style, `just lint-fix` to auto-fix
 - Run `just format-check` to check formatting, `just format` to auto-format
 
+## Focus ring (white-box flash)
+
+The system focus ring draws one white frame at the shared field editor's pre-layout geometry the first time a text control takes focus (URL bar, table cells, new forms - all have hit this). Process-wide suppression lives in `AppKitFocusRing` (`Components/PanelModifiers.swift`), installed from `AppDelegate`. Window/content roots disable SwiftUI's own focus chrome with `.focusEffectDisabled()` (`ContentView`, Settings sidebar/detail, sheets that create a new root).
+
+When adding **any new input** (TextField, VariableHighlightEditor, NSTextField/NSTextView wrapper, filter field, table cell, picker-adjacent control):
+
+1. Prefer the existing shared editors: `VariableHighlightEditor`, `FilterField` / underline fields in `Components/Fields.swift`, `variableFieldBordered`, `MultiLineField` / `SingleLineField` - they already suppress the ring.
+2. A plain SwiftUI `TextField` / focusable control: add `.focusEffectDisabled()` on the control (or its container). Do not leave it to the window root alone if the control lives under a new sheet/window/panel root - set it on that root too.
+3. A custom `NSTextField` / `NSTextView`: set `focusRingType = .none` (and the cell's when present) when configuring the field - see `VariableHighlightEditor`.
+4. **Never** swizzle or replace drawing methods on `NSView` / `NSTextView` / `NSTextField` broadly - that broke the URL bar text layout. `AppKitFocusRing` only patches the private shared field-editor class handed back by `NSWindow.fieldEditor:forObject:` (selector is `fieldEditor:forObject:`, not `fieldEditor:for:`).
+
+If a new screen flashes a white box on first focus, the fix is the same checklist - not a new global hook.
+
 ## Testing
 
 - Do not generate tests of any kind (unit tests, integration tests, snapshots, fixtures, test scaffolding) unless explicitly requested. Do not add a test target, test files, or test dependencies on your own initiative. When in doubt, ask first.
