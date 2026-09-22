@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 // Shared button styles and link buttons.
@@ -174,4 +175,17 @@ struct LinkButton: View {
         }
         .buttonStyle(.plain)
     }
+}
+
+// MARK: - File panel
+
+/// Single-file open panel shared by the binary body editor and form-data
+/// file rows (the sandbox is disabled, so the path is read directly).
+@MainActor
+func openFilePanel() -> URL? {
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = true
+    panel.canChooseDirectories = false
+    panel.allowsMultipleSelection = false
+    return panel.runModal() == .OK ? panel.url : nil
 }

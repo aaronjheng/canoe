@@ -101,7 +101,16 @@ struct BodyEditor: View {
                 Spacer(minLength: 0)
             }
         case .formData:
-            FormDataEditor(fields: $request.formFields, variables: resolvedVariables, suggestions: requestSuggestions)
+            KeyValueEditor(
+                items: $request.formFields,
+                makeNew: { FormField() },
+                variables: resolvedVariables,
+                suggestions: requestSuggestions,
+                keyPlaceholder: "key",
+                valuePlaceholder: "value",
+                kindKeyPath: \.fieldKind
+            )
+            .id(request.id)
         case .urlEncoded:
             KeyValueEditor(
                 items: $request.urlEncodedFields,
@@ -136,115 +145,6 @@ struct BodyEditor: View {
             .padding(.horizontal, AppSpacing.small)
             .padding(.bottom, AppSpacing.small)
         }
-    }
-}
-
-// MARK: - Form-data editor
-
-/// Key/value rows where each row is either text or a file (Postman-style).
-private struct FormDataEditor: View {
-    @Binding var fields: [FormField]
-    let variables: [String: String]
-    let suggestions: [VariableSuggestion]
-
-    var body: some View {
-        List {
-            ForEach($fields) { $field in
-                FormDataRow(
-                    field: $field,
-                    variables: variables,
-                    suggestions: suggestions,
-                    onDelete: { fields.removeAll { $0.id == field.id } }
-                )
-            }
-            Button {
-                fields.append(FormField())
-            } label: {
-                Label("Add Row", systemImage: "plus")
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(IconButtonStyle(iconSquare: false))
-        }
-    }
-}
-
-/// One form-data row: enable toggle, bordered key/value editors with the
-/// shared focus ring, kind picker, and delete button. A dedicated view so
-/// each row owns its key/value focus mirrors (a `ForEach` body cannot hold
-/// per-row `@State`).
-private struct FormDataRow: View {
-    @Binding var field: FormField
-    let variables: [String: String]
-    let suggestions: [VariableSuggestion]
-    var onDelete: () -> Void
-    @State private var isKeyFocused = false
-    @State private var isValueFocused = false
-
-    var body: some View {
-        HStack(spacing: AppSpacing.small) {
-            Toggle("", isOn: $field.isEnabled)
-                .labelsHidden()
-                .toggleStyle(.checkbox)
-                .controlSize(.small)
-                .frame(width: 32)
-                .help(field.isEnabled ? "Disable row" : "Enable row")
-            VariableHighlightEditor(
-                text: $field.key,
-                variables: variables,
-                suggestions: suggestions,
-                placeholder: "key",
-                onFocusChange: { isKeyFocused = $0 }
-            )
-            .variableFieldBordered(isFocused: isKeyFocused)
-            Picker("Kind", selection: $field.fieldKind) {
-                ForEach(FormFieldKind.allCases, id: \.self) { kind in
-                    Text(kind == .text ? "Text" : "File").tag(kind)
-                }
-            }
-            .pickerStyle(.menu)
-            .labelsHidden()
-            .frame(width: 76)
-            if field.fieldKind == .file {
-                fileCell
-            } else {
-                VariableHighlightEditor(
-                    text: $field.value,
-                    variables: variables,
-                    suggestions: suggestions,
-                    placeholder: "value",
-                    onFocusChange: { isValueFocused = $0 }
-                )
-                .variableFieldBordered(isFocused: isValueFocused)
-            }
-            Button(role: .destructive, action: onDelete) {
-                Image(systemName: "trash")
-            }
-            .buttonStyle(IconButtonStyle())
-            .foregroundStyle(.secondary)
-            .help("Remove row")
-        }
-    }
-
-    private var fileCell: some View {
-        HStack(spacing: AppSpacing.xSmall) {
-            Text(field.value.isEmpty ? "No file selected" : URL(fileURLWithPath: field.value).lastPathComponent)
-                .font(AppFont.monoSubheadline)
-                .foregroundStyle(field.value.isEmpty ? .tertiary : .primary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .helpIf(!field.value.isEmpty, field.value)
-            LinkButton("Browse…") {
-                if let url = openFilePanel() {
-                    field.value = url.path
-                }
-            }
-            .help("Choose a file to upload")
-        }
-        .padding(.horizontal, AppSpacing.small)
-        .padding(.vertical, AppSpacing.xSmall)
-        .background(AppColor.controlBackground)
-        .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
     }
 }
 
@@ -298,15 +198,4 @@ private struct BinaryFileEditor: View {
             Spacer(minLength: 0)
         }
     }
-}
-
-// MARK: - Shared file panel
-
-@MainActor
-private func openFilePanel() -> URL? {
-    let panel = NSOpenPanel()
-    panel.canChooseFiles = true
-    panel.canChooseDirectories = false
-    panel.allowsMultipleSelection = false
-    return panel.runModal() == .OK ? panel.url : nil
 }

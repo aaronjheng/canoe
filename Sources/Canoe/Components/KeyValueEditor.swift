@@ -55,6 +55,10 @@ struct KeyValueEditor<T: KVItem>: View {
     /// environment variables). Off by default; each table opts in when order
     /// is editable.
     var allowsReorder: Bool = false
+    /// Form-data only: when set, each row's key cell ends with a Type
+    /// (Text/File) dropdown (Postman form-data) and file rows swap the value
+    /// cell for a file picker. Keys off `FormField.fieldKind`.
+    var kindKeyPath: WritableKeyPath<T, FormFieldKind>?
 
     /// The in-progress trailing row. Display-only until the user types into
     /// it; then it materializes into `items` and focus follows the materialized
@@ -86,7 +90,9 @@ struct KeyValueEditor<T: KVItem>: View {
     private let toggleColumnWidth: CGFloat = 32
     private let gripGlyphWidth: CGFloat = 14
     private let deleteColumnWidth: CGFloat = 26
+    private let kindMenuWidth: CGFloat = 72
     private var secretColumnWidth: CGFloat { secretKeyPath == nil ? 0 : 26 }
+    private var showsKindMenu: Bool { kindKeyPath != nil }
     private var leadingColumnWidth: CGFloat { allowsReorder ? 38 : toggleColumnWidth }
     /// Merged trailing icon column. Measured (offscreen render, opaque
     /// pixels, 32pt row): eye/eye.slash 13.3pt, trash 9.7pt, fitted group
@@ -131,16 +137,26 @@ struct KeyValueEditor<T: KVItem>: View {
             headerRow
             Divider()
             ForEach($items) { $item in
+                let kindBinding = kindKeyPath.map { path -> Binding<FormFieldKind> in
+                    Binding(
+                        get: { item[keyPath: path] },
+                        set: { item[keyPath: path] = $0 }
+                    )
+                }
+                let secretBinding = secretKeyPath.map { path -> Binding<Bool> in
+                    Binding(
+                        get: { item[keyPath: path] },
+                        set: { item[keyPath: path] = $0 }
+                    )
+                }
                 KVRow(
                     isEnabled: $item.isEnabled,
                     key: $item.key,
                     value: $item.value,
-                    isSecret: secretKeyPath.map { path in
-                        Binding<Bool>(
-                            get: { item[keyPath: path] },
-                            set: { item[keyPath: path] = $0 }
-                        )
-                    },
+                    kind: kindBinding,
+                    showsKindMenu: showsKindMenu,
+                    kindMenuWidth: kindMenuWidth,
+                    isSecret: secretBinding,
                     secretColumnWidth: secretColumnWidth,
                     variables: variables,
                     suggestions: rowSuggestions,
@@ -175,6 +191,9 @@ struct KeyValueEditor<T: KVItem>: View {
                 isEnabled: ghostEnabledBinding,
                 key: ghostBinding(\.key, focusOn: { .key($0) }),
                 value: ghostBinding(\.value, focusOn: { .value($0) }),
+                kind: ghostKindBinding,
+                showsKindMenu: showsKindMenu,
+                kindMenuWidth: kindMenuWidth,
                 isSecret: nil,
                 secretColumnWidth: secretColumnWidth,
                 variables: variables,
@@ -212,7 +231,8 @@ struct KeyValueEditor<T: KVItem>: View {
         // Icon columns (merged leading grip/checkbox, merged trailing
         // eye/delete) get no header cells: empty ruled boxes read as
         // missing labels. Indents keep the text labels over their columns
-        // instead.
+        // instead. Form-data's Type menu lives inside the key cell, so it
+        // needs no header cell either.
         HStack(spacing: 0) {
             Color.clear.frame(width: leadingIconWidth)
             headerLabel(keyHeader)
@@ -280,6 +300,34 @@ struct KeyValueEditor<T: KVItem>: View {
                 }
                 ghost = row
                 focusedCell = isEmpty ? nil : focusOn(row.id)
+            }
+        )
+    }
+
+    /// Ghost row's Type picker. Materializes on first non-default kind so a
+    /// File row can hold a path before the user types a key; collapses back
+    /// to the empty buffer when kind returns to Text with no content.
+    private var ghostKindBinding: Binding<FormFieldKind>? {
+        guard let kindKeyPath else { return nil }
+        return Binding(
+            get: { ghost?[keyPath: kindKeyPath] ?? .text },
+            set: { newValue in
+                var row = ghost ?? makeNew()
+                row[keyPath: kindKeyPath] = newValue
+                let isEmpty = row.key.isEmpty && row.value.isEmpty && newValue == .text
+                if let index = items.firstIndex(where: { $0.id == row.id }) {
+                    if isEmpty {
+                        items.remove(at: index)
+                    } else {
+                        items[index] = row
+                    }
+                } else if !isEmpty {
+                    items.append(row)
+                }
+                ghost = isEmpty ? nil : row
+                if !isEmpty, focusedCell == nil || focusedCell == .ghostKey || focusedCell == .ghostValue {
+                    focusedCell = .key(row.id)
+                }
             }
         )
     }
@@ -388,6 +436,10 @@ private struct KVRow: View {
     @Binding var isEnabled: Bool
     @Binding var key: String
     @Binding var value: String
+    /// Form-data Type menu, trailing inside the key cell (Postman).
+    var kind: Binding<FormFieldKind>?
+    let showsKindMenu: Bool
+    let kindMenuWidth: CGFloat
     /// nil for the trailing ghost row (nothing to hide yet) and for tables
     /// without a secret column.
     var isSecret: Binding<Bool>?
@@ -425,6 +477,10 @@ private struct KVRow: View {
     @State private var isHovering = false
 
     private var isGhostRow: Bool { onDelete == nil }
+
+    /// File rows show a picker in the value cell instead of a text field
+    /// (Postman form-data); the path still lives in `value`.
+    private var isFileRow: Bool { kind?.wrappedValue == .file }
 
     /// Keyboard users tab into the row's cells without hovering: keep the
     /// delete visible while either cell owns focus so it stays reachable.
@@ -485,27 +541,36 @@ private struct KVRow: View {
             .frame(width: leadingColumnWidth)
             verticalRule
             cell {
-                VariableHighlightEditor(
-                    text: $key,
-                    variables: variables,
-                    suggestions: suggestions,
-                    placeholder: keyPlaceholder,
-                    focus: focus,
-                    focusValue: keyFocus,
-                    onEditingEnded: onEditingEnded
-                )
+                HStack(spacing: AppSpacing.xSmall) {
+                    VariableHighlightEditor(
+                        text: $key,
+                        variables: variables,
+                        suggestions: suggestions,
+                        placeholder: keyPlaceholder,
+                        focus: focus,
+                        focusValue: keyFocus,
+                        onEditingEnded: onEditingEnded
+                    )
+                    if showsKindMenu {
+                        kindMenu
+                    }
+                }
             }
             verticalRule
             cell {
-                VariableHighlightEditor(
-                    text: $value,
-                    variables: variables,
-                    suggestions: suggestions,
-                    placeholder: valuePlaceholder,
-                    focus: focus,
-                    focusValue: valueFocus,
-                    onEditingEnded: onEditingEnded
-                )
+                if isFileRow {
+                    fileValueCell
+                } else {
+                    VariableHighlightEditor(
+                        text: $value,
+                        variables: variables,
+                        suggestions: suggestions,
+                        placeholder: valuePlaceholder,
+                        focus: focus,
+                        focusValue: valueFocus,
+                        onEditingEnded: onEditingEnded
+                    )
+                }
             }
             verticalRule
             trailingColumn
@@ -539,6 +604,46 @@ private struct KVRow: View {
             .opacity(isEnabled ? 1 : 0.5)
             .padding(.horizontal, AppSpacing.small)
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Type menu inside the key cell: Text/File (form-data only). The ghost
+    /// row's picker materializes the row via `kind`.
+    private var kindMenu: some View {
+        Group {
+            if let kind {
+                Picker("Kind", selection: kind) {
+                    ForEach(FormFieldKind.allCases, id: \.self) { kind in
+                        Text(kind == .text ? "Text" : "File").tag(kind)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .controlSize(.small)
+                .disabled(!isEnabled)
+                .opacity(isEnabled ? 1 : 0.5)
+            }
+        }
+        .frame(width: kindMenuWidth)
+    }
+
+    /// Value cell for a File row: filename + Browse, writing the path into
+    /// `value` (same storage as Postman; the ghost row materializes on set).
+    private var fileValueCell: some View {
+        HStack(spacing: AppSpacing.xSmall) {
+            Text(value.isEmpty ? "No file selected" : URL(fileURLWithPath: value).lastPathComponent)
+                .font(AppFont.monoSubheadline)
+                .foregroundStyle(value.isEmpty ? .tertiary : .primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .helpIf(!value.isEmpty, value)
+            LinkButton("Browse…", font: .caption) {
+                if let url = openFilePanel() { value = url.path }
+            }
+            .disabled(!isEnabled)
+            .help("Choose a file to upload")
+        }
+        .opacity(isEnabled ? 1 : 0.5)
     }
 
     /// One merged trailing cell: the secret eye (variables tables only)
