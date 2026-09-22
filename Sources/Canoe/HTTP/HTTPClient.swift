@@ -272,9 +272,9 @@ enum HTTPClient {
             )
         case .binary:
             let path = VariableResolver.resolve(request.binaryFilePath, variables: variables)
-            guard !path.isEmpty else {
-                throw HTTPClientError.fileNotFound("(no file selected)")
-            }
+            // No file chosen: send no body (same as empty raw), instead of
+            // failing the whole send with a misleading "file not found".
+            guard !path.isEmpty else { return nil }
             let data = try fileData(atPath: path)
             return BuiltBody(data: data, contentType: MultipartForm.mimeType(forPath: (path as NSString).expandingTildeInPath))
         }

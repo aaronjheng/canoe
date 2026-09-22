@@ -137,12 +137,18 @@ extension AppStore {
                 responsesByTab[tab] = nil
                 viewingHistoryIndexByTab[tab] = nil
                 recordHistory(request: request, error: true)
+                // Failures before onRequest (invalid URL, body build) never
+                // capture the assembled URLRequest - log the resolved URL so
+                // the console does not show raw {{placeholders}}.
+                let fallbackURL =
+                    sentRequest.withLock { $0 }?.url?.absoluteString
+                    ?? VariableResolver.resolve(request.urlString, variables: variables)
                 recordConsoleEntry(
                     ConsoleEntry(
                         date: Date(),
                         requestName: request.name,
                         method: request.httpMethod.rawValue,
-                        url: sentRequest.withLock { $0 }?.url?.absoluteString ?? request.urlString,
+                        url: fallbackURL,
                         requestHeaders: sentRequest.withLock { $0 }.map(ConsoleEntry.maskedRequestHeaders(from:)) ?? [],
                         requestBody: ConsoleEntry.capped(sentRequest.withLock { $0 }?.httpBody).data,
                         requestBodyTruncated: ConsoleEntry.capped(sentRequest.withLock { $0 }?.httpBody).truncated,

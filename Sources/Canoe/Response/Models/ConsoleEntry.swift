@@ -103,7 +103,12 @@ struct ConsoleEntry: Identifiable, Sendable {
 
     /// The origin-form request target ("path?query"), as sent on the wire.
     private var pathAndQuery: String {
-        guard let components = URLComponents(string: url) else { return "/" }
+        guard let components = URLComponents(string: url), components.host != nil || components.scheme != nil
+        else {
+            // No scheme/host (failed before assembly, or a bare path): show
+            // verbatim - percent-encoding raw {{placeholders}} helps nobody.
+            return url.isEmpty ? "/" : url
+        }
         let path = components.percentEncodedPath.isEmpty ? "/" : components.percentEncodedPath
         guard let query = components.percentEncodedQuery else { return path }
         return path + "?" + query
@@ -114,7 +119,7 @@ struct ConsoleEntry: Identifiable, Sendable {
         guard let components = URLComponents(string: url), let host = components.host else { return nil }
         guard let port = components.port else { return host }
         // The Host header omits the port when it matches the scheme's default.
-        let defaultPort = url.hasPrefix("https") ? 443 : 80
+        let defaultPort = components.scheme?.lowercased() == "https" ? 443 : 80
         return port == defaultPort ? host : "\(host):\(port)"
     }
 
