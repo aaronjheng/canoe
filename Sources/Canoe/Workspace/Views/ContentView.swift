@@ -14,6 +14,9 @@ struct ContentView: View {
     @State private var tabDrawerAnchor: Anchor<CGRect>?
     /// Inspector width at drag start; the drag applies deltas against it.
     @State private var inspectorDragStartWidth: CGFloat?
+    /// Keeps the splash up long enough to perceive even when the vault
+    /// loads instantly from the local disk.
+    @State private var splashElapsed = false
 
     var body: some View {
         @Bindable var store = store
@@ -23,8 +26,12 @@ struct ContentView: View {
                 Divider()
             }
             Group {
-                if !store.vault.isReady {
+                if !store.vault.isReady || !splashElapsed {
                     VaultLoadingView()
+                        .task {
+                            try? await Task.sleep(for: .milliseconds(500))
+                            splashElapsed = true
+                        }
                 } else if let loadError = store.vault.loadError {
                     VaultErrorView(message: loadError)
                 } else if store.vault.workspaces.isEmpty {
@@ -351,13 +358,19 @@ private struct VaultErrorView: View {
     }
 }
 
-/// Brief splash while the vault is being located and loaded.
+/// Brief splash while the vault is being located and loaded. Mark and
+/// spinner share one centered stack - `LoadingState` stretches with
+/// `maxHeight: .infinity`, which would pin the mark under the title bar.
 private struct VaultLoadingView: View {
     var body: some View {
-        VStack(spacing: AppSpacing.medium) {
-            CanoeMarkView(size: 64)
-            LoadingState(message: "Loading vault…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: AppSpacing.xLarge) {
+            CanoeMarkView(size: 96, showsShadow: true)
+            VStack(spacing: AppSpacing.small) {
+                ProgressView()
+                Text("Loading vault…")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
