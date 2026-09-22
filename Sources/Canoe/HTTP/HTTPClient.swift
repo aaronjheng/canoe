@@ -1,4 +1,6 @@
 import Foundation
+import Security
+import Synchronization
 
 enum HTTPClientError: Error, LocalizedError {
     case invalidURL(String)
@@ -19,11 +21,168 @@ enum HTTPClientError: Error, LocalizedError {
 /// Executes a `Request` (with variables resolved) using URLSession async
 /// and returns a transient `ResponseModel`.
 enum HTTPClient {
+    /// Leaf-certificate fields pulled during the server-trust challenge.
+    private struct CertificateSnapshot: Sendable {
+        let subjectCN: String?
+        let issuerCN: String?
+        let notAfter: Date?
+    }
+
+    private struct Outcome {
+        let data: Data
+        let response: HTTPURLResponse
+        let metrics: URLSessionTaskMetrics?
+        let certificate: CertificateSnapshot?
+    }
+
+    /// Joins the data-task completion with `didFinishCollecting` (metrics
+    /// often land just after the body handler) and the server-trust
+    /// challenge. Successful bodies wait briefly for metrics; errors resume
+    /// immediately so a failed send never hangs on telemetry.
+    private final class RequestTelemetry: @unchecked Sendable {
+        private struct State {
+            var continuation: CheckedContinuation<Outcome, Error>?
+            var data: Data?
+            var response: HTTPURLResponse?
+            var error: Error?
+            var metrics: URLSessionTaskMetrics?
+            var certificate: CertificateSnapshot?
+            var bodySettled = false
+            var metricsSettled = false
+            var allowMissingMetrics = false
+            var resumed = false
+            var metricsTimeout: Task<Void, Never>?
+        }
+
+        private enum Completion {
+            case none
+            case success(CheckedContinuation<Outcome, Error>, Outcome)
+            case failure(CheckedContinuation<Outcome, Error>, Error)
+        }
+
+        private let state = Mutex(State())
+        private let taskID: Int
+        private let unregister: @Sendable (Int) -> Void
+
+        init(taskID: Int, unregister: @escaping @Sendable (Int) -> Void) {
+            self.taskID = taskID
+            self.unregister = unregister
+        }
+
+        func setCertificate(_ snapshot: CertificateSnapshot) {
+            state.withLock { $0.certificate = snapshot }
+        }
+
+        func setMetrics(_ metrics: URLSessionTaskMetrics) {
+            state.withLock {
+                $0.metrics = metrics
+                $0.metricsSettled = true
+                $0.metricsTimeout?.cancel()
+                $0.metricsTimeout = nil
+            }
+            pump()
+        }
+
+        func finishBody(data: Data?, response: URLResponse?, error: Error?) {
+            state.withLock {
+                $0.bodySettled = true
+                $0.data = data
+                $0.error = error
+                if let http = response as? HTTPURLResponse {
+                    $0.response = http
+                }
+                if error == nil, !$0.metricsSettled {
+                    $0.metricsTimeout = Task { [weak self] in
+                        try? await Task.sleep(for: .milliseconds(500))
+                        self?.metricsWaitTimedOut()
+                    }
+                }
+            }
+            pump()
+        }
+
+        func attach(_ continuation: CheckedContinuation<Outcome, Error>) {
+            state.withLock { $0.continuation = continuation }
+            pump()
+        }
+
+        private func metricsWaitTimedOut() {
+            state.withLock {
+                $0.allowMissingMetrics = true
+                $0.metricsTimeout = nil
+            }
+            pump()
+        }
+
+        private func pump() {
+            let completion: Completion = state.withLock { current in
+                guard !current.resumed, let cont = current.continuation else { return .none }
+
+                if current.bodySettled, let error = current.error {
+                    current.resumed = true
+                    current.continuation = nil
+                    current.metricsTimeout?.cancel()
+                    current.metricsTimeout = nil
+                    return .failure(cont, error)
+                }
+
+                guard current.bodySettled else { return .none }
+                if !current.metricsSettled && !current.allowMissingMetrics { return .none }
+
+                guard let data = current.data, let response = current.response else {
+                    current.resumed = true
+                    current.continuation = nil
+                    current.metricsTimeout?.cancel()
+                    current.metricsTimeout = nil
+                    return .failure(cont, HTTPClientError.noResponse)
+                }
+
+                current.resumed = true
+                current.continuation = nil
+                current.metricsTimeout?.cancel()
+                current.metricsTimeout = nil
+                return .success(
+                    cont,
+                    Outcome(
+                        data: data,
+                        response: response,
+                        metrics: current.metrics,
+                        certificate: current.certificate
+                    )
+                )
+            }
+
+            switch completion {
+            case .none:
+                break
+            case .success(let cont, let outcome):
+                unregister(taskID)
+                cont.resume(returning: outcome)
+            case .failure(let cont, let error):
+                unregister(taskID)
+                cont.resume(throwing: error)
+            }
+        }
+    }
+
     /// Strips credentials when a redirect leaves the original host (or
     /// downgrades https to http), so an Authorization helper value is never
     /// leaked to a third party through a redirect. Same-host redirects pass
     /// through untouched. Stateless, so sharing it across sends is safe.
+    /// Also collects per-send task metrics and server-trust certificates.
     private final class RedirectPolicy: NSObject, URLSessionTaskDelegate {
+        private let telemetryByID = Mutex<[Int: RequestTelemetry]>([:])
+
+        func makeTelemetry(taskID: Int) -> RequestTelemetry {
+            RequestTelemetry(taskID: taskID) { [weak self] id in
+                self?.telemetryByID.withLock { $0[id] = nil }
+            }
+        }
+
+        func register(_ telemetry: RequestTelemetry, taskID: Int) {
+            telemetryByID.withLock { $0[taskID] = telemetry }
+        }
+
         func urlSession(
             _ session: URLSession,
             task: URLSessionTask,
@@ -40,6 +199,82 @@ enum HTTPClient {
                 redirected.setValue(nil, forHTTPHeaderField: "Authorization")
             }
             completionHandler(redirected)
+        }
+
+        func urlSession(
+            _ session: URLSession,
+            task: URLSessionTask,
+            didFinishCollecting metrics: URLSessionTaskMetrics
+        ) {
+            telemetryByID.withLock { $0[task.taskIdentifier]?.setMetrics(metrics) }
+        }
+
+        func urlSession(
+            _ session: URLSession,
+            task: URLSessionTask,
+            didReceive challenge: URLAuthenticationChallenge,
+            completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+        ) {
+            if let snapshot = Self.serverTrustSnapshot(from: challenge) {
+                telemetryByID.withLock { $0[task.taskIdentifier]?.setCertificate(snapshot) }
+            }
+            completionHandler(.performDefaultHandling, nil)
+        }
+
+        /// Leaf certificate from a server-trust challenge, if this is one.
+        private static func serverTrustSnapshot(
+            from challenge: URLAuthenticationChallenge
+        ) -> CertificateSnapshot? {
+            guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+                let trust = challenge.protectionSpace.serverTrust
+            else { return nil }
+            return certificateSnapshot(from: trust)
+        }
+
+        /// Subject CN, issuer CN, and not-after from the leaf certificate.
+        /// Default TLS validation still runs (performDefaultHandling) - this
+        /// only reads the chain for the Network panel.
+        private static func certificateSnapshot(from trust: SecTrust) -> CertificateSnapshot? {
+            guard let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate],
+                let leaf = chain.first
+            else { return nil }
+
+            let subjectCN = SecCertificateCopySubjectSummary(leaf) as String?
+            var error: Unmanaged<CFError>?
+            let keys = [kSecOIDX509V1IssuerName, kSecOIDX509V1ValidityNotAfter] as CFArray
+            guard let values = SecCertificateCopyValues(leaf, keys, &error) as? [String: Any] else {
+                return CertificateSnapshot(subjectCN: subjectCN, issuerCN: nil, notAfter: nil)
+            }
+
+            var issuerCN: String?
+            if let value = propertyValue(in: values, key: kSecOIDX509V1IssuerName) {
+                issuerCN = commonName(inNameValue: value)
+            }
+
+            let notAfter = propertyValue(in: values, key: kSecOIDX509V1ValidityNotAfter) as? Date
+
+            return CertificateSnapshot(subjectCN: subjectCN, issuerCN: issuerCN, notAfter: notAfter)
+        }
+
+        /// `SecCertificateCopyValues` entry: OID dict → its value payload.
+        private static func propertyValue(in values: [String: Any], key: CFString) -> Any? {
+            (values[key as String] as? [String: Any])?[kSecPropertyKeyValue as String]
+        }
+
+        /// Distinguished-name value: either a bare string or an array of
+        /// `{label, value}` RDN components - pick the common name.
+        private static func commonName(inNameValue value: Any) -> String? {
+            if let components = value as? [[String: Any]] {
+                for component in components {
+                    let label = component[kSecPropertyKeyLabel as String] as? String ?? ""
+                    if label.lowercased().contains("common name") || label == kSecOIDCommonName as String {
+                        if let text = component[kSecPropertyKeyValue as String] as? String {
+                            return text
+                        }
+                    }
+                }
+            }
+            return value as? String
         }
     }
 
@@ -158,14 +393,12 @@ enum HTTPClient {
         onRequest?(urlRequest)
 
         let start = Date()
-        let (data, response) = try await session.data(for: urlRequest)
+        let outcome = try await dataWithTelemetry(for: urlRequest)
         let duration = Date().timeIntervalSince(start)
-
-        guard let http = response as? HTTPURLResponse else { throw HTTPClientError.noResponse }
 
         // `allHeaderFields` is a dictionary: iterate sorted so the stored
         // header order is deterministic across runs instead of hash order.
-        let headers = http.allHeaderFields.compactMap { (key, value) -> HTTPHeader? in
+        let headers = outcome.response.allHeaderFields.compactMap { (key, value) -> HTTPHeader? in
             guard let key = key as? String, let value = value as? String else { return nil }
             return HTTPHeader(key: key, value: value)
         }
@@ -177,13 +410,118 @@ enum HTTPClient {
         }
 
         return ResponseModel(
-            statusCode: http.statusCode,
+            statusCode: outcome.response.statusCode,
             headers: headers,
-            body: data,
+            body: outcome.data,
             duration: duration,
             timestamp: Date(),
-            mimeType: http.mimeType
+            mimeType: outcome.response.mimeType,
+            network: Self.makeNetworkInfo(
+                metrics: outcome.metrics,
+                certificate: outcome.certificate
+            )
         )
+    }
+
+    // MARK: - Send + telemetry
+
+    /// Runs the data task while the session delegate fills in task metrics
+    /// and the leaf certificate. Uses an explicit task so telemetry can be
+    /// keyed by `taskIdentifier`.
+    private static func dataWithTelemetry(
+        for urlRequest: URLRequest
+    ) async throws -> Outcome {
+        try await withCheckedThrowingContinuation { continuation in
+            let holder = TelemetryHolder()
+            let task = session.dataTask(with: urlRequest) { data, response, error in
+                holder.telemetry?.finishBody(data: data, response: response, error: error)
+            }
+            let telemetry = redirectPolicy.makeTelemetry(taskID: task.taskIdentifier)
+            redirectPolicy.register(telemetry, taskID: task.taskIdentifier)
+            holder.telemetry = telemetry
+            telemetry.attach(continuation)
+            task.resume()
+        }
+    }
+
+    /// Completion-handler bridge: the data task needs its completion at
+    /// creation, but telemetry is keyed by the task's identifier - so the
+    /// handler reads through this one-slot box, written before `resume`.
+    private final class TelemetryHolder: @unchecked Sendable {
+        var telemetry: RequestTelemetry?
+    }
+
+    /// Postman-style Network panel fields from transaction metrics + trust.
+    private static func makeNetworkInfo(
+        metrics: URLSessionTaskMetrics?,
+        certificate: CertificateSnapshot?
+    ) -> NetworkInfo {
+        let transaction = metrics?.transactionMetrics.last
+        return NetworkInfo(
+            httpVersion: transaction?.networkProtocolName.map(displayHTTPVersion),
+            localAddress: transaction?.localAddress,
+            remoteAddress: transaction?.remoteAddress,
+            tlsProtocol: transaction?.negotiatedTLSProtocolVersion.map(displayTLSVersion),
+            cipherName: transaction?.negotiatedTLSCipherSuite.map(displayCipherSuite),
+            certificateCN: certificate?.subjectCN,
+            issuerCN: certificate?.issuerCN,
+            validUntil: certificate?.notAfter
+        )
+    }
+
+    /// URLSession reports `http/1.1` / `h2` / `h3`; the panel shows `1.1`.
+    private static func displayHTTPVersion(_ name: String) -> String {
+        if name.hasPrefix("http/") { return String(name.dropFirst("http/".count)) }
+        if name.first == "h", let number = Int(name.dropFirst()) { return String(number) }
+        return name
+    }
+
+    private static func displayTLSVersion(_ version: tls_protocol_version_t) -> String {
+        switch version {
+        case .TLSv10: "TLSv1.0"
+        case .TLSv11: "TLSv1.1"
+        case .TLSv12: "TLSv1.2"
+        case .TLSv13: "TLSv1.3"
+        case .DTLSv10: "DTLSv1.0"
+        case .DTLSv12: "DTLSv1.2"
+        default: "TLS"
+        }
+    }
+
+    /// IANA/OpenSSL-style cipher label (`ECDHE-RSA-AES128-GCM-SHA256`),
+    /// matching what Postman shows. `tls_ciphersuite_t` is a CF_ENUM imported
+    /// as a raw struct - `String(describing:)` only prints `rawValue`, so the
+    /// codepoint is mapped explicitly.
+    private static func displayCipherSuite(_ suite: tls_ciphersuite_t) -> String {
+        switch suite.rawValue {
+        case 0x000A: "RSA-3DES-EDE-CBC-SHA"
+        case 0x002F: "RSA-AES128-CBC-SHA"
+        case 0x0035: "RSA-AES256-CBC-SHA"
+        case 0x009C: "RSA-AES128-GCM-SHA256"
+        case 0x009D: "RSA-AES256-GCM-SHA384"
+        case 0x003C: "RSA-AES128-CBC-SHA256"
+        case 0x003D: "RSA-AES256-CBC-SHA256"
+        case 0xC008: "ECDHE-ECDSA-3DES-EDE-CBC-SHA"
+        case 0xC009: "ECDHE-ECDSA-AES128-CBC-SHA"
+        case 0xC00A: "ECDHE-ECDSA-AES256-CBC-SHA"
+        case 0xC012: "ECDHE-RSA-3DES-EDE-CBC-SHA"
+        case 0xC013: "ECDHE-RSA-AES128-CBC-SHA"
+        case 0xC014: "ECDHE-RSA-AES256-CBC-SHA"
+        case 0xC023: "ECDHE-ECDSA-AES128-CBC-SHA256"
+        case 0xC024: "ECDHE-ECDSA-AES256-CBC-SHA384"
+        case 0xC027: "ECDHE-RSA-AES128-CBC-SHA256"
+        case 0xC028: "ECDHE-RSA-AES256-CBC-SHA384"
+        case 0xC02B: "ECDHE-ECDSA-AES128-GCM-SHA256"
+        case 0xC02C: "ECDHE-ECDSA-AES256-GCM-SHA384"
+        case 0xC02F: "ECDHE-RSA-AES128-GCM-SHA256"
+        case 0xC030: "ECDHE-RSA-AES256-GCM-SHA384"
+        case 0xCCA8: "ECDHE-RSA-CHACHA20-POLY1305"
+        case 0xCCA9: "ECDHE-ECDSA-CHACHA20-POLY1305"
+        case 0x1301: "TLS_AES_128_GCM_SHA256"
+        case 0x1302: "TLS_AES_256_GCM_SHA384"
+        case 0x1303: "TLS_CHACHA20_POLY1305_SHA256"
+        default: String(format: "0x%04X", suite.rawValue)
+        }
     }
 
     // MARK: - Body building

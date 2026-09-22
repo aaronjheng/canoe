@@ -1,5 +1,27 @@
 import Foundation
 
+/// Connection details shown by the response Network panel (Postman-style).
+/// Transient like `ResponseModel` - never persisted to the vault.
+struct NetworkInfo: Sendable, Equatable {
+    var httpVersion: String?
+    var localAddress: String?
+    var remoteAddress: String?
+    var tlsProtocol: String?
+    var cipherName: String?
+    var certificateCN: String?
+    var issuerCN: String?
+    var validUntil: Date?
+
+    var formattedValidUntil: String? {
+        guard let validUntil else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "GMT")
+        formatter.dateFormat = "MMM d HH:mm:ss yyyy 'GMT'"
+        return formatter.string(from: validUntil)
+    }
+}
+
 /// A transient HTTP response used for display. Not persisted to the vault.
 struct ResponseModel: Identifiable, Sendable {
     let id = UUID()
@@ -9,6 +31,7 @@ struct ResponseModel: Identifiable, Sendable {
     let duration: TimeInterval
     let timestamp: Date
     let mimeType: String?
+    let network: NetworkInfo?
 
     var bodySize: Int { body.count }
 

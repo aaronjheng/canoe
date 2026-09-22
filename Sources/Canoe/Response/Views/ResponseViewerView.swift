@@ -33,6 +33,13 @@ struct ResponseViewerView: View {
     /// toolbar/content hairline (Postman draws the same line once the
     /// content scrolls under the toolbar).
     @State private var isBodyScrolledPastTop = false
+    /// Hover state for the Network status chip and its details panel: the
+    /// panel stays up while either is under the cursor (with a short grace
+    /// so crossing the gap does not flicker it away).
+    @State private var networkStatusHovered = false
+    @State private var networkPanelHovered = false
+    @State private var networkPanelVisible = false
+    @State private var networkHideTask: Task<Void, Never>?
 
     /// Max characters rendered in the body pane. Beyond this a single SwiftUI
     /// `Text` becomes sluggish, so the view shows a prefix plus a notice.
@@ -178,7 +185,45 @@ struct ResponseViewerView: View {
             findVisible = false
             findQuery = ""
             findCurrentIndex = 0
+            dismissNetworkPanel()
         }
+        .overlay(alignment: .topTrailing) {
+            if networkPanelVisible {
+                networkPanel(response)
+                    // Sit under the section bar (status row), clear of the
+                    // trailing metrics - the chip that opened it lives there.
+                    .padding(.top, AppSize.toolbarHeight + AppSpacing.xSmall)
+                    .padding(.trailing, AppSpacing.small)
+                    .zIndex(1)
+                    .onHover { hovering in
+                        networkPanelHovered = hovering
+                        refreshNetworkPanel()
+                    }
+            }
+        }
+    }
+
+    /// Show while the status chip or the panel is hovered; hide after a
+    /// short grace once both have left, so moving across the gap is stable.
+    private func refreshNetworkPanel() {
+        networkHideTask?.cancel()
+        if networkStatusHovered || networkPanelHovered {
+            networkPanelVisible = true
+        } else {
+            networkHideTask = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(140))
+                if !Task.isCancelled, !networkStatusHovered, !networkPanelHovered {
+                    networkPanelVisible = false
+                }
+            }
+        }
+    }
+
+    private func dismissNetworkPanel() {
+        networkHideTask?.cancel()
+        networkStatusHovered = false
+        networkPanelHovered = false
+        networkPanelVisible = false
     }
 
     /// Pretty-printing and tree-sitter highlighting a large body costs
@@ -227,9 +272,105 @@ struct ResponseViewerView: View {
                 statusMetric(response.formattedDuration, systemImage: "clock")
                 statusDot
                 statusMetric(response.formattedSize, systemImage: "doc")
+                statusDot
+                networkStatus
             }
         }
         .padding(.horizontal, AppSpacing.small)
+    }
+
+    /// Network details entry in the metrics row - icon only. Not a button:
+    /// hovering it reveals the Network details panel.
+    private var networkStatus: some View {
+        Image(systemName: "network")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .onHover { hovering in
+                networkStatusHovered = hovering
+                refreshNetworkPanel()
+            }
+    }
+
+    /// Postman-style Network panel: connection details for the displayed
+    /// response. Empty sections are omitted. Hover-driven - no close button.
+    private func networkPanel(_ response: ResponseModel) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: AppSpacing.small) {
+                Image(systemName: "network")
+                    .foregroundStyle(.secondary)
+                Text("Network")
+                    .font(.subheadline.weight(.semibold))
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, AppSpacing.medium)
+            .padding(.vertical, AppSpacing.small)
+
+            if let network = response.network {
+                let connectionRows: [(String, String?)] = [
+                    ("HTTP Version", network.httpVersion),
+                    ("Local Address", network.localAddress),
+                    ("Remote Address", network.remoteAddress),
+                ]
+                let tlsRows: [(String, String?)] = [
+                    ("TLS Protocol", network.tlsProtocol),
+                    ("Cipher Name", network.cipherName),
+                ]
+                let certRows: [(String, String?)] = [
+                    ("Certificate CN", network.certificateCN),
+                    ("Issuer CN", network.issuerCN),
+                    ("Valid Until", network.formattedValidUntil),
+                ]
+                let hasConnection = connectionRows.contains { $0.1 != nil }
+                let hasTLS = tlsRows.contains { $0.1 != nil }
+                let hasCert = certRows.contains { $0.1 != nil }
+                if hasConnection {
+                    Divider()
+                    networkSection(connectionRows)
+                }
+                if hasTLS {
+                    Divider()
+                    networkSection(tlsRows)
+                }
+                if hasCert {
+                    Divider()
+                    networkSection(certRows)
+                }
+                if !hasConnection, !hasTLS, !hasCert {
+                    Text("No network details captured for this response.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .padding(AppSpacing.medium)
+                }
+            } else {
+                Text("No network details captured for this response.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .padding(AppSpacing.medium)
+            }
+        }
+        .frame(width: 380, alignment: .leading)
+        .popupPanel()
+    }
+
+    private func networkSection(_ rows: [(String, String?)]) -> some View {
+        VStack(alignment: .leading, spacing: AppSpacing.small) {
+            ForEach(rows, id: \.0) { label, value in
+                if let value {
+                    HStack(alignment: .firstTextBaseline, spacing: AppSpacing.medium) {
+                        Text(label)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 110, alignment: .leading)
+                        Text(value)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .multilineTextAlignment(.trailing)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+        }
+        .font(.callout)
+        .padding(.horizontal, AppSpacing.medium)
+        .padding(.vertical, AppSpacing.small)
     }
 
     private func bodyContent(
