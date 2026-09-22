@@ -33,13 +33,27 @@ struct ResponseViewerView: View {
     /// toolbar/content hairline (Postman draws the same line once the
     /// content scrolls under the toolbar).
     @State private var isBodyScrolledPastTop = false
-    /// Hover state for the Network status chip and its details panel: the
-    /// panel stays up while either is under the cursor (with a short grace
-    /// so crossing the gap does not flicker it away).
+    /// Hover-panel machinery shared by the metrics-row entries (network
+    /// chip, time metric, size metric): a panel stays up while its anchor
+    /// or itself is under the cursor, and hides after a short grace once
+    /// both have left, so crossing the gap does not flicker it away. Only
+    /// one panel is ever up - they share the same top-trailing overlay
+    /// slot, so showing one replaces any other.
+    private enum HoverPanelKind: Equatable {
+        case network, size, time
+    }
+
+    /// Per-anchor hover flags - independent booleans, because exit/enter
+    /// events of adjacent chips can interleave and a single "which anchor"
+    /// slot would lose the still-hovered one.
     @State private var networkStatusHovered = false
-    @State private var networkPanelHovered = false
-    @State private var networkPanelVisible = false
-    @State private var networkHideTask: Task<Void, Never>?
+    @State private var sizeMetricHovered = false
+    @State private var timeMetricHovered = false
+    /// Which panel (if any) is under the cursor / currently shown. Only
+    /// one panel is on screen at a time, so a single slot each is safe.
+    @State private var hoveredPanel: HoverPanelKind?
+    @State private var visiblePanel: HoverPanelKind?
+    @State private var panelHideTask: Task<Void, Never>?
 
     /// Max characters rendered in the body pane. Beyond this a single SwiftUI
     /// `Text` becomes sluggish, so the view shows a prefix plus a notice.
@@ -143,11 +157,18 @@ struct ResponseViewerView: View {
             .foregroundStyle(.tertiary)
     }
 
-    private func statusMetric(_ value: String, systemImage: String) -> some View {
+    /// One trailing metric in the tab bar ("261 ms"). `onHover` opts a
+    /// metric into the hover-panel behavior (the time and size breakdowns).
+    private func statusMetric(
+        _ value: String,
+        systemImage: String,
+        onHover: ((Bool) -> Void)? = nil
+    ) -> some View {
         Label(value, systemImage: systemImage)
             .font(.caption)
             .monospacedDigit()
             .foregroundStyle(.secondary)
+            .onHover { hovering in onHover?(hovering) }
     }
 
     // MARK: - Response detail (Headers | Body tab bar)
@@ -185,45 +206,72 @@ struct ResponseViewerView: View {
             findVisible = false
             findQuery = ""
             findCurrentIndex = 0
-            dismissNetworkPanel()
+            dismissPanels()
         }
         .overlay(alignment: .topTrailing) {
-            if networkPanelVisible {
-                networkPanel(response)
-                    // Sit under the section bar (status row), clear of the
-                    // trailing metrics - the chip that opened it lives there.
-                    .padding(.top, AppSize.toolbarHeight + AppSpacing.xSmall)
-                    .padding(.trailing, AppSpacing.small)
-                    .zIndex(1)
-                    .onHover { hovering in
-                        networkPanelHovered = hovering
-                        refreshNetworkPanel()
-                    }
+            switch visiblePanel {
+            case .network:
+                hoverPanel(networkPanel(response), kind: .network)
+            case .size:
+                hoverPanel(sizePanel(response), kind: .size)
+            case .time:
+                hoverPanel(timePanel(response), kind: .time)
+            case .none:
+                EmptyView()
             }
         }
     }
 
-    /// Show while the status chip or the panel is hovered; hide after a
-    /// short grace once both have left, so moving across the gap is stable.
-    private func refreshNetworkPanel() {
-        networkHideTask?.cancel()
-        if networkStatusHovered || networkPanelHovered {
-            networkPanelVisible = true
-        } else {
-            networkHideTask = Task { @MainActor in
+    /// Shared chrome for the hover panels: under the section bar (status
+    /// row), clear of the trailing metrics - the anchor that opened the
+    /// panel lives there - above other content; hovering the panel itself
+    /// keeps it open. The hover tracking wraps ONLY the card: the outer
+    /// padding must stay hover-inert, or the panel's frame would reach up
+    /// into the metrics row and swallow the neighboring anchors' hover
+    /// events (panels could then never hand off to each other).
+    private func hoverPanel(_ panel: some View, kind: HoverPanelKind) -> some View {
+        panel
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                hoveredPanel = hovering ? kind : nil
+                refreshPanel(kind)
+            }
+            .padding(.top, AppSize.toolbarHeight + AppSpacing.xSmall)
+            .padding(.trailing, AppSpacing.small)
+            .zIndex(1)
+    }
+
+    /// Show the panel for `kind` while its anchor chip or the panel itself
+    /// is hovered; hide after the short grace once both have left.
+    private func refreshPanel(_ kind: HoverPanelKind) {
+        panelHideTask?.cancel()
+        if isAnchorHovered(kind) || hoveredPanel == kind {
+            visiblePanel = kind
+        } else if visiblePanel == kind {
+            panelHideTask = Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(140))
-                if !Task.isCancelled, !networkStatusHovered, !networkPanelHovered {
-                    networkPanelVisible = false
+                if !Task.isCancelled, !isAnchorHovered(kind), hoveredPanel != kind, visiblePanel == kind {
+                    visiblePanel = nil
                 }
             }
         }
     }
 
-    private func dismissNetworkPanel() {
-        networkHideTask?.cancel()
+    private func isAnchorHovered(_ kind: HoverPanelKind) -> Bool {
+        switch kind {
+        case .network: networkStatusHovered
+        case .size: sizeMetricHovered
+        case .time: timeMetricHovered
+        }
+    }
+
+    private func dismissPanels() {
+        panelHideTask?.cancel()
         networkStatusHovered = false
-        networkPanelHovered = false
-        networkPanelVisible = false
+        sizeMetricHovered = false
+        timeMetricHovered = false
+        hoveredPanel = nil
+        visiblePanel = nil
     }
 
     /// Pretty-printing and tree-sitter highlighting a large body costs
@@ -269,9 +317,19 @@ struct ResponseViewerView: View {
                 statusDot
                 StatusCapsule(statusCode: response.statusCode, statusText: response.statusText)
                 statusDot
-                statusMetric(response.formattedDuration, systemImage: "clock")
+                statusMetric(
+                    response.formattedDuration, systemImage: "clock",
+                    onHover: { hovering in
+                        timeMetricHovered = hovering
+                        refreshPanel(.time)
+                    })
                 statusDot
-                statusMetric(response.formattedSize, systemImage: "doc")
+                statusMetric(
+                    response.formattedSize, systemImage: "doc",
+                    onHover: { hovering in
+                        sizeMetricHovered = hovering
+                        refreshPanel(.size)
+                    })
                 statusDot
                 networkStatus
             }
@@ -287,7 +345,7 @@ struct ResponseViewerView: View {
             .foregroundStyle(.secondary)
             .onHover { hovering in
                 networkStatusHovered = hovering
-                refreshNetworkPanel()
+                refreshPanel(.network)
             }
     }
 
@@ -365,6 +423,118 @@ struct ResponseViewerView: View {
                             .multilineTextAlignment(.trailing)
                             .textSelection(.enabled)
                     }
+                }
+            }
+        }
+        .font(.callout)
+        .padding(.horizontal, AppSpacing.medium)
+        .padding(.vertical, AppSpacing.small)
+    }
+
+    /// Postman-style Size panel: the displayed response's byte breakdown -
+    /// what came back (headers + body) and what went out. Hover-driven - no
+    /// close button.
+    private func sizePanel(_ response: ResponseModel) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let size = response.size {
+                hoverSection(
+                    icon: "arrow.down", tint: AppColor.accent, title: "Response Size",
+                    total: Int64(size.responseTotal).formattedByteCount,
+                    rows: [
+                        ("Headers", Int64(size.responseHeaders).formattedByteCount),
+                        ("Body", Int64(size.responseBody).formattedByteCount),
+                    ]
+                )
+                Divider()
+                hoverSection(
+                    icon: "arrow.up", tint: AppColor.warning, title: "Request Size",
+                    total: Int64(size.requestTotal).formattedByteCount,
+                    rows: [
+                        ("Headers", Int64(size.requestHeaders).formattedByteCount),
+                        ("Body", Int64(size.requestBody).formattedByteCount),
+                    ]
+                )
+            } else {
+                Text("No size details captured for this response.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .padding(AppSpacing.medium)
+            }
+        }
+        .frame(width: 300, alignment: .leading)
+        .popupPanel()
+    }
+
+    /// Chrome DevTools-style Time panel: where the displayed response's
+    /// time went - DNS, connection, TLS, upload, wait, download. Hover-
+    /// driven - no close button. Absent phases (a reused connection skips
+    /// DNS/TCP/TLS) are omitted; the total matches the status bar metric.
+    private func timePanel(_ response: ResponseModel) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let timing = response.timing {
+                let rows: [(String, String)] = [
+                    ("DNS Lookup", timing.dns?.formattedPhaseDuration),
+                    ("TCP Handshake", timing.tcp?.formattedPhaseDuration),
+                    ("TLS Handshake", timing.tls?.formattedPhaseDuration),
+                    ("Request Sent", timing.requestSent?.formattedPhaseDuration),
+                    ("Waiting (TTFB)", timing.waiting?.formattedPhaseDuration),
+                    ("Content Download", timing.download?.formattedPhaseDuration),
+                ]
+                .compactMap { label, value in value.map { (label, $0) } }
+                if rows.isEmpty {
+                    Text("No timing phases captured for this response.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .padding(AppSpacing.medium)
+                } else {
+                    hoverSection(
+                        icon: "clock", tint: AppColor.done, title: "Time",
+                        total: response.formattedDuration, rows: rows
+                    )
+                }
+            } else {
+                Text("No timing details captured for this response.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .padding(AppSpacing.medium)
+            }
+        }
+        .frame(width: 300, alignment: .leading)
+        .popupPanel()
+    }
+
+    /// One hover-panel block (Size, Time): tinted icon chip, title, and
+    /// bold total on the first row; the label/value rows indented to align
+    /// with the title under it (Postman layout).
+    private func hoverSection(
+        icon: String, tint: Color, title: String, total: String, rows: [(String, String)]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: AppSpacing.small) {
+            HStack(spacing: AppSpacing.small) {
+                Image(systemName: icon)
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(tint)
+                    .frame(width: 20, height: 20)
+                    .background(
+                        RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                            .fill(tint.opacity(0.15))
+                    )
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Spacer(minLength: 0)
+                Text(total)
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+            }
+            ForEach(rows, id: \.0) { label, value in
+                HStack {
+                    Text(label)
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 28)  // clears the chip (20) + gap (8)
+                    Spacer(minLength: 0)
+                    Text(value)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
                 }
             }
         }

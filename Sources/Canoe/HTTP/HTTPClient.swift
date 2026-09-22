@@ -419,7 +419,14 @@ enum HTTPClient {
             network: Self.makeNetworkInfo(
                 metrics: outcome.metrics,
                 certificate: outcome.certificate
-            )
+            ),
+            size: Self.makeSizeInfo(
+                request: urlRequest,
+                response: outcome.response,
+                body: outcome.data,
+                metrics: outcome.metrics
+            ),
+            timing: Self.makeTimingInfo(metrics: outcome.metrics)
         )
     }
 
@@ -467,6 +474,79 @@ enum HTTPClient {
             issuerCN: certificate?.issuerCN,
             validUntil: certificate?.notAfter
         )
+    }
+
+    /// Request/response byte counts for the Size panel. Wire counts come
+    /// from the final transaction's task metrics when they landed in time;
+    /// otherwise the same bytes are estimated by re-serializing the
+    /// assembled request and the received headers.
+    private static func makeSizeInfo(
+        request: URLRequest,
+        response: HTTPURLResponse,
+        body: Data,
+        metrics: URLSessionTaskMetrics?
+    ) -> SizeInfo {
+        let transaction = metrics?.transactionMetrics.last
+        return SizeInfo(
+            requestHeaders: transaction.map { Int($0.countOfRequestHeaderBytesSent) }
+                ?? estimateHeaderBytes(
+                    line: requestLine(for: request),
+                    headers: (request.allHTTPHeaderFields ?? [:]).map { ($0, $1) }
+                ),
+            requestBody: transaction.map { Int($0.countOfRequestBodyBytesSent) }
+                ?? request.httpBody?.count ?? 0,
+            responseHeaders: transaction.map { Int($0.countOfResponseHeaderBytesReceived) }
+                ?? estimateHeaderBytes(
+                    line: "HTTP/1.1 \(response.statusCode)",
+                    headers: response.allHeaderFields.compactMap { key, value in
+                        (key as? String).map { ($0, "\(value)") }
+                    }
+                ),
+            responseBody: transaction.map { Int($0.countOfResponseBodyBytesReceived) }
+                ?? body.count
+        )
+    }
+
+    /// Request timing phases for the Time panel, from the final
+    /// transaction's task metrics. TCP excludes the TLS handshake when one
+    /// happened (connect -> secureConnection -> connectEnd), so the phases
+    /// do not double-count. Returns nil when metrics did not land in time.
+    private static func makeTimingInfo(metrics: URLSessionTaskMetrics?) -> TimingInfo? {
+        guard let transaction = metrics?.transactionMetrics.last else { return nil }
+        func interval(_ start: Date?, _ end: Date?) -> TimeInterval? {
+            guard let start, let end else { return nil }
+            return Swift.max(0, end.timeIntervalSince(start))
+        }
+        let tcp =
+            transaction.secureConnectionStartDate.map { interval(transaction.connectStartDate, $0) }
+            ?? interval(transaction.connectStartDate, transaction.connectEndDate)
+        return TimingInfo(
+            dns: interval(transaction.domainLookupStartDate, transaction.domainLookupEndDate),
+            tcp: tcp,
+            tls: interval(transaction.secureConnectionStartDate, transaction.secureConnectionEndDate),
+            requestSent: interval(transaction.requestStartDate, transaction.requestEndDate),
+            waiting: interval(transaction.requestEndDate, transaction.responseStartDate),
+            download: interval(transaction.responseStartDate, transaction.responseEndDate)
+        )
+    }
+
+    /// Request line ("GET /path?query HTTP/1.1") for the header estimate.
+    private static func requestLine(for request: URLRequest) -> String {
+        guard let url = request.url else { return "\(request.httpMethod ?? "GET") / HTTP/1.1" }
+        var target = url.path.isEmpty ? "/" : url.path
+        if let query = url.query {
+            target += "?\(query)"
+        }
+        return "\(request.httpMethod ?? "GET") \(target) HTTP/1.1"
+    }
+
+    /// Header-block byte estimate: the request/status line plus one
+    /// "Key: Value" line per header, each CRLF-terminated, and the blank
+    /// line that ends the block. Fallback when task metrics did not land
+    /// in time.
+    private static func estimateHeaderBytes(line: String, headers: [(String, String)]) -> Int {
+        let lines = [line] + headers.map { "\($0.0): \($0.1)" }
+        return lines.reduce(0) { $0 + $1.utf8.count + 2 } + 2
     }
 
     /// URLSession reports `http/1.1` / `h2` / `h3`; the panel shows `1.1`.

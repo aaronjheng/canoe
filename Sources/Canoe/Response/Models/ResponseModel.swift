@@ -22,6 +22,32 @@ struct NetworkInfo: Sendable, Equatable {
     }
 }
 
+/// Request/response byte breakdown shown by the response Size panel
+/// (Postman-style). Transient like `ResponseModel` - never persisted to
+/// the vault.
+struct SizeInfo: Sendable, Equatable {
+    var requestHeaders: Int
+    var requestBody: Int
+    var responseHeaders: Int
+    var responseBody: Int
+
+    var requestTotal: Int { requestHeaders + requestBody }
+    var responseTotal: Int { responseHeaders + responseBody }
+}
+
+/// Request timing breakdown shown by the response Time panel (Chrome
+/// DevTools-style phases, from task metrics). Transient like
+/// `ResponseModel` - never persisted to the vault. Absent phases (e.g. no
+/// DNS on a reused connection) stay nil and are omitted from the panel.
+struct TimingInfo: Sendable, Equatable {
+    var dns: TimeInterval?
+    var tcp: TimeInterval?
+    var tls: TimeInterval?
+    var requestSent: TimeInterval?
+    var waiting: TimeInterval?
+    var download: TimeInterval?
+}
+
 /// A transient HTTP response used for display. Not persisted to the vault.
 struct ResponseModel: Identifiable, Sendable {
     let id = UUID()
@@ -32,6 +58,8 @@ struct ResponseModel: Identifiable, Sendable {
     let timestamp: Date
     let mimeType: String?
     let network: NetworkInfo?
+    let size: SizeInfo?
+    let timing: TimingInfo?
 
     var bodySize: Int { body.count }
 
@@ -75,8 +103,44 @@ struct ResponseModel: Identifiable, Sendable {
         duration.formattedDuration
     }
 
+    /// Total response size (headers + body) when measured, else the body
+    /// bytes alone.
     var formattedSize: String {
-        ByteCountFormatter.string(fromByteCount: Int64(body.count), countStyle: .file)
+        Int64(size?.responseTotal ?? body.count).formattedByteCount
+    }
+}
+
+extension Int64 {
+    /// Postman-style byte label ("373 B", "2.26 KB", "0 B"): decimal
+    /// 1000-based units like `ByteCountFormatter`'s file style, but small
+    /// counts stay abbreviated ("373 B") instead of spelled out ("373
+    /// bytes"). The decimal point is fixed regardless of locale, like
+    /// `TimeInterval.formattedDuration`; shared by the response metrics and
+    /// the Size panel.
+    var formattedByteCount: String {
+        let bytes = Swift.max(0, self)
+        guard bytes >= 1000 else { return "\(bytes) B" }
+        let (divisor, suffix): (Double, String) =
+            bytes < 1_000_000
+            ? (1_000, "KB")
+            : bytes < 1_000_000_000
+                ? (1_000_000, "MB")
+                : bytes < 1_000_000_000_000
+                    ? (1_000_000_000, "GB")
+                    : (1_000_000_000_000, "TB")
+        var value = String(
+            format: "%.2f",
+            locale: Locale(identifier: "en_US_POSIX"),
+            Double(bytes) / divisor
+        )
+        // Drop trailing zeros ("1.00" -> "1", "2.30" -> "2.3").
+        while value.hasSuffix("0") {
+            value.removeLast()
+        }
+        if value.hasSuffix(".") {
+            value.removeLast()
+        }
+        return "\(value) \(suffix)"
     }
 }
 
@@ -90,6 +154,16 @@ extension TimeInterval {
             return String(format: "%.0f ms", locale: posix, self * 1000)
         }
         return String(format: "%.2f s", locale: posix, self)
+    }
+
+    /// Time-panel phase label with sub-millisecond precision ("0.42 ms",
+    /// "12.34 ms", "1.23 s") - phases are often far below one millisecond.
+    var formattedPhaseDuration: String {
+        let posix = Locale(identifier: "en_US_POSIX")
+        if self < 1 {
+            return String(format: "%.2f ms", locale: posix, Swift.max(0, self) * 1000)
+        }
+        return String(format: "%.2f s", locale: posix, Swift.max(0, self))
     }
 }
 
