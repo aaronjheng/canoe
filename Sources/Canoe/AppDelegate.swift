@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var saveMenuItem: NSMenuItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        AppKitFocusRing.install()
         NSApp.setActivationPolicy(.regular)
         NSApp.activate()
         (AppAppearance(rawValue: SettingsStore.shared.settings.appearance) ?? .system).apply()
@@ -27,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let contentView = ContentView()
             .environment(appStore)
             .frame(minWidth: 980, minHeight: 620)
+            .focusEffectDisabled()
 
         let mainWindow = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820),
@@ -169,8 +171,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         let navigation = SettingsNavigationState()
         let split = SettingsSplitViewController(
-            sidebar: SettingsSidebarView().environment(navigation),
-            detail: SettingsView().environment(navigation).environment(appStore)
+            sidebar: SettingsSidebarView().environment(navigation).focusEffectDisabled(),
+            detail: SettingsView().environment(navigation).environment(appStore).focusEffectDisabled()
         )
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 780, height: 520),

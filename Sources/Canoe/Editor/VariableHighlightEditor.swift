@@ -344,6 +344,7 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
         field.isBezeled = false
         field.drawsBackground = false
         field.focusRingType = .none
+        field.cell?.focusRingType = .none
         // The inherited-authorization echo reads its fields; keep them
         // selectable so values still copy, just not editable.
         field.isEditable = isEditable
@@ -594,6 +595,7 @@ private struct WrappingURLField<FocusValue: Hashable>: NSViewRepresentable {
         let textView = FocusObservingTextView()
         textView.onDidBecomeFirstResponder = { [weak coordinator] in coordinator?.claimFocus() }
         textView.onDidResignFirstResponder = { [weak coordinator] in coordinator?.didResignFocus() }
+        textView.focusRingType = .none
         textView.isRichText = false
         textView.importsGraphics = false
         textView.allowsUndo = true
@@ -1019,6 +1021,7 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
         coordinator.lastSyntax = syntax
 
         let textView = NSTextView()
+        textView.focusRingType = .none
         textView.isRichText = false
         textView.importsGraphics = false
         textView.allowsUndo = true
@@ -1297,6 +1300,7 @@ extension View {
     func variableFieldBordered(isFocused: Bool = false, verticalPadding: CGFloat = AppSpacing.xxSmall) -> some View {
         self
             .textFieldStyle(.plain)
+            .focusEffectDisabled()
             .padding(.horizontal, AppSpacing.small - AppSpacing.xxSmall)
             .padding(.vertical, verticalPadding)
             .background(

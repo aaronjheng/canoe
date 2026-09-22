@@ -56,6 +56,10 @@ struct ContentView: View {
         // area inset - ignore it or the bar sinks 32pt below the traffic
         // lights, leaving a bare window-background band above it.
         .ignoresSafeArea()
+        // Disable SwiftUI's own focus chrome at the window root (cascades
+        // to descendants). AppKit's one-frame system focus ring on the
+        // shared field editor is handled separately by AppKitFocusRing.
+        .focusEffectDisabled()
         .overlay { tabDrawerOverlay }
         .overlay { envPickerOverlay }
         .onPreferenceChange(EnvPickerAnchorKey.self) { envPickerAnchor = $0 }

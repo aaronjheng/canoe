@@ -29,6 +29,7 @@ struct FilterField: View {
                 .foregroundStyle(.secondary)
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
+                .focusEffectDisabled()
                 .font(.subheadline)
                 .focused($isFocused)
             if !text.isEmpty {
@@ -210,6 +211,7 @@ struct InlineNameField: View {
         TextField(placeholder, text: $text)
             .font(font)
             .textFieldStyle(.plain)
+            .focusEffectDisabled()
             .focused($isFocused)
             .padding(.horizontal, AppSpacing.small - AppSpacing.xxSmall)
             .padding(.vertical, AppSpacing.xSmall)
