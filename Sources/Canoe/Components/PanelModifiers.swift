@@ -145,10 +145,12 @@ struct PopupPanelModifier: ViewModifier {
     }
 }
 
-/// Focus-border language for bordered fields (see `focusRingBorder`):
-/// rest state is the strong border, focused state is the accent at 2pt.
-/// The URL bar and method picker keep bespoke overlays only because their
-/// spliced UnevenRoundedRectangle shape differs - same widths, same colors.
+/// Border language for fields (see `focusRingBorder`): rest is the strong
+/// border at the standard field width, focused is accent at the same width.
+/// Hover/focus fills are handled by the caller so they can pick the right
+/// idle background. The URL bar and method picker keep bespoke overlays
+/// only because their spliced UnevenRoundedRectangle shape differs - same
+/// widths, same colors.
 struct FocusRingBorderModifier: ViewModifier {
     let isFocused: Bool
 
@@ -157,8 +159,44 @@ struct FocusRingBorderModifier: ViewModifier {
             RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                 .strokeBorder(
                     isFocused ? AppColor.accent : AppColor.borderStrong,
-                    lineWidth: isFocused ? 2 : 1)
+                    lineWidth: AppLine.field)
         )
+    }
+}
+
+/// Chrome for fields with no border at rest: hover/focus add a brighter
+/// fill and the standard field border (`AppLine.field`) - accent when
+/// focused, `borderStrong` on hover.
+struct BorderlessFieldChromeModifier: ViewModifier {
+    let isFocused: Bool
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .textFieldStyle(.plain)
+            .focusEffectDisabled()
+            .padding(.horizontal, AppSpacing.small - AppSpacing.xxSmall)
+            .padding(.vertical, AppSpacing.xSmall)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                    .fill(
+                        isFocused
+                            ? AppColor.fieldFocusBackground
+                            : (isHovered ? AppColor.fieldHoverBackground : .clear)
+                    )
+            )
+            .overlay {
+                if isFocused || isHovered {
+                    RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                        .strokeBorder(
+                            isFocused ? AppColor.accent : AppColor.borderStrong,
+                            lineWidth: AppLine.field
+                        )
+                }
+            }
+            .onHover { isHovered = $0 }
+            .animation(.easeOut(duration: 0.12), value: isHovered)
+            .animation(.easeOut(duration: 0.12), value: isFocused)
     }
 }
 
@@ -171,10 +209,15 @@ extension View {
         modifier(PopupPanelModifier())
     }
 
-    /// Single focus-border language for bordered fields: rest state is the
-    /// strong border, focused state is the accent at 2pt.
+    /// Border language for fields: rest is the strong border at the
+    /// standard field width, focused is accent at the same width.
     func focusRingBorder(isFocused: Bool) -> some View {
         modifier(FocusRingBorderModifier(isFocused: isFocused))
+    }
+
+    /// Borderless-at-rest field chrome: brighter hover/focus fill + field border.
+    func borderlessFieldChrome(isFocused: Bool) -> some View {
+        modifier(BorderlessFieldChromeModifier(isFocused: isFocused))
     }
 
     /// Applies `help` only when `condition` holds; otherwise leaves the view

@@ -840,7 +840,7 @@ struct ResponseViewerView: View {
                 .font(.caption)
                 .foregroundStyle(.tertiary)
             TextField("Find", text: $findQuery)
-                .textFieldStyle(.plain)
+                .borderlessFieldChrome(isFocused: findFieldFocused)
                 .font(.subheadline)
                 .frame(width: 150)
                 .focused($findFieldFocused)

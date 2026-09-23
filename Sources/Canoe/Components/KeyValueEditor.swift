@@ -704,16 +704,15 @@ private struct KVRow: View {
     }
 
     /// A borderless spreadsheet-like cell; disabled rows dim, like Postman.
-    /// Hover draws a `borderStrong` 1pt border, focus swaps it to accent at
-    /// the same width (`focusRingBorder` color tiers without the 2pt bump).
-    /// The stroke expands 1pt on the top/left/right (`padding(-1)`) to sit on
-    /// the column hairlines; the bottom edge stays flush with the cell so it
-    /// covers the row's own bottom hairline (a stroke overflowing downward
-    /// would land outside the row and read as thinner than the other three
-    /// edges). The row lifts via `zIndex` only within the HStack - the
-    /// vertical rule after this cell. Both the AppKit editor
-    /// (`onHoverChanged`) and this SwiftUI shell report into the same
-    /// `hoveredCell`.
+    /// Rest draws no chrome; hover/focus lift to a brighter fill and add the
+    /// standard field border. Focus recolors it to accent. The stroke expands
+    /// 1pt on the top/left/right (`padding(-1)`) to sit on the column hairlines;
+    /// the bottom edge stays flush with the cell so it covers the row's own
+    /// bottom hairline (a stroke overflowing downward would land outside
+    /// the row and read as thinner than the other three edges). The row
+    /// lifts via `zIndex` only within the HStack - the vertical rule after
+    /// this cell. Both the AppKit editor (`onHoverChanged`) and this
+    /// SwiftUI shell report into the same `hoveredCell`.
     private func cell(_ id: HoveredCell, @ViewBuilder field: () -> some View) -> some View {
         field()
             .font(AppFont.cellText)
@@ -721,16 +720,23 @@ private struct KVRow: View {
             .opacity(isEnabled ? 1 : AppOpacity.disabled)
             .padding(.horizontal, AppSpacing.small)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .background {
+                if isCellFocused(id) || hoveredCell == id {
+                    Rectangle()
+                        .fill(
+                            isCellFocused(id)
+                                ? AppColor.fieldFocusBackground
+                                : AppColor.fieldHoverBackground
+                        )
+                }
+            }
             .overlay {
-                if isCellFocused(id) {
+                if isCellFocused(id) || hoveredCell == id {
                     Rectangle()
-                        .strokeBorder(AppColor.accent, lineWidth: 1)
-                        .padding(.leading, -1)
-                        .padding(.trailing, -1)
-                        .padding(.top, -1)
-                } else if hoveredCell == id {
-                    Rectangle()
-                        .strokeBorder(AppColor.borderStrong, lineWidth: 1)
+                        .strokeBorder(
+                            isCellFocused(id) ? AppColor.accent : AppColor.borderStrong,
+                            lineWidth: AppLine.field
+                        )
                         .padding(.leading, -1)
                         .padding(.trailing, -1)
                         .padding(.top, -1)

@@ -53,13 +53,20 @@ enum AppColor {
 
     static let codeBackground: Color = Color(nsColor: .textBackgroundColor)
     static let controlBackground: Color = Color(nsColor: .controlBackgroundColor)
-    /// Raised neutral surface for the URL field, distinct from the dark editor canvas.
-    static let urlFieldBackground: Color = dynamic(
-        light: RGB(red: 255, green: 255, blue: 255),
-        dark: RGB(red: 44, green: 44, blue: 46)
-    )
     /// Barely-there wash for borderless input fields (the variable editors).
     static let fieldBackground: Color = Color.primary.opacity(0.03)
+    /// Hover fill for inputs: one luminance step brighter than the idle
+    /// wash (toward white in light mode, a charcoal step up in dark).
+    static let fieldHoverBackground: Color = dynamic(
+        light: RGB(red: 255, green: 255, blue: 255),
+        dark: RGB(red: 50, green: 50, blue: 52)
+    )
+    /// Focus fill for inputs: the brightest raised surface - every focused
+    /// field reads the same whether it started as a wash or a clear pill.
+    static let fieldFocusBackground: Color = dynamic(
+        light: RGB(red: 255, green: 255, blue: 255),
+        dark: RGB(red: 58, green: 58, blue: 60)
+    )
     /// Column-header fill for the variables tables: a fixed light gray in
     /// light mode (#F9F9F9), a matching charcoal step in dark mode.
     static let tableHeaderBackground: Color = dynamic(

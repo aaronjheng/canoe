@@ -17,6 +17,7 @@ struct FilterField: View {
     var isBoxed = false
 
     @FocusState private var isFocused: Bool
+    @State private var isHovered = false
     /// The box's screen frame - the blur monitor spares clicks inside it.
     @State private var fieldFrame: CGRect = .zero
     @State private var blurMonitor: Any?
@@ -44,19 +45,22 @@ struct FilterField: View {
         .padding(.horizontal, AppSpacing.medium)
         .padding(.vertical, verticalPadding)
         .background {
-            if isBoxed {
+            // Boxed always paints; unboxed only on hover/focus (rest is clear).
+            if isBoxed || isFocused || isHovered {
                 RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                    .fill(AppColor.controlBackground)
+                    .fill(boxBackground)
             }
         }
         .overlay {
             if let borderColor = borderColor {
                 RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                    .strokeBorder(borderColor)
+                    // Standard field width for rest and hover/focus alike.
+                    .strokeBorder(borderColor, lineWidth: AppLine.field)
                     .animation(.easeOut(duration: 0.12), value: borderColor)
             }
         }
         .padding(.horizontal, isBoxed ? AppSpacing.small : 0)
+        .onHover { isHovered = $0 }
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .global)
         } action: { frame in
@@ -66,13 +70,23 @@ struct FilterField: View {
         .onDisappear { removeBlurMonitor() }
     }
 
-    /// Boxed border tiers: idle `borderStrong` (matching the variable-field
+    /// Fill tiers: boxed idle control surface; hover/focus lift one
+    /// luminance step (`fieldHoverBackground` / `fieldFocusBackground`).
+    /// Unboxed rest is clear - only hover/focus paint (see body).
+    private var boxBackground: Color {
+        if isFocused { return AppColor.fieldFocusBackground }
+        if isHovered { return AppColor.fieldHoverBackground }
+        return AppColor.controlBackground
+    }
+
+    /// Border tiers: idle `borderStrong` (matching the variable-field
     /// borders so filters and inputs read the same), focused accent (the
-    /// standard focused-input signal). Unboxed fields render no border.
+    /// standard focused-input signal). All at `AppLine.field` width;
+    /// unboxed only draws on hover/focus (clear at rest).
     private var borderColor: Color? {
-        guard isBoxed else { return nil }
         if isFocused { return AppColor.accent }
-        return AppColor.borderStrong
+        if isHovered { return AppColor.borderStrong }
+        return isBoxed ? AppColor.borderStrong : nil
     }
 
     /// Observes without consuming: a leftMouseDown outside the box drops
@@ -222,16 +236,22 @@ struct InlineNameField: View {
             .padding(.vertical, AppSpacing.xSmall)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                    // Rest is clear: hover/focus lift to a brighter fill so
+                    // the surface reads as raised, not tinted darker.
                     .fill(
                         isFocused
-                            ? AppColor.fieldBackground
-                            : (isHovered ? AppColor.subtleBackground : .clear)
+                            ? AppColor.fieldFocusBackground
+                            : (isHovered ? AppColor.fieldHoverBackground : .clear)
                     )
             )
             .overlay {
-                if isFocused {
+                // Borderless at rest: field border on hover/focus.
+                if isFocused || isHovered {
                     RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                        .strokeBorder(AppColor.accent, lineWidth: 2)
+                        .strokeBorder(
+                            isFocused ? AppColor.accent : AppColor.borderStrong,
+                            lineWidth: AppLine.field
+                        )
                 }
             }
             .onSubmit { isFocused = false }

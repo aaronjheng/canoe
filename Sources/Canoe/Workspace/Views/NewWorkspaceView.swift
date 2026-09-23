@@ -7,6 +7,7 @@ struct NewWorkspaceView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @FocusState private var isFocused: Bool
+    @State private var isHovered = false
 
     var body: some View {
         VStack(spacing: AppSpacing.large) {
@@ -26,8 +27,9 @@ struct NewWorkspaceView: View {
 
             TextField("Workspace Name", text: $name)
                 .font(.subheadline)
-                .variableFieldBordered(isFocused: isFocused)
+                .variableFieldBordered(isFocused: isFocused, isHovered: isHovered)
                 .focused($isFocused)
+                .onHover { isHovered = $0 }
                 .onSubmit(create)
 
             HStack {

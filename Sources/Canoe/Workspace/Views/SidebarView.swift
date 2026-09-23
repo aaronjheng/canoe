@@ -470,7 +470,7 @@ private struct InlineRenameField: View {
     var body: some View {
         TextField("Name", text: $draft)
             .font(AppFont.sidebarRow)
-            .textFieldStyle(.plain)
+            .borderlessFieldChrome(isFocused: focused)
             .focused($focused)
             .onAppear { draft = initialName }
             .task { focused = true }

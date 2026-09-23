@@ -84,12 +84,16 @@ struct AuthorizationForm: View {
     /// Types offered in the picker. The collection is the top of the
     /// inheritance chain, so (Postman-style) it is not offered inherit there.
     var availableTypes: [AuthType] = AuthType.allCases
-    /// Focus mirrors for the bordered fields below: the AppKit-backed editors
-    /// report via `onFocusChange`, the SecureField via `@FocusState`. Without
-    /// these the shared accent ring never lights up here.
+    /// Focus/hover mirrors for the bordered fields below: the AppKit-backed
+    /// editors report via `onFocusChange`/`onHoverChanged`, the SecureField
+    /// via `@FocusState`/`.onHover`. Without these the shared border language
+    /// never lights up here.
     @State private var isUsernameFocused = false
+    @State private var isUsernameHovered = false
     @FocusState private var isPasswordFocused: Bool
+    @State private var isPasswordHovered = false
     @State private var isTokenFocused = false
+    @State private var isTokenHovered = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -153,15 +157,23 @@ struct AuthorizationForm: View {
                             variables: variables,
                             suggestions: suggestions,
                             placeholder: "Username",
-                            onFocusChange: { isUsernameFocused = $0 }
+                            onFocusChange: { isUsernameFocused = $0 },
+                            onHoverChanged: { isUsernameHovered = $0 }
                         )
-                        .variableFieldBordered(isFocused: isUsernameFocused)
+                        .variableFieldBordered(
+                            isFocused: isUsernameFocused,
+                            isHovered: isUsernameHovered
+                        )
                     }
                     fieldRow("Password") {
                         SecureField("Password", text: $password)
                             .font(AppFont.monoSubheadline)
-                            .variableFieldBordered(isFocused: isPasswordFocused)
+                            .variableFieldBordered(
+                                isFocused: isPasswordFocused,
+                                isHovered: isPasswordHovered
+                            )
                             .focused($isPasswordFocused)
+                            .onHover { isPasswordHovered = $0 }
                     }
                 case .bearer:
                     fieldRow("Token") {
@@ -170,9 +182,13 @@ struct AuthorizationForm: View {
                             variables: variables,
                             suggestions: suggestions,
                             placeholder: "Token",
-                            onFocusChange: { isTokenFocused = $0 }
+                            onFocusChange: { isTokenFocused = $0 },
+                            onHoverChanged: { isTokenHovered = $0 }
                         )
-                        .variableFieldBordered(isFocused: isTokenFocused)
+                        .variableFieldBordered(
+                            isFocused: isTokenFocused,
+                            isHovered: isTokenHovered
+                        )
                     }
                 }
             }

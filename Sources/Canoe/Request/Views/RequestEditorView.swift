@@ -414,16 +414,21 @@ struct RequestEditorView: View {
             .padding(.vertical, AppSpacing.xSmall)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                    // Rest is clear: hover/focus lift to a brighter fill.
                     .fill(
                         isNameFieldFocused
-                            ? AppColor.fieldBackground
-                            : (isNameHovered ? AppColor.subtleBackground : .clear)
+                            ? AppColor.fieldFocusBackground
+                            : (isNameHovered ? AppColor.fieldHoverBackground : .clear)
                     )
             )
             .overlay {
-                if isNameFieldFocused {
+                // Borderless at rest: field border on hover/focus.
+                if isNameFieldFocused || isNameHovered {
                     RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                        .strokeBorder(AppColor.accent, lineWidth: 2)
+                        .strokeBorder(
+                            isNameFieldFocused ? AppColor.accent : AppColor.borderStrong,
+                            lineWidth: AppLine.field
+                        )
                 }
             }
             .onSubmit { isNameFieldFocused = false }
@@ -563,13 +568,13 @@ struct RequestEditorView: View {
         )
         .padding(.horizontal, AppSpacing.compact)
         .padding(.vertical, 3)
-        // Background tiers mirror the method picker (the other half of the
-        // bar): gray wash at rest, deeper gray on hover, bright white while
-        // focused (with the accent border).
+        // Background tiers mirror the method picker: idle wash at rest,
+        // brighter hover fill, brightest focus fill (accent border at the
+        // standard field width).
         .background(
             urlFieldFocused == .url
-                ? AppColor.urlFieldBackground
-                : (isURLBarHovered ? AppColor.subtleBackground : AppColor.fieldBackground),
+                ? AppColor.fieldFocusBackground
+                : (isURLBarHovered ? AppColor.fieldHoverBackground : AppColor.fieldBackground),
             in: shape
         )
         .overlay {
@@ -580,7 +585,7 @@ struct RequestEditorView: View {
                     // URL bar keeps its border constant too and signals hover
                     // through the fill instead.
                     urlFieldFocused == .url ? AppColor.accent : AppColor.borderStrong,
-                    lineWidth: urlFieldFocused == .url ? 2 : 1
+                    lineWidth: AppLine.field
                 )
                 .allowsHitTesting(false)
         }
@@ -621,7 +626,7 @@ struct RequestEditorView: View {
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                 TextField("Filter methods", text: $methodFilter)
-                    .textFieldStyle(.plain)
+                    .borderlessFieldChrome(isFocused: methodFilterFieldFocused)
                     .font(.subheadline)
                     .focused($methodFilterFieldFocused)
                     .onSubmit {
@@ -834,11 +839,18 @@ private struct MethodPicker: View {
         .help("HTTP method")
         .padding(.horizontal, AppSpacing.compact)
         .padding(.vertical, 3)
-        .background(isHovering && !isExpanded ? AppColor.subtleBackground : AppColor.fieldBackground, in: shape)
+        // Rest is a faint wash; hover/focus lift one step brighter - same
+        // tiers as the URL bar. Border stays at the standard field width.
+        .background(
+            isExpanded
+                ? AppColor.fieldFocusBackground
+                : (isHovering ? AppColor.fieldHoverBackground : AppColor.fieldBackground),
+            in: shape
+        )
         .overlay {
             shape.strokeBorder(
                 isExpanded ? AppColor.accent : AppColor.borderStrong,
-                lineWidth: isExpanded ? 2 : 1
+                lineWidth: AppLine.field
             )
         }
         .frame(width: AppSize.methodPickerWidth)

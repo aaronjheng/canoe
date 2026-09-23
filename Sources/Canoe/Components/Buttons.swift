@@ -9,7 +9,8 @@ import SwiftUI
 // - Icon chrome (toolbar glyphs, icon buttons, tab toggles):
 //   `AppColor.tabHoverBackground` (primary 5%).
 // Press deepens to `AppColor.border`; disabled controls get no hover fill.
-// Focused text fields use the accent 2pt ring (`focusRingBorder`).
+// Text fields use the standard field border on focus (accent) and lift to
+// a brighter fill (`fieldHoverBackground` / `fieldFocusBackground`).
 // MARK: - Button styles
 
 /// The primary call-to-action button (Primer `accent.fg` blue): Send, Create,

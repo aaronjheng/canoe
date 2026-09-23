@@ -24,6 +24,12 @@ enum AppRadius {
     static let pill: CGFloat = 999
 }
 
+enum AppLine {
+    /// Field border width (1pt): rest box on bordered inputs, hover/focus
+    /// ring on borderless ones - one width everywhere so fields read the same.
+    static let field: CGFloat = 1
+}
+
 enum AppOpacity {
     static let disabled: CGFloat = 0.45
     static let badgeBackground: CGFloat = 0.12

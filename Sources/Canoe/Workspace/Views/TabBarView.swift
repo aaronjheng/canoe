@@ -589,7 +589,7 @@ struct EnvironmentPickerPanel: View {
         VStack(spacing: 0) {
             HStack(spacing: AppSpacing.small) {
                 TextField("Search", text: $search)
-                    .textFieldStyle(.plain)
+                    .borderlessFieldChrome(isFocused: searchFocused)
                     .font(.subheadline)
                     .focused($searchFocused)
                     .onSubmit {
@@ -1066,7 +1066,7 @@ struct TabDrawer: View {
         VStack(spacing: 0) {
             HStack(spacing: AppSpacing.small) {
                 TextField("Search tabs", text: $search)
-                    .textFieldStyle(.plain)
+                    .borderlessFieldChrome(isFocused: searchFocused)
                     .font(.subheadline)
                     .focused($searchFocused)
                     .onSubmit {

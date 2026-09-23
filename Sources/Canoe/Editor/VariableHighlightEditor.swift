@@ -1357,7 +1357,8 @@ extension VariableHighlightEditor where FocusValue == Never {
         placeholder: String? = nil,
         isEditable: Bool = true,
         onFocusChange: ((Bool) -> Void)? = nil,
-        onCommit: (() -> Void)? = nil
+        onCommit: (() -> Void)? = nil,
+        onHoverChanged: ((Bool) -> Void)? = nil
     ) {
         self.init(
             text: text,
@@ -1372,7 +1373,8 @@ extension VariableHighlightEditor where FocusValue == Never {
             focusValue: nil,
             isEditable: isEditable,
             onFocusChange: onFocusChange,
-            onCommit: onCommit
+            onCommit: onCommit,
+            onHoverChanged: onHoverChanged
         )
     }
 }
@@ -1380,12 +1382,16 @@ extension VariableHighlightEditor where FocusValue == Never {
 extension View {
     /// Wraps a borderless variable editor in the standard rounded-border
     /// field chrome (a match of `.textFieldStyle(.roundedBorder)`).
-    /// Focused fields swap the hairline for a thicker solid accent border so
-    /// the focused surface is unmistakable.
+    /// Hover/focus lift the fill one step brighter than the idle wash; the
+    /// border stays at the standard field width (strong → accent).
     /// The plain style is forced here so native `TextField`/`SecureField`
     /// wrapped by this chrome don't draw their own system bezel inside it -
     /// that double border is exactly what this modifier exists to replace.
-    func variableFieldBordered(isFocused: Bool = false, verticalPadding: CGFloat = AppSpacing.xxSmall) -> some View {
+    func variableFieldBordered(
+        isFocused: Bool = false,
+        isHovered: Bool = false,
+        verticalPadding: CGFloat = AppSpacing.xxSmall
+    ) -> some View {
         self
             .textFieldStyle(.plain)
             .focusEffectDisabled()
@@ -1393,11 +1399,15 @@ extension View {
             .padding(.vertical, verticalPadding)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                    .fill(AppColor.fieldBackground)
+                    .fill(
+                        isFocused
+                            ? AppColor.fieldFocusBackground
+                            : (isHovered ? AppColor.fieldHoverBackground : AppColor.fieldBackground)
+                    )
             )
-            // Shared focus-border language (see focusRingBorder): the URL
-            // bar and method picker keep bespoke overlays only because
-            // their spliced UnevenRoundedRectangle shape differs.
+            // Shared border language (see focusRingBorder): the URL bar and
+            // method picker keep bespoke overlays only because their spliced
+            // UnevenRoundedRectangle shape differs.
             .focusRingBorder(isFocused: isFocused)
     }
 }

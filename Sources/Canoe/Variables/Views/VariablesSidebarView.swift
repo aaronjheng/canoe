@@ -610,11 +610,9 @@ private struct VariableRow: View {
     }
 
     /// Inline value editor with the InlineNameField language: quiet text at
-    /// rest, a light pill on hover, and the same pill plus the accent ring
-    /// while focused (click to edit; `fieldBackground` is fainter than the
-    /// hover pill on the gray sidebar and would make the surface vanish
-    /// exactly when editing starts). One persistent editor - no view swap
-    /// on state change - so caret and undo survive the transitions.
+    /// rest, a brighter pill on hover, and the brightest fill plus an accent
+    /// hairline while focused (click to edit). One persistent editor - no
+    /// view swap on state change - so caret and undo survive the transitions.
     private var valueField: some View {
         VariableHighlightEditor(
             text: Binding(
@@ -632,21 +630,31 @@ private struct VariableRow: View {
                 // lands on disk, matching Enter.
                 if !focused { onCommit?() }
             },
-            onCommit: { commitAndExitEditing() }
+            onCommit: { commitAndExitEditing() },
+            onHoverChanged: { isValueHovered = $0 }
         )
         .padding(.horizontal, AppSpacing.small - AppSpacing.xxSmall)
         .padding(.vertical, AppSpacing.xSmall)
+        // Rest is clear on the gray sidebar: hover/focus lift to a brighter
+        // fill (not the darker `subtleBackground` wash).
         .background(
             RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                .fill(isValueFocused || isValueHovered ? AppColor.subtleBackground : .clear)
+                .fill(
+                    isValueFocused
+                        ? AppColor.fieldFocusBackground
+                        : (isValueHovered ? AppColor.fieldHoverBackground : .clear)
+                )
         )
         .overlay {
-            if isValueFocused {
+            // Borderless at rest: field border on hover/focus.
+            if isValueFocused || isValueHovered {
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                    .strokeBorder(AppColor.accent, lineWidth: 2)
+                    .strokeBorder(
+                        isValueFocused ? AppColor.accent : AppColor.borderStrong,
+                        lineWidth: AppLine.field
+                    )
             }
         }
-        .onHover { isValueHovered = $0 }
         .onAppear { installValueBlurMonitor() }
         .onDisappear { removeValueBlurMonitor() }
         .frame(maxWidth: .infinity, alignment: .leading)
