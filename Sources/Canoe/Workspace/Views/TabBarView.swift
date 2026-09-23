@@ -38,9 +38,9 @@ struct TabBarView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 ScrollViewReader { proxy in
                     // Tight pill spacing: the separator's 1pt column plus
-                    // 2pt on each side keeps inactive tabs visually apart
+                    // 1pt on each side keeps inactive tabs visually apart
                     // without wasting strip width.
-                    HStack(spacing: AppSpacing.xxSmall) {
+                    HStack(spacing: tabPillSpacing) {
                         ForEach(Array(store.visibleOpenTabs.enumerated()), id: \.element.id) { index, tab in
                             TabPill(
                                 tab: tab,
@@ -360,6 +360,10 @@ struct TabBarView: View {
         if case .tab = store.pendingClose { "Close Without Saving" } else { "Discard All" }
     }
 
+    /// Gap between tab pills (and before the inline "+"). Half the shared
+    /// `xxSmall` token so the strip stays dense without touching other uses.
+    private let tabPillSpacing: CGFloat = 1
+
     /// Postman-style tab sizing: tabs share the strip width equally. They cap
     /// at `tabMaxWidth` when there are few and shrink to `tabMinWidth` when
     /// crowded; horizontal scrolling only takes over beyond that floor. The
@@ -368,8 +372,8 @@ struct TabBarView: View {
         let count = store.visibleOpenTabs.count
         guard count > 0, availableWidth > 0 else { return nil }
         // One gap between each pair of tabs plus one before the "+" button
-        // (matches the pills HStack's xxSmall spacing).
-        let gaps = AppSpacing.xxSmall * CGFloat(count)
+        // (matches the pills HStack's tabPillSpacing).
+        let gaps = tabPillSpacing * CGFloat(count)
         let usable = availableWidth - AppSpacing.small * 2 - gaps - newTabButtonWidth
         return min(AppSize.tabMaxWidth, max(AppSize.tabMinWidth, usable / CGFloat(count)))
     }
