@@ -471,9 +471,6 @@ private struct VariableRow: View {
     /// come from the field itself (AppKit first-responder), not the row.
     @State private var isValueFocused = false
     @State private var isValueHovered = false
-    /// The value field's frame in global coordinates - the click-away blur
-    /// monitor needs it to spare clicks inside the field.
-    @State private var valueFieldFrame: CGRect = .zero
     /// Local left-mouse-down monitor that ends the AppKit editing session
     /// when a click lands outside the field: AppKit field editors don't
     /// blur on background clicks on their own (the same hand-rolled monitor
@@ -650,11 +647,6 @@ private struct VariableRow: View {
             }
         }
         .onHover { isValueHovered = $0 }
-        .onGeometryChange(for: CGRect.self) { proxy in
-            proxy.frame(in: .global)
-        } action: { frame in
-            valueFieldFrame = frame
-        }
         .onAppear { installValueBlurMonitor() }
         .onDisappear { removeValueBlurMonitor() }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -676,15 +668,19 @@ private struct VariableRow: View {
         valueBlurMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
             MainActor.assumeIsolated {
                 guard isValueFocused, let window = event.window else { return }
-                // Same window-base -> screen-top-left conversion as the
-                // filter field: SwiftUI .global frames live in that space.
-                let screenTop = window.screen?.frame.maxY ?? 0
-                let point = CGPoint(
-                    x: window.frame.origin.x + event.locationInWindow.x,
-                    y: screenTop - window.frame.origin.y - event.locationInWindow.y)
-                if !valueFieldFrame.contains(point) {
-                    NSApp.keyWindow?.makeFirstResponder(nil)
+                // Spare clicks on the focused editor itself. The field editor
+                // (or the text field) is an AppKit view in window space, so a
+                // direct bounds test replaces the .global frame conversion that
+                // made double-clicks on an already-focused value read outside.
+                if let responder = window.firstResponder as? NSView,
+                    responder.window === window
+                {
+                    let point = responder.convert(event.locationInWindow, from: nil)
+                    if responder.bounds.contains(point) {
+                        return
+                    }
                 }
+                window.makeFirstResponder(nil)
             }
             return event
         }

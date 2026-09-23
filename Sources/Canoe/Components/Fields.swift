@@ -83,14 +83,16 @@ struct FilterField: View {
     /// their own - the same disease the sidebar's inline rename field and
     /// the request name field each hand-roll monitors for). The click point
     /// is converted from window-base into the screen-top-left space SwiftUI
-    /// .global frames use (same conversion as the tab strip's double-click
-    /// monitor), so clicks inside the field keep the caret.
+    /// .global frames use (primary screen top edge, same as the tab strip's
+    /// double-click monitor and the variables inspector's value blur - not
+    /// `window.screen`, which can disagree on multi-display setups and make
+    /// double-clicks on a focused field read as outside).
     private func installBlurMonitor() {
         guard blurMonitor == nil else { return }
         blurMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
             MainActor.assumeIsolated {
                 if isFocused, let window = event.window {
-                    let screenTop = window.screen?.frame.maxY ?? 0
+                    let screenTop = NSScreen.screens.first?.frame.maxY ?? 0
                     let point = CGPoint(
                         x: window.frame.origin.x + event.locationInWindow.x,
                         y: screenTop - window.frame.origin.y - event.locationInWindow.y)
@@ -251,8 +253,17 @@ struct InlineNameField: View {
     private func installDismissMonitor() {
         guard dismissMonitor == nil else { return }
         dismissMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
-            if isFocused, !fieldFrame.contains(event.locationInWindow) {
-                isFocused = false
+            MainActor.assumeIsolated {
+                guard isFocused, let window = event.window else { return }
+                // Window-base -> screen-top-left conversion for SwiftUI .global
+                // frames (primary screen top edge, same as TabBarView).
+                let screenTop = NSScreen.screens.first?.frame.maxY ?? 0
+                let point = CGPoint(
+                    x: window.frame.origin.x + event.locationInWindow.x,
+                    y: screenTop - window.frame.origin.y - event.locationInWindow.y)
+                if !fieldFrame.contains(point) {
+                    isFocused = false
+                }
             }
             return event
         }
