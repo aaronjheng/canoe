@@ -2,6 +2,14 @@ import AppKit
 import SwiftUI
 
 // Shared button styles and link buttons.
+//
+// Hover language (keep call sites on these two tokens):
+// - Inline rows / text controls (tree rows, method picker, link labels,
+//   panel rows): `AppColor.subtleBackground` (secondary 10%).
+// - Icon chrome (toolbar glyphs, icon buttons, tab toggles):
+//   `AppColor.tabHoverBackground` (primary 5%).
+// Press deepens to `AppColor.border`; disabled controls get no hover fill.
+// Focused text fields use the accent 2pt ring (`focusRingBorder`).
 // MARK: - Button styles
 
 /// The primary call-to-action button (Primer `accent.fg` blue): Send, Create,
@@ -18,7 +26,7 @@ struct SendButtonStyle: ButtonStyle {
             .padding(.vertical, AppSpacing.xSmall)
             .background(AppColor.accent)
             .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
-            .brightness(configuration.isPressed ? -0.10 : (isHovering ? 0.06 : 0))
+            .brightness(configuration.isPressed ? -0.10 : (isEnabled && isHovering ? 0.06 : 0))
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .opacity(isEnabled ? 1 : AppOpacity.disabled)
             .onHover { isHovering = $0 }
@@ -32,20 +40,21 @@ struct SendButtonStyle: ButtonStyle {
 typealias PrimaryButtonStyle = SendButtonStyle
 
 struct ToolbarButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .labelStyle(.iconOnly)
             .font(.body)
-            .foregroundStyle(configuration.isPressed || isHovering ? .primary : .secondary)
+            .foregroundStyle(configuration.isPressed || (isEnabled && isHovering) ? .primary : .secondary)
             .padding(AppSpacing.small - AppSpacing.xxSmall)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
                     .fill(
                         configuration.isPressed
                             ? AppColor.border
-                            : (isHovering ? AppColor.tabHoverBackground : .clear)
+                            : (isEnabled && isHovering ? AppColor.tabHoverBackground : .clear)
                     )
             )
             .contentShape(Rectangle())
@@ -63,16 +72,19 @@ struct ToolbarButtonStyle: ButtonStyle {
 /// buttons get no hover fill - a control that cannot act must not pretend
 /// it is interactive. Icon-only labels square into a fixed glyph box, so
 /// every hover pill is the same size (SF Symbols have varying widths);
-/// labels that carry text opt out via `iconSquare: false`.
+/// labels that carry text opt out via `iconSquare: false`. Dense call
+/// sites (tree rows, table cells, filter fields) pass `inset: 0` so the
+/// pill never inflates the host row's height.
 struct IconButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     var iconSquare = true
+    var inset: CGFloat = AppSpacing.compact - AppSpacing.xxSmall
     @State private var isHovering = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .iconGlyphBox(active: iconSquare)
-            .padding(AppSpacing.compact - AppSpacing.xxSmall)
+            .padding(inset)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
                     .fill(
@@ -96,6 +108,7 @@ struct ToolbarToggleButton: View {
     let isOn: Bool
     let help: String
     let action: () -> Void
+    @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
 
     var body: some View {
@@ -109,7 +122,7 @@ struct ToolbarToggleButton: View {
                         .fill(
                             isOn
                                 ? AppColor.tabActiveBackground
-                                : (isHovering ? AppColor.tabHoverBackground : .clear)
+                                : (isEnabled && isHovering ? AppColor.tabHoverBackground : .clear)
                         )
                 )
                 .contentShape(Rectangle())
@@ -150,9 +163,9 @@ extension View {
 // MARK: - Link button
 
 /// The single text-link language (Postman-style inline actions): app accent,
-/// underlined, plain chrome. Replaces scattered `.buttonStyle(.link)` uses,
-/// which render the *system* accent and drift from `AppColor.accent` whenever
-/// the user recolors their system accent.
+/// underlined, light pill on hover. Replaces scattered `.buttonStyle(.link)`
+/// uses, which render the *system* accent and drift from `AppColor.accent`
+/// whenever the user recolors their system accent.
 struct LinkButton: View {
     let title: String
     var font: Font = .subheadline
@@ -167,13 +180,39 @@ struct LinkButton: View {
     }
 
     var body: some View {
-        Button(action: action) {
+        Button(role: isDestructive ? .destructive : nil, action: action) {
             Text(title)
                 .font(font)
                 .foregroundStyle(isDestructive ? AppColor.error : AppColor.accent)
                 .underline()
         }
-        .buttonStyle(.plain)
+        .buttonStyle(LinkButtonStyle())
+    }
+}
+
+/// Hover/press feedback for `LinkButton` and inline text actions: row-token
+/// wash under the label so they read as tappable next to icon-button
+/// neighbors. Shared by ConsoleView's Show Raw / Copy actions.
+struct LinkButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.horizontal, AppSpacing.xxSmall)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                    .fill(
+                        configuration.isPressed
+                            ? AppColor.border
+                            : (isEnabled && isHovering ? AppColor.subtleBackground : .clear)
+                    )
+            )
+            .contentShape(Rectangle())
+            .onHover { isHovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: isHovering)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 

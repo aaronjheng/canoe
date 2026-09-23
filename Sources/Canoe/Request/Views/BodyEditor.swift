@@ -29,22 +29,11 @@ struct BodyEditor: View {
     private var typeSelector: some View {
         HStack(spacing: AppSpacing.large) {
             ForEach(RequestBodyType.allCases) { type in
-                Button {
-                    request.requestBodyType = type
-                } label: {
-                    HStack(spacing: AppSpacing.xSmall) {
-                        Image(systemName: request.requestBodyType == type ? "largecircle.fill.circle" : "circle")
-                            .font(.subheadline)
-                            .foregroundStyle(request.requestBodyType == type ? AppColor.accent : .secondary)
-                        Text(type.label)
-                            .font(.subheadline)
-                            .foregroundStyle(request.requestBodyType == type ? .primary : .secondary)
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Send body as \(type.label)")
-                .accessibilityAddTraits(request.requestBodyType == type ? .isSelected : [])
-                .help("Send body as \(type.label)")
+                BodyTypeRadio(
+                    type: type,
+                    isSelected: request.requestBodyType == type,
+                    action: { request.requestBodyType = type }
+                )
             }
             Spacer(minLength: 0)
             if request.requestBodyType == .raw {
@@ -187,6 +176,8 @@ private struct BinaryFileEditor: View {
                 Button("Select File…") {
                     if let url = openFilePanel() { path = url.path }
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
                 .help("Choose a file to send as the body")
                 if !path.isEmpty {
                     LinkButton("Clear", isDestructive: true) { path = "" }
@@ -196,5 +187,45 @@ private struct BinaryFileEditor: View {
             .padding(AppSpacing.medium)
             Spacer(minLength: 0)
         }
+    }
+}
+
+/// One body-type radio with the shared row hover language: unselected
+/// options wash on hover so the selector reads as interactive, selected
+/// keeps the accent circle + primary label.
+private struct BodyTypeRadio: View {
+    let type: RequestBodyType
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: AppSpacing.xSmall) {
+                Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
+                    .font(.subheadline)
+                    .foregroundStyle(isSelected ? AppColor.accent : .secondary)
+                Text(type.label)
+                    .font(.subheadline)
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+            }
+            .padding(.horizontal, AppSpacing.xxSmall)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                    .fill(
+                        isSelected
+                            ? .clear
+                            : (isHovering ? AppColor.subtleBackground : .clear)
+                    )
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovering)
+        .accessibilityLabel("Send body as \(type.label)")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .help("Send body as \(type.label)")
     }
 }

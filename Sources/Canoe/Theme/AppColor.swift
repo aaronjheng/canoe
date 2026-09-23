@@ -73,7 +73,11 @@ enum AppColor {
         light: RGB(red: 245, green: 245, blue: 245),
         dark: RGB(red: 37, green: 37, blue: 38)
     )
+    /// Hover wash for inline rows / text controls (tree rows, method
+    /// picker, link labels). Icon chrome uses `tabHoverBackground` instead
+    /// - see the hover-language note at the top of `Components/Buttons.swift`.
     static let subtleBackground: Color = Color.secondary.opacity(0.10)
+
     /// Selected-row fill. Uses the app accent (not the system accentColor)
     /// so selection stays deterministic across user accent choices and
     /// never competes with the method colors inside the row.
@@ -90,6 +94,8 @@ enum AppColor {
     /// stronger than hover, so selection never tints the method colors inside
     /// the tab and stays independent of the user's system accent color.
     static let tabActiveBackground: Color = Color.primary.opacity(0.08)
+    /// Hover wash for icon chrome (toolbar glyphs, icon buttons, tab
+    /// toggles). Row/text controls use `subtleBackground` instead.
     static let tabHoverBackground: Color = Color.primary.opacity(0.05)
 
     /// Soft shadow for floating popup cards (method dropdown, URL editor).

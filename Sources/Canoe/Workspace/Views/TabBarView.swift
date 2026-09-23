@@ -476,6 +476,7 @@ struct TabDrawerAnchorKey: PreferenceKey {
 struct EnvironmentPicker: View {
     @Environment(AppStore.self) private var store
     @Binding var isShown: Bool
+    @State private var isHovering = false
 
     var body: some View {
         // Plain content with a tap gesture, not a Button: only part of a
@@ -492,8 +493,15 @@ struct EnvironmentPicker: View {
         }
         .padding(.horizontal, AppSpacing.small)
         .frame(minHeight: AppSize.tabHeight)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                .fill(isHovering || isShown ? AppColor.subtleBackground : .clear)
+        )
         .contentShape(Rectangle())
+        .onHover { isHovering = $0 }
         .onTapGesture { isShown.toggle() }
+        .animation(.easeOut(duration: 0.12), value: isHovering)
+        .animation(.easeOut(duration: 0.12), value: isShown)
         .accessibilityLabel(store.activeEnvironment.map { "Active environment: \($0.name)" } ?? "No environment selected")
         .accessibilityAddTraits(.isButton)
         .help(store.activeEnvironment.map { "Active environment: \($0.name)" } ?? "No environment selected")
@@ -608,7 +616,7 @@ struct EnvironmentPickerPanel: View {
                     onDismiss()
                 }
                 .labelStyle(.iconOnly)
-                .buttonStyle(.plain)
+                .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
                 .foregroundStyle(.secondary)
                 .disabled(store.activeWorkspace == nil)
                 .help("New Environment")

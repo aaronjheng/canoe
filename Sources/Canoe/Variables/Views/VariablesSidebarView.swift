@@ -546,7 +546,7 @@ private struct VariableRow: View {
                     } label: {
                         Image(systemName: variable.isEnabled ? "checkmark.square" : "square")
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
                     .foregroundStyle(.secondary)
                     .focused($focusedAction, equals: .toggle)
                     .accessibilityLabel(variable.isEnabled ? "Disable Variable" : "Enable Variable")
@@ -562,7 +562,7 @@ private struct VariableRow: View {
                     } label: {
                         Image(systemName: isRevealed ? "eye.slash" : "eye")
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
                     .foregroundStyle(.secondary)
                     .focused($focusedAction, equals: .reveal)
                     .accessibilityLabel(isRevealed ? "Hide value" : "Reveal value")
@@ -575,7 +575,7 @@ private struct VariableRow: View {
                 } label: {
                     Image(systemName: "doc.on.doc")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
                 .foregroundStyle(.secondary)
                 .focused($focusedAction, equals: .copy)
                 .accessibilityLabel("Copy value")
@@ -646,7 +646,7 @@ private struct VariableRow: View {
         .overlay {
             if isValueFocused {
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                    .strokeBorder(AppColor.accent, lineWidth: 1)
+                    .strokeBorder(AppColor.accent, lineWidth: 2)
             }
         }
         .onHover { isValueHovered = $0 }

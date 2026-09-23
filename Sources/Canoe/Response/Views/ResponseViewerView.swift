@@ -158,17 +158,22 @@ struct ResponseViewerView: View {
     }
 
     /// One trailing metric in the tab bar ("261 ms"). `onHover` opts a
-    /// metric into the hover-panel behavior (the time and size breakdowns).
+    /// metric into the hover-panel behavior (the time and size breakdowns);
+    /// the pill itself makes the panel discoverable.
     private func statusMetric(
         _ value: String,
         systemImage: String,
         onHover: ((Bool) -> Void)? = nil
     ) -> some View {
-        Label(value, systemImage: systemImage)
-            .font(.caption)
-            .monospacedDigit()
-            .foregroundStyle(.secondary)
-            .onHover { hovering in onHover?(hovering) }
+        MetricHoverChip(
+            onHover: onHover,
+            content: {
+                Label(value, systemImage: systemImage)
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+        )
     }
 
     // MARK: - Response detail (Headers | Body tab bar)
@@ -338,15 +343,20 @@ struct ResponseViewerView: View {
     }
 
     /// Network details entry in the metrics row - icon only. Not a button:
-    /// hovering it reveals the Network details panel.
+    /// hovering it reveals the Network details panel (chip wash makes the
+    /// affordance visible).
     private var networkStatus: some View {
-        Image(systemName: "network")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .onHover { hovering in
+        MetricHoverChip(
+            onHover: { hovering in
                 networkStatusHovered = hovering
                 refreshPanel(.network)
+            },
+            content: {
+                Image(systemName: "network")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
+        )
     }
 
     /// Postman-style Network panel: connection details for the displayed
@@ -1029,5 +1039,29 @@ private struct BodyToolbarEdgeShadow: View {
             .frame(height: 7)
         }
         .allowsHitTesting(false)
+    }
+}
+
+/// Metric chip that opens a hover panel: row-token wash on hover so the
+/// panel is discoverable. `onHover` also feeds the panel's anchor state.
+private struct MetricHoverChip<Content: View>: View {
+    var onHover: ((Bool) -> Void)?
+    @ViewBuilder var content: Content
+    @State private var isHovering = false
+
+    var body: some View {
+        content
+            .padding(.horizontal, AppSpacing.xxSmall)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                    .fill(isHovering ? AppColor.subtleBackground : .clear)
+            )
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                isHovering = hovering
+                onHover?(hovering)
+            }
+            .animation(.easeOut(duration: 0.12), value: isHovering)
     }
 }

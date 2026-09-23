@@ -43,6 +43,9 @@ struct NewWorkspaceView: View {
         }
         .padding(AppSpacing.xLarge)
         .frame(width: 380)
+        // Sheet is its own root: suppress SwiftUI focus chrome here too so
+        // first focus in the name field never paints the white-box flash.
+        .focusEffectDisabled()
         .onAppear {
             name = ""
             isFocused = true

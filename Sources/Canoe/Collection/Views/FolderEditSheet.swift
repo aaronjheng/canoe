@@ -135,5 +135,8 @@ struct FolderEditSheet: View {
             .padding(.vertical, AppSpacing.small)
         }
         .frame(width: 640)
+        // Sheet is its own root: suppress SwiftUI focus chrome so first
+        // focus never paints the white-box flash (AGENTS.md checklist).
+        .focusEffectDisabled()
     }
 }

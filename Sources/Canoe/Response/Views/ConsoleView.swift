@@ -241,14 +241,14 @@ private struct ConsoleEntryDetail: View {
                         .font(.caption)
                     }
                 )
-                .buttonStyle(.plain)
+                .buttonStyle(LinkButtonStyle())
                 .foregroundStyle(AppColor.accent)
                 Button(action: onCopyRaw) {
                     Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
                         .labelStyle(.titleAndIcon)
                         .font(.caption)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(LinkButtonStyle())
                 .foregroundStyle(AppColor.accent)
             }
             if showRaw {

@@ -37,7 +37,7 @@ struct FilterField: View {
                     text = ""
                 }
                 .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
+                .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
                 .foregroundStyle(.secondary)
                 .help("Clear filter")
             }
@@ -149,6 +149,13 @@ struct UnderlineTab: View {
             .padding(.horizontal, AppSpacing.small)
             .padding(.top, AppSpacing.small)
             .padding(.bottom, AppSpacing.xSmall)
+            // Hover wash under the label (row-token language for text
+            // controls); the selected state stays underline-only so the
+            // accent bar is never doubled by a fill.
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                    .fill(isHovering && !isSelected ? AppColor.subtleBackground : .clear)
+            )
             // Underline as a bottom-aligned background: a bare `Rectangle()`
             // row below the label is width-unconstrained (shapes are greedy)
             // and stretches the whole tab across the row.

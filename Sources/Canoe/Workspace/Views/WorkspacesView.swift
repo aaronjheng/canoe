@@ -198,7 +198,7 @@ struct WorkspacesView: View {
                     checkmarkImage(isOn: false)
                 }
             }
-            .buttonStyle(.plain)
+            .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
             .accessibilityLabel("Select all workspaces")
             .help("Select/deselect all workspaces")
             .frame(width: ColumnWidth.check, alignment: .center)
@@ -236,7 +236,7 @@ struct WorkspacesView: View {
             } label: {
                 checkmarkImage(isOn: checked.contains(workspace.id))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
             .accessibilityLabel("Select \(workspace.name)")
             .help(checked.contains(workspace.id) ? "Deselect workspace" : "Select workspace")
             .frame(width: ColumnWidth.check, alignment: .center)
@@ -278,15 +278,16 @@ struct WorkspacesView: View {
                 } label: {
                     Image(systemName: "arrow.right.circle")
                 }
+                .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
                 .help("Open workspace")
                 Button {
                     deleteTargets = [workspace.id]
                 } label: {
                     Image(systemName: "trash")
                 }
+                .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
                 .help("Delete workspace")
             }
-            .buttonStyle(.borderless)
             .foregroundStyle(.secondary)
             .frame(width: ColumnWidth.actions, alignment: .trailing)
             .padding(.trailing, AppSpacing.medium)
@@ -343,7 +344,7 @@ struct WorkspacesView: View {
             .fixedSize()
             .help("Sort workspaces")
             if !checked.isEmpty {
-                Button("Delete (\(checked.count))", role: .destructive) {
+                LinkButton("Delete (\(checked.count))", isDestructive: true) {
                     deleteTargets = checked
                 }
                 .help("Delete selected workspaces")

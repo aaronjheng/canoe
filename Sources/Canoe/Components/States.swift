@@ -22,7 +22,7 @@ struct ErrorBanner: View {
                     dismissAction()
                 }
                 .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
+                .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
                 .help("Dismiss")
             }
         }

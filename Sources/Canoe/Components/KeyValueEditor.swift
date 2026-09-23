@@ -676,7 +676,7 @@ private struct KVRow: View {
                     .frame(maxHeight: .infinity)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
             .help(isSecret.wrappedValue ? "Hidden (secret)" : "Shown (toggle to hide)")
         } else {
             Color.clear
@@ -696,7 +696,7 @@ private struct KVRow: View {
                         .frame(maxHeight: .infinity)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
                 .opacity(isDeleteVisible ? 1 : 0)
                 .disabled(!isDeleteVisible)
                 .help("Remove row")

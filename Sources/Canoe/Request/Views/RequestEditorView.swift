@@ -549,8 +549,6 @@ struct RequestEditorView: View {
             autoFocusOnUpdate: false,
             onCommit: { urlFieldFocused = nil },
             onHoverChanged: { hover in
-                // TEMP-DEBUG: verifies the AppKit hover reports reach here.
-                AppLogger.info("URLBAR hover=\(hover)", category: "Request")
                 isURLBarHovered = hover
             }
         )

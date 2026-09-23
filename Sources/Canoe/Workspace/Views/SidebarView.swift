@@ -76,7 +76,7 @@ private struct ItemsView: View {
                                 }
                                 .menuStyle(.borderlessButton)
                                 .labelStyle(.iconOnly)
-                                .buttonStyle(.borderless)
+                                .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
                                 .foregroundStyle(.secondary)
                                 .help("Add collection or request")
                             }
@@ -100,7 +100,7 @@ private struct ItemsView: View {
                                     store.addEnvironment()
                                 }
                                 .labelStyle(.iconOnly)
-                                .buttonStyle(.borderless)
+                                .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
                                 .foregroundStyle(.secondary)
                                 .help("Add environment")
                             }
@@ -287,7 +287,7 @@ private struct HistoryView: View {
                         showClearConfirm = true
                     }
                     .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
+                    .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
                     .foregroundStyle(.secondary)
                     .help("Clear history")
                     .confirmationDialog(
@@ -533,7 +533,8 @@ private struct InlineRenameFrameKey: PreferenceKey {
 }
 
 /// Small hover-time icon button for tree rows (VS Code explorer-style
-/// inline row actions).
+/// inline row actions). Shares `IconButtonStyle` so the hover pill matches
+/// every other icon action in the app.
 private struct InlineActionButton: View {
     let systemImage: String
     let help: String
@@ -547,7 +548,7 @@ private struct InlineActionButton: View {
                 .frame(width: AppSize.compactControl, height: AppSize.compactControl)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
         .help(help)
     }
 }
@@ -1124,7 +1125,7 @@ private struct HistoryRow: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
                 .help("Remove from history")
                 .padding(.trailing, AppSpacing.xSmall)
             }
