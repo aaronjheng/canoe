@@ -43,8 +43,10 @@ struct WorkspaceVariablesView: View {
                 headerBackground: AppColor.tableHeaderBackground,
                 secretKeyPath: \.isSecret,
                 // Manual order (Postman-style): rows resolve and display in
-                // this order, so no auto-sort may rewrite it.
-                allowsReorder: true
+                // this order, so no auto-sort may rewrite it. The header
+                // still offers an explicit A→Z / Z→A sort.
+                allowsReorder: true,
+                allowsKeySort: true
             )
             .id(draft.id)
         }

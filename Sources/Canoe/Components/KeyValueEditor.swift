@@ -58,6 +58,9 @@ struct KeyValueEditor<T: KVItem>: View {
     /// environment variables). Off by default; each table opts in when order
     /// is editable.
     var allowsReorder: Bool = false
+    /// Click-to-sort the key column via its header (workspace variables).
+    /// Off by default: ordered tables like query params keep their sequence.
+    var allowsKeySort: Bool = false
     /// Form-data only: when set, each row's key cell ends with a Type
     /// (Text/File) dropdown (Postman form-data) and file rows swap the value
     /// cell for a file picker. Keys off `FormField.fieldKind`.
@@ -78,6 +81,8 @@ struct KeyValueEditor<T: KVItem>: View {
     @State private var draggingID: UUID?
     @State private var dropTargetID: UUID?
     @State private var dropTargetEnd = false
+    /// Active key-column sort from the header click; nil until first used.
+    @State private var keySortOrder: KeySortOrder?
 
     /// Candidates shown by every cell's `{{` completion popup.
     private var rowSuggestions: [VariableSuggestion] {
@@ -236,9 +241,9 @@ struct KeyValueEditor<T: KVItem>: View {
         // missing labels. Indents keep the text labels over their columns
         // instead. Form-data's Type menu lives inside the key cell, so it
         // needs no header cell either.
-        HStack(spacing: 0) {
+            HStack(spacing: 0) {
             Color.clear.frame(width: leadingIconWidth)
-            headerLabel(keyHeader)
+            headerLabel(keyHeader, isKey: true)
             verticalRule
             headerLabel(valueHeader)
             Color.clear.frame(width: trailingIconWidth)
@@ -265,6 +270,73 @@ struct KeyValueEditor<T: KVItem>: View {
             .foregroundStyle(.secondary)
             .padding(.horizontal, AppSpacing.small)
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Key-column header: a plain-text label, or (when `allowsKeySort`) a
+    /// button that cycles A→Z ↔ Z→A with a direction arrow, matching the
+    /// Postman variables table.
+    @ViewBuilder
+    private func headerLabel(_ text: String, isKey: Bool) -> some View {
+        if isKey, allowsKeySort {
+            Button {
+                toggleKeySort()
+            } label: {
+                HStack(spacing: AppSpacing.xxSmall) {
+                    Text(text)
+                    if let keySortOrder {
+                        Image(systemName: keySortOrder == .ascending ? "arrow.up" : "arrow.down")
+                            .font(.caption2.weight(.medium))
+                    }
+                }
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, AppSpacing.small)
+            .help(keySortHelp)
+        } else {
+            headerLabel(text)
+        }
+    }
+
+    private var keySortHelp: String {
+        switch keySortOrder {
+        case .ascending: "Sorted A to Z"
+        case .descending: "Sorted Z to A"
+        case nil: "Sort A to Z"
+        }
+    }
+
+    // MARK: - Key sort
+
+    private enum KeySortOrder {
+        case ascending
+        case descending
+    }
+
+    /// Header click: first press sorts A→Z, then toggles direction.
+    private func toggleKeySort() {
+        let ascending = keySortOrder != .ascending
+        keySortOrder = ascending ? .ascending : .descending
+        applyKeySort(ascending: ascending)
+    }
+
+    /// Finder-style key comparison (case-insensitive, numeric-aware) with
+    /// the id as a tiebreaker, matching `Array.sortByName` for variables.
+    private func applyKeySort(ascending: Bool) {
+        items.sort { lhs, rhs in
+            let order = lhs.key.localizedStandardCompare(rhs.key)
+            guard order != .orderedSame else { return lhs.id.uuidString < rhs.id.uuidString }
+            return ascending ? order == .orderedAscending : order == .orderedDescending
+        }
+    }
+
+    /// Manual reorder leaves the header arrow stale - drop it so the
+    /// indicator only reflects a sort the header last applied.
+    private func clearKeySortIfNeeded() {
+        if keySortOrder != nil { keySortOrder = nil }
     }
 
     // MARK: - Ghost row (trailing empty row)
@@ -378,6 +450,7 @@ struct KeyValueEditor<T: KVItem>: View {
         withAnimation {
             items.move(fromOffsets: [fromIndex], toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
         }
+        clearKeySortIfNeeded()
         return true
     }
 
@@ -396,6 +469,7 @@ struct KeyValueEditor<T: KVItem>: View {
         withAnimation {
             items.move(fromOffsets: [fromIndex], toOffset: items.count)
         }
+        clearKeySortIfNeeded()
         return true
     }
 
@@ -407,6 +481,7 @@ struct KeyValueEditor<T: KVItem>: View {
         withAnimation {
             items.move(fromOffsets: [index], toOffset: delta > 0 ? target + 1 : target)
         }
+        clearKeySortIfNeeded()
     }
 
     /// Postman-style hygiene: a row left completely blank is removed once the
