@@ -184,12 +184,10 @@ struct KeyValueEditor<T: KVItem>: View {
                     onMoveDown: allowsReorder ? { moveRow(id: item.id, by: 1) } : nil,
                     isDragging: draggingID == item.id,
                     isDropTargeted: dropTargetID == item.id,
+                    dropTarget: dropTargeted(for: item.id),
+                    onDropRow: { moveDraggedRow(to: item.id) },
                     allowsReorder: allowsReorder
                 )
-                .onDrop(of: [.text], isTargeted: dropTargeted(for: item.id)) { _ in
-                    moveDraggedRow(to: item.id)
-                }
-                Divider()
             }
             // The permanently present empty row (Postman-style). Its cells
             // report when their editing session ends: the ghost then resets
@@ -214,18 +212,10 @@ struct KeyValueEditor<T: KVItem>: View {
                 leadingColumnWidth: leadingColumnWidth,
                 trailingColumnWidth: trailingColumnWidth,
                 onEditingEnded: { ghost = nil },
+                dropTarget: $dropTargetEnd,
+                onDropRow: { moveDraggedRowToEnd() },
                 allowsReorder: allowsReorder
             )
-            .onDrop(of: [.text], isTargeted: $dropTargetEnd) { _ in
-                moveDraggedRowToEnd()
-            }
-            .overlay(alignment: .bottom) {
-                if allowsReorder && dropTargetEnd {
-                    Rectangle()
-                        .fill(AppColor.accent)
-                        .frame(height: 2)
-                }
-            }
         }
         .background(.background)
         .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
@@ -241,7 +231,7 @@ struct KeyValueEditor<T: KVItem>: View {
         // missing labels. Indents keep the text labels over their columns
         // instead. Form-data's Type menu lives inside the key cell, so it
         // needs no header cell either.
-            HStack(spacing: 0) {
+        HStack(spacing: 0) {
             Color.clear.frame(width: leadingIconWidth)
             headerLabel(keyHeader, isKey: true)
             verticalRule
@@ -551,9 +541,24 @@ private struct KVRow: View {
     /// Dimmed while dragged; shows the insertion line while targeted.
     var isDragging: Bool = false
     var isDropTargeted: Bool = false
+    /// Live drop-target state; also drives `onDrop`'s `isTargeted` so the
+    /// handler can live inside the row (an outer wrapper would re-order
+    /// siblings relative to the cell's `zIndex`).
+    var dropTarget: Binding<Bool>?
+    var onDropRow: (() -> Bool)?
     var allowsReorder: Bool = false
 
     @State private var isHovering = false
+    /// Which cell the pointer is over. Hover chrome is per-cell (Postman
+    /// style), not per-row - the row `isHovering` only drives grip/delete
+    /// visibility. Nested AppKit editors report through `onHoverChanged`
+    /// (SwiftUI `.onHover` never fires above them).
+    @State private var hoveredCell: HoveredCell?
+
+    private enum HoveredCell: Hashable {
+        case key
+        case value
+    }
 
     private var isGhostRow: Bool { onDelete == nil }
 
@@ -619,7 +624,7 @@ private struct KVRow: View {
             }
             .frame(width: leadingColumnWidth)
             verticalRule
-            cell {
+            cell(.key) {
                 HStack(spacing: AppSpacing.xSmall) {
                     VariableHighlightEditor(
                         text: $key,
@@ -628,7 +633,8 @@ private struct KVRow: View {
                         placeholder: keyPlaceholder,
                         focus: focus,
                         focusValue: keyFocus,
-                        onEditingEnded: onEditingEnded
+                        onEditingEnded: onEditingEnded,
+                        onHoverChanged: { setHover(.key, $0) }
                     )
                     if showsKindMenu {
                         kindMenu
@@ -636,7 +642,7 @@ private struct KVRow: View {
                 }
             }
             verticalRule
-            cell {
+            cell(.value) {
                 if isFileRow {
                     fileValueCell
                 } else {
@@ -647,7 +653,8 @@ private struct KVRow: View {
                         placeholder: valuePlaceholder,
                         focus: focus,
                         focusValue: valueFocus,
-                        onEditingEnded: onEditingEnded
+                        onEditingEnded: onEditingEnded,
+                        onHoverChanged: { setHover(.value, $0) }
                     )
                 }
             }
@@ -657,6 +664,17 @@ private struct KVRow: View {
         .frame(height: AppSize.toolbarHeight)
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
+        // Bottom hairline lives inside the row (replacing the VStack's
+        // per-row Divider): a sibling Divider paints after this row and
+        // covers a stroke that overflows downward, which made the cell
+        // border's bottom edge look thinner than the other three.
+        .background(alignment: .bottom) {
+            if !isGhostRow {
+                Rectangle()
+                    .fill(AppColor.hairline)
+                    .frame(height: 1)
+            }
+        }
         .opacity(isDragging ? 0.5 : 1)
         .overlay(alignment: .top) {
             if allowsReorder && isDropTargeted {
@@ -673,16 +691,70 @@ private struct KVRow: View {
                 Button("Move Down") { onMoveDown() }
             }
         }
+        .overlay(alignment: .bottom) {
+            if isGhostRow, allowsReorder, dropTarget?.wrappedValue == true {
+                Rectangle()
+                    .fill(AppColor.accent)
+                    .frame(height: 2)
+            }
+        }
+        .onDrop(of: [.text], isTargeted: dropTarget ?? .constant(false)) { _ in
+            onDropRow?() ?? false
+        }
     }
 
     /// A borderless spreadsheet-like cell; disabled rows dim, like Postman.
-    private func cell(@ViewBuilder field: () -> some View) -> some View {
+    /// Hover draws a `borderStrong` 1pt border, focus swaps it to accent at
+    /// the same width (`focusRingBorder` color tiers without the 2pt bump).
+    /// The stroke expands 1pt on the top/left/right (`padding(-1)`) to sit on
+    /// the column hairlines; the bottom edge stays flush with the cell so it
+    /// covers the row's own bottom hairline (a stroke overflowing downward
+    /// would land outside the row and read as thinner than the other three
+    /// edges). The row lifts via `zIndex` only within the HStack - the
+    /// vertical rule after this cell. Both the AppKit editor
+    /// (`onHoverChanged`) and this SwiftUI shell report into the same
+    /// `hoveredCell`.
+    private func cell(_ id: HoveredCell, @ViewBuilder field: () -> some View) -> some View {
         field()
             .font(AppFont.cellText)
             .foregroundStyle(isEnabled ? .primary : .secondary)
             .opacity(isEnabled ? 1 : 0.5)
             .padding(.horizontal, AppSpacing.small)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .overlay {
+                if isCellFocused(id) {
+                    Rectangle()
+                        .strokeBorder(AppColor.accent, lineWidth: 1)
+                        .padding(.leading, -1)
+                        .padding(.trailing, -1)
+                        .padding(.top, -1)
+                } else if hoveredCell == id {
+                    Rectangle()
+                        .strokeBorder(AppColor.borderStrong, lineWidth: 1)
+                        .padding(.leading, -1)
+                        .padding(.trailing, -1)
+                        .padding(.top, -1)
+                }
+            }
+            .onHover { hovering in
+                setHover(id, hovering)
+            }
+            // Outermost among the HStack's children: later siblings (the
+            // vertical hairline after this cell) otherwise paint over the
+            // right edge. A wrapper modifier below would swallow the zIndex.
+            .zIndex(isCellFocused(id) || hoveredCell == id ? 1 : 0)
+    }
+
+    private func isCellFocused(_ id: HoveredCell) -> Bool {
+        focus.wrappedValue == (id == .key ? keyFocus : valueFocus)
+    }
+
+    private func setHover(_ cell: HoveredCell, _ hovering: Bool) {
+        if hovering {
+            hoveredCell = cell
+        } else if hoveredCell == cell {
+            hoveredCell = nil
+        }
     }
 
     /// Type menu inside the key cell: Text/File (form-data only). The ghost

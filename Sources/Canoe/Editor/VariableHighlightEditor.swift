@@ -191,7 +191,8 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
                     onEditingEnded: onEditingEnded,
                     onFocusChange: onFocusChange,
                     onCommit: onCommit,
-                    onCaretChange: onCaretChange
+                    onCaretChange: onCaretChange,
+                    onHoverChanged: onHoverChanged
                 )
                 .frame(minHeight: singleLineMinHeight, alignment: .center)
             } else if wrapsWhenFocused {
@@ -336,6 +337,9 @@ private enum VariablePlaceholderStyling {
 private final class FocusObservingTextField: NSTextField {
     var onDidBecomeFirstResponder: (() -> Void)?
     var onDidResignFirstResponder: (() -> Void)?
+    /// Hover reports for cell chrome over AppKit text content (same
+    /// contract as `LayoutObservingScrollView.onHoverChanged`).
+    var onHoverChanged: ((Bool) -> Void)?
 
     override func becomeFirstResponder() -> Bool {
         let ok = super.becomeFirstResponder()
@@ -347,6 +351,31 @@ private final class FocusObservingTextField: NSTextField {
         let ok = super.resignFirstResponder()
         if ok { onDidResignFirstResponder?() }
         return ok
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        let needsHoverArea =
+            onHoverChanged != nil
+            && trackingAreas.allSatisfy {
+                $0.options.isDisjoint(with: .mouseEnteredAndExited)
+            }
+        if needsHoverArea {
+            addTrackingArea(
+                NSTrackingArea(
+                    rect: .zero,
+                    options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                    owner: self,
+                    userInfo: nil))
+        }
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        onHoverChanged?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        onHoverChanged?(false)
     }
 }
 
@@ -364,6 +393,7 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
     let onFocusChange: ((Bool) -> Void)?
     let onCommit: (() -> Void)?
     let onCaretChange: ((Int) -> Void)?
+    let onHoverChanged: ((Bool) -> Void)?
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
@@ -390,6 +420,7 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
         field.delegate = coordinator
         field.onDidBecomeFirstResponder = { [weak coordinator] in coordinator?.fieldDidGainFocus() }
         field.onDidResignFirstResponder = { [weak coordinator] in coordinator?.fieldDidLoseFocus() }
+        field.onHoverChanged = onHoverChanged
         coordinator.completion.setCandidates(suggestions)
         return field
     }
@@ -398,6 +429,7 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
         let coordinator = context.coordinator
         coordinator.parent = self
         coordinator.completion.setCandidates(suggestions)
+        (field as? FocusObservingTextField)?.onHoverChanged = onHoverChanged
 
         if field.stringValue != text {
             // External change (params-table recomposition, request switch):
