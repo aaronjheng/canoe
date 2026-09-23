@@ -97,14 +97,14 @@ struct KeyValueEditor<T: KVItem>: View {
     private var secretColumnWidth: CGFloat { secretKeyPath == nil ? 0 : 26 }
     private var showsKindMenu: Bool { kindKeyPath != nil }
     private var leadingColumnWidth: CGFloat { allowsReorder ? 38 : toggleColumnWidth }
-    /// Merged trailing icon column. Measured (offscreen render, opaque
-    /// pixels, 32pt row): eye/eye.slash 13.3pt, trash 9.7pt, fitted group
-    /// with the 2pt gap 27pt. The leading column's fitted group is 28pt in
-    /// a 38pt column (5pt insets each side), so 27 + 2×5 = 37pt gives the
-    /// trailing group the identical 2pt gap and 5pt side insets.
-    /// Tables without a secret column keep the lone 26pt delete cell.
+    /// Merged trailing icon column. Eye and trash share one fixed glyph box
+    /// each (18pt, squared so SF Symbols of different widths match) with the
+    /// leading column's 2pt group gap, plus 4pt side insets so neither glyph
+    /// hugs the hairline: 4 + 18 + 2 + 18 + 4 = 46pt. Tables without a
+    /// secret column keep the lone delete cell in a 26pt column (4pt insets
+    /// around the same 18pt box).
     private var trailingColumnWidth: CGFloat {
-        secretColumnWidth > 0 ? 37 : deleteColumnWidth
+        secretColumnWidth > 0 ? 46 : deleteColumnWidth
     }
 
     var body: some View {
@@ -667,7 +667,9 @@ private struct KVRow: View {
     }
 
     /// Eye button toggling the row's secret flag; the ghost row only
-    /// reserves the space.
+    /// reserves the space. Glyph-boxed and vertically centered (no
+    /// `maxHeight: .infinity`) so the hover pill stays a compact square
+    /// instead of a full-row-height bar.
     @ViewBuilder
     private var secretCell: some View {
         if let isSecret {
@@ -677,10 +679,9 @@ private struct KVRow: View {
                 Image(systemName: isSecret.wrappedValue ? "eye.slash" : "eye")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .frame(maxHeight: .infinity)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
+            .buttonStyle(IconButtonStyle(inset: 0))
             .help(isSecret.wrappedValue ? "Hidden (secret)" : "Shown (toggle to hide)")
         } else {
             Color.clear
@@ -697,10 +698,9 @@ private struct KVRow: View {
                     Image(systemName: "trash")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .frame(maxHeight: .infinity)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
+                .buttonStyle(IconButtonStyle(inset: 0))
                 .opacity(isDeleteVisible ? 1 : 0)
                 .disabled(!isDeleteVisible)
                 .help("Remove row")

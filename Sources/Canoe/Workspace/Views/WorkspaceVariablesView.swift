@@ -10,8 +10,6 @@ struct WorkspaceVariablesView: View {
     @State private var draft: Workspace
 
     init(workspace: Workspace) {
-        var workspace = workspace
-        workspace.variables.sortByName()
         _draft = State(initialValue: workspace)
     }
 
@@ -43,13 +41,12 @@ struct WorkspaceVariablesView: View {
                 keyHeader: "Variable",
                 valueHeader: "Value",
                 headerBackground: AppColor.tableHeaderBackground,
-                secretKeyPath: \.isSecret
+                secretKeyPath: \.isSecret,
+                // Manual order (Postman-style): rows resolve and display in
+                // this order, so no auto-sort may rewrite it.
+                allowsReorder: true
             )
             .id(draft.id)
-        }
-        // Keep rows ordered by name (see EnvironmentDetailView).
-        .onChange(of: draft.variables.map(\.key)) { _, _ in
-            draft.variables.sortByName()
         }
         .onChange(of: draft) { _, newValue in
             // Memory-only + dirty mark; the drafts mirror inside the store
@@ -64,9 +61,7 @@ struct WorkspaceVariablesView: View {
             guard let newVariables, !store.hasPendingWorkspaceVariables(for: draft.id),
                 newVariables != draft.variables
             else { return }
-            var adopted = newVariables
-            adopted.sortByName()
-            draft.variables = adopted
+            draft.variables = newVariables
         }
     }
 
