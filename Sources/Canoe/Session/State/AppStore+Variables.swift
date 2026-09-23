@@ -111,4 +111,51 @@ extension AppStore {
         return keys
     }
 
+    /// Applies an inline edit from the variables inspector to the variable's
+    /// owning scope: replaces the row with the same id and routes through
+    /// the same draft pipeline as the full editors (memory + dirty mark +
+    /// drafts mirror; nothing is written to disk until Save). Modification
+    /// only - the inspector never adds or deletes rows, so a missing owner
+    /// or row id is a no-op.
+    func updateVariable(
+        _ variable: Variable, kind: VariableScope.Kind, ownerID: UUID
+    ) {
+        switch kind {
+        case .workspace:
+            guard let idx = vault.workspaces.firstIndex(where: { $0.id == ownerID }),
+                let varIdx = vault.workspaces[idx].variables.firstIndex(where: { $0.id == variable.id })
+            else { return }
+            var variables = vault.workspaces[idx].variables
+            variables[varIdx] = variable
+            updateWorkspaceVariables(ownerID, variables: variables)
+        case .collection:
+            guard let idx = vault.collections.firstIndex(where: { $0.id == ownerID }),
+                let varIdx = vault.collections[idx].variables.firstIndex(where: { $0.id == variable.id })
+            else { return }
+            var variables = vault.collections[idx].variables
+            variables[varIdx] = variable
+            updateCollectionVariables(ownerID, variables: variables)
+        case .environment:
+            guard var environment = vault.environments.first(where: { $0.id == ownerID }),
+                let varIdx = environment.variables.firstIndex(where: { $0.id == variable.id })
+            else { return }
+            environment.variables[varIdx] = variable
+            updateEnvironment(environment)
+        }
+    }
+
+    /// Whether any of `scopes`' owners has unsaved variable edits - the
+    /// variables inspector's Save chip. Environment edits count through the
+    /// whole-environment draft (its only granularity).
+    func hasPendingVariableEdits(in scopes: [VariableScope]) -> Bool {
+        scopes.contains { scope in
+            guard let id = scope.ownerID else { return false }
+            switch scope.kind {
+            case .workspace: return hasPendingWorkspaceVariables(for: id)
+            case .collection: return hasPendingCollectionVariables(for: id)
+            case .environment: return hasPendingEnvironmentChanges(for: id)
+            }
+        }
+    }
+
 }

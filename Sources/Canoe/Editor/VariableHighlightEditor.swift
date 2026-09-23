@@ -3,17 +3,18 @@ import SwiftUI
 
 /// Font tokens for the AppKit-backed variable editors: `NSFont` for the text
 /// views, SwiftUI `Font` for the placeholder overlay. Sizes mirror the
-/// `AppFont` monospaced tokens (subheadline 11, body 13).
+/// `AppFont` monospaced tokens (subheadline 11, body 13, caption 10).
 enum VariableEditorFont {
     case monoSubheadline
     case monoBody
     case monoURLBar
+    case monoCaption
 
     var swiftUIFont: Font {
         switch self {
         case .monoSubheadline: AppFont.monoSubheadline
         case .monoBody: AppFont.monoBody
-        case .monoURLBar: AppFont.monoCaption
+        case .monoURLBar, .monoCaption: AppFont.monoCaption
         }
     }
 
@@ -26,6 +27,7 @@ enum VariableEditorFont {
         case .monoSubheadline: 11
         case .monoBody: 13
         case .monoURLBar: 12
+        case .monoCaption: 10
         }
     }
 }
@@ -53,6 +55,9 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
     /// Single-line editors run on a no-wrap, horizontally-scrolling AppKit
     /// text field (URL-bar behavior).
     var isSingleLine: Bool = true
+    /// Height floor for single-line fields (the default matches the
+    /// key/value tables; the variables inspector's compact rows pass less).
+    var singleLineMinHeight: CGFloat = 24
     var wrapsWhenFocused: Bool = false
     /// Fill-container editors (the raw body) stretch to the available height
     /// instead of growing with their content.
@@ -129,6 +134,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         variables: [String: String] = [:],
         suggestions: [VariableSuggestion]? = nil,
         isSingleLine: Bool = true,
+        singleLineMinHeight: CGFloat = 24,
         wrapsWhenFocused: Bool = false,
         fillsContainer: Bool = false,
         font: VariableEditorFont = .monoSubheadline,
@@ -150,6 +156,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         self.variables = variables
         self.suggestions = suggestions
         self.isSingleLine = isSingleLine
+        self.singleLineMinHeight = singleLineMinHeight
         self.wrapsWhenFocused = wrapsWhenFocused
         self.fillsContainer = fillsContainer
         self.font = font
@@ -186,7 +193,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
                     onCommit: onCommit,
                     onCaretChange: onCaretChange
                 )
-                .frame(minHeight: 24, alignment: .center)
+                .frame(minHeight: singleLineMinHeight, alignment: .center)
             } else if wrapsWhenFocused {
                 WrappingURLField(
                     text: $text,
@@ -1264,6 +1271,7 @@ extension VariableHighlightEditor where FocusValue == Never {
         variables: [String: String] = [:],
         suggestions: [VariableSuggestion]? = nil,
         isSingleLine: Bool = true,
+        singleLineMinHeight: CGFloat = 24,
         wrapsWhenFocused: Bool = false,
         fillsContainer: Bool = false,
         font: VariableEditorFont = .monoSubheadline,
@@ -1277,6 +1285,7 @@ extension VariableHighlightEditor where FocusValue == Never {
             variables: variables,
             suggestions: suggestions,
             isSingleLine: isSingleLine,
+            singleLineMinHeight: singleLineMinHeight,
             fillsContainer: fillsContainer,
             font: font,
             placeholder: placeholder,

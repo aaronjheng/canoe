@@ -12,6 +12,13 @@ import SwiftUI
 /// resolution, overridden rows are annotated with the scope that wins, and
 /// secrets are masked.
 ///
+/// Scope values are editable in place - modification only: the editors push
+/// drafts through the same pipeline as the full variable editors (never add
+/// or delete rows, and names stay fixed), and the header's Save chip
+/// commits them (adding, deleting, reordering, renaming, and the secret
+/// flag stay in the full editors, reachable from the empty-scope hints and
+/// each owner's home screen).
+///
 /// Without a request it falls back to Postman's "All variables" view: the
 /// workspace- and environment-level scopes with actionable empty states, so
 /// the panel is never a dead end.
@@ -43,15 +50,36 @@ struct VariablesSidebarView: View {
         }
     }
 
+    /// The scopes the panel currently displays: request context covers the
+    /// request's workspace, collection, and active environment; otherwise
+    /// the active workspace + environment pair.
+    private var displayedScopes: [VariableScope] {
+        if let request = store.selectedRequest {
+            return store.variableScopesForRequest(request)
+        }
+        return store.workspaceVariableScopes()
+    }
+
+    /// Whether any displayed scope's owner has unsaved variable edits: the
+    /// inline editors push drafts like the full editors do, and the chip
+    /// commits them the same way (⌘S / the menu-bar Save works too).
+    private var isDirty: Bool {
+        store.hasPendingVariableEdits(in: displayedScopes)
+    }
+
     // MARK: - Header
 
     private var header: some View {
         InspectorHeader(
             title: store.selectedRequest == nil ? "All Variables" : "Variables in Request",
-            closeHelp: "Hide Variables in Request (⇧⌘V)"
-        ) {
-            store.showVariablesSidebar = false
-        }
+            closeHelp: "Hide Variables in Request (⇧⌘V)",
+            onClose: { store.showVariablesSidebar = false },
+            accessory: {
+                SaveChipButton(isDirty: isDirty, help: "Save Variables (⌘S)") {
+                    store.savePendingChanges()
+                }
+            }
+        )
     }
 
     // MARK: - Request context
@@ -75,6 +103,7 @@ struct VariablesSidebarView: View {
         let blocked = query.isEmpty ? blockedAll : blockedAll.filter { $0.localizedCaseInsensitiveContains(query) }
         // Used keys that do resolve, flattened to the winning value per key.
         let resolvedAll = resolvedEntries(usedKeys: usedKeys, resolvedVars: resolvedVars, blocked: blockedSet, scopes: scopes)
+        let suggestions = VariableSuggestion.suggestions(from: scopes)
         let resolved =
             query.isEmpty
             ? resolvedAll
@@ -99,6 +128,8 @@ struct VariablesSidebarView: View {
                             query: query,
                             usedKeys: usedKeys,
                             overrideLabels: overrideLabels(for: scope, in: scopes),
+                            resolvedVariables: resolvedVars,
+                            suggestions: suggestions,
                             revealedSecrets: $revealedSecrets,
                             onEdit: { openEditor(for: scope) }
                         )
@@ -127,6 +158,11 @@ struct VariablesSidebarView: View {
     private var workspaceContent: some View {
         let scopes = store.workspaceVariableScopes()
         let displayScopes = Array(scopes.reversed())
+        let suggestions = VariableSuggestion.suggestions(from: scopes)
+        var resolvedVariables: [String: String] = [:]
+        for scope in scopes {
+            resolvedVariables = scope.variables.resolvingDictionary(into: resolvedVariables)
+        }
         return VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 0) {
@@ -136,6 +172,8 @@ struct VariablesSidebarView: View {
                             query: "",
                             usedKeys: [],
                             overrideLabels: overrideLabels(for: scope, in: scopes),
+                            resolvedVariables: resolvedVariables,
+                            suggestions: suggestions,
                             revealedSecrets: $revealedSecrets,
                             onEdit: { openEditor(for: scope) }
                         )
@@ -235,14 +273,18 @@ private func variableMatchesFilter(_ variable: Variable, query: String) -> Bool 
 // MARK: - Scope section
 
 /// One scope (workspace, collection, or environment): header with the scope
-/// label and an edit shortcut, then its rows or a Postman-style hint with an
-/// actionable link.
+/// label and a row count, then its rows with inline value editing or a
+/// Postman-style hint with an actionable link.
 private struct ScopeSection: View {
     @Environment(AppStore.self) private var store
     let scope: VariableScope
     let query: String
     let usedKeys: Set<String>
     let overrideLabels: [String: String]
+    /// Merged resolution in effect for `{{}}` highlighting in the editors.
+    let resolvedVariables: [String: String]
+    /// Completion candidates for the inline editors.
+    let suggestions: [VariableSuggestion]?
     @Binding var revealedSecrets: Set<UUID>
     let onEdit: () -> Void
 
@@ -309,15 +351,6 @@ private struct ScopeSection: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
-            if scope.ownerID != nil {
-                Button("Edit", systemImage: "square.and.pencil") {
-                    onEdit()
-                }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
-                .foregroundStyle(.secondary)
-                .help("Edit \(scope.kind.rawValue) variables in a tab")
-            }
             Text("\(isFiltering ? visibleVariables.count : scope.variables.count)")
                 .font(AppFont.countBadge)
                 .monospacedDigit()
@@ -337,6 +370,13 @@ private struct ScopeSection: View {
                 // earn the referenced-in-request marker.
                 isUsed: variable.isEnabled && usedKeys.contains(variable.key.trimmingCharacters(in: .whitespacesAndNewlines)),
                 overriddenBy: overrideLabels[variable.key.trimmingCharacters(in: .whitespacesAndNewlines)],
+                isEditable: true,
+                resolvedVariables: resolvedVariables,
+                suggestions: suggestions,
+                onUpdate: { updated in
+                    guard let ownerID = scope.ownerID else { return }
+                    store.updateVariable(updated, kind: scope.kind, ownerID: ownerID)
+                },
                 revealedSecrets: $revealedSecrets
             )
             if index < visibleVariables.count - 1 {
@@ -413,27 +453,46 @@ private struct SelectEnvironmentMenu: View {
 // MARK: - Variable row
 
 /// One variable row: used-in-request marker, key, value (masked until
-/// revealed for secrets), state badges, and hover actions.
+/// revealed for secrets), state badges, and hover actions. Scope sections
+/// pass `isEditable` and get an inline value editor instead of static text
+/// - every keystroke pushes an edited copy through `onUpdate` to the
+/// owning scope (values only: names never change here, and adding or
+/// deleting stays in the full editors).
 private struct VariableRow: View {
     let variable: Variable
     let isUsed: Bool
     let overriddenBy: String?
     /// Value the row shows and copies - defaults to the variable's raw
     /// value; the resolved section passes the fully expanded value instead.
+    /// Non-nil also makes the row read-only: resolved rows are derived.
     var displayValue: String?
     /// Optional scope icon next to the key (the resolved section marks the
     /// winning scope with the same icon its section header uses below).
     var source: VariableScope.Kind?
+    /// Scope rows edit the value in place (the key is fixed); resolved
+    /// rows are read-only.
+    var isEditable = false
+    /// Merged resolution in effect for `{{}}` highlighting in the editor.
+    var resolvedVariables: [String: String] = [:]
+    /// Completion candidates for the inline editors.
+    var suggestions: [VariableSuggestion]?
+    /// Pushes an edited copy of the variable to its owning scope (per
+    /// keystroke, like the full editors). Nil for read-only rows.
+    var onUpdate: ((Variable) -> Void)?
     @Binding var revealedSecrets: Set<UUID>
     @State private var isHovering = false
+    /// Per-field chrome states: the hover tier and the focused accent ring
+    /// come from the field itself (AppKit first-responder), not the row.
+    @State private var isValueFocused = false
+    @State private var isValueHovered = false
     /// Which hover action owns keyboard focus, if any. The actions stay
     /// visually hidden until hovered or focused - but unlike `disabled`,
     /// focus can always land on them, so keyboard and VoiceOver users can
-    /// reveal and copy too.
+    /// toggle, reveal and copy too.
     @FocusState private var focusedAction: ActionFocus?
 
     private enum ActionFocus: Hashable {
-        case reveal, copy
+        case toggle, reveal, copy
     }
 
     private var trimmedKey: String {
@@ -459,14 +518,9 @@ private struct VariableRow: View {
                 .frame(width: 5, height: 5)
                 .helpIf(!trimmedKey.isEmpty && isUsed, "Referenced by this request")
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: AppSpacing.compact) {
                 HStack(spacing: AppSpacing.xSmall) {
-                    Text(trimmedKey.isEmpty ? "(blank key)" : trimmedKey)
-                        .font(AppFont.monoSubheadline)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(variable.isEnabled ? .primary : .tertiary)
-                        .lineLimit(1)
-                        .textSelection(.enabled)
+                    keyText
                     if !variable.isEnabled {
                         Badge(text: "Disabled")
                     }
@@ -479,7 +533,7 @@ private struct VariableRow: View {
                             .help("From \(source.rawValue)")
                     }
                 }
-                valueText
+                valueView
                 if let overriddenBy {
                     Badge(text: "Overridden by \(overriddenBy)")
                         .help("A higher-precedence scope defines this key, so this value is never used.")
@@ -489,6 +543,18 @@ private struct VariableRow: View {
             Spacer(minLength: 0)
 
             HStack(spacing: AppSpacing.xSmall) {
+                if isEditable, let onUpdate {
+                    Button {
+                        onUpdate(updating(isEnabled: !variable.isEnabled))
+                    } label: {
+                        Image(systemName: variable.isEnabled ? "checkmark.square" : "square")
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .focused($focusedAction, equals: .toggle)
+                    .accessibilityLabel(variable.isEnabled ? "Disable Variable" : "Enable Variable")
+                    .help(variable.isEnabled ? "Disable Variable" : "Enable Variable")
+                }
                 if variable.isSecret {
                     Button {
                         if isRevealed {
@@ -527,11 +593,67 @@ private struct VariableRow: View {
         }
         .padding(.leading, AppSpacing.large)
         .padding(.trailing, AppSpacing.medium)
-        .padding(.vertical, AppSpacing.xSmall)
+        .padding(.vertical, AppSpacing.small)
         .onHover { isHovering = $0 }
     }
 
-    @ViewBuilder private var valueText: some View {
+    private var keyText: some View {
+        Text(trimmedKey.isEmpty ? "(blank key)" : trimmedKey)
+            .font(AppFont.monoSubheadline)
+            .fontWeight(.semibold)
+            .foregroundStyle(variable.isEnabled ? .primary : .tertiary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .textSelection(.enabled)
+    }
+
+    @ViewBuilder private var valueView: some View {
+        if isEditable, onUpdate != nil, !isMasked {
+            valueField
+        } else {
+            valueText
+        }
+    }
+
+    /// Inline value editor with the InlineNameField language: quiet text at
+    /// rest (no chrome - borders around every row felt cramped), a light
+    /// pill on hover, and the field fill + accent ring while focused (click
+    /// to edit). One persistent editor - no view swap on state change - so
+    /// caret and undo survive the transitions.
+    private var valueField: some View {
+        VariableHighlightEditor(
+            text: Binding(
+                get: { variable.value },
+                set: { onUpdate?(updating(value: $0)) }
+            ),
+            variables: resolvedVariables,
+            suggestions: suggestions,
+            singleLineMinHeight: 18,
+            font: .monoCaption,
+            placeholder: "value",
+            onFocusChange: { isValueFocused = $0 }
+        )
+        .padding(.horizontal, AppSpacing.small - AppSpacing.xxSmall)
+        .padding(.vertical, AppSpacing.xSmall)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                .fill(
+                    isValueFocused
+                        ? AppColor.fieldBackground
+                        : (isValueHovered ? AppColor.subtleBackground : .clear)
+                )
+        )
+        .overlay {
+            if isValueFocused {
+                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                    .strokeBorder(AppColor.accent, lineWidth: 2)
+            }
+        }
+        .onHover { isValueHovered = $0 }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var valueText: some View {
         Group {
             if isMasked {
                 Text("••••••••")
@@ -544,6 +666,15 @@ private struct VariableRow: View {
         .lineLimit(2)
         .truncationMode(.middle)
         .textSelection(.enabled)
+    }
+
+    /// Copy of the row's variable with one field replaced - the id and the
+    /// remaining fields are preserved so the store can find the row.
+    private func updating(value: String? = nil, isEnabled: Bool? = nil) -> Variable {
+        var copy = variable
+        if let value { copy.value = value }
+        if let isEnabled { copy.isEnabled = isEnabled }
+        return copy
     }
 
     private var isDimmed: Bool {
