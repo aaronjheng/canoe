@@ -232,7 +232,7 @@ struct ContentView: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(AppColor.warning)
             Text(corruptFilesMessage)
-                .font(.callout)
+                .font(AppFont.emptyStateBody)
                 .foregroundStyle(.primary)
                 .lineLimit(2)
             Spacer(minLength: 0)
@@ -312,7 +312,7 @@ struct EmptyStateView: View {
                 Text("No Request Selected")
                     .font(.title2.weight(.semibold))
                 Text("Select a request from the sidebar, or create a new one to get started.")
-                    .font(.callout)
+                    .font(AppFont.emptyStateBody)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 360)
@@ -372,7 +372,7 @@ private struct VaultLoadingView: View {
             VStack(spacing: AppSpacing.small) {
                 ProgressView()
                 Text("Loading vault…")
-                    .font(.callout)
+                    .font(AppFont.emptyStateBody)
                     .foregroundStyle(.secondary)
             }
         }

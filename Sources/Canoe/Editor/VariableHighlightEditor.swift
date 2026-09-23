@@ -3,7 +3,8 @@ import SwiftUI
 
 /// Font tokens for the AppKit-backed variable editors: `NSFont` for the text
 /// views, SwiftUI `Font` for the placeholder overlay. Sizes mirror the
-/// `AppFont` monospaced tokens (subheadline 11, body 13, caption 10).
+/// `AppFont` monospaced tokens (subheadline 11, body 13, URL bar 12,
+/// caption 10).
 enum VariableEditorFont {
     case monoSubheadline
     case monoBody
@@ -14,7 +15,8 @@ enum VariableEditorFont {
         switch self {
         case .monoSubheadline: AppFont.monoSubheadline
         case .monoBody: AppFont.monoBody
-        case .monoURLBar, .monoCaption: AppFont.monoCaption
+        case .monoURLBar: AppFont.monoURLBar
+        case .monoCaption: AppFont.monoCaption
         }
     }
 
@@ -687,7 +689,7 @@ private struct WrappingURLField<FocusValue: Hashable>: NSViewRepresentable {
         textView.isSelectable = true
         textView.drawsBackground = false
         textView.textColor = .labelColor
-        textView.insertionPointColor = .controlAccentColor
+        textView.insertionPointColor = NSColor(AppColor.accent)
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
@@ -1113,7 +1115,7 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
         textView.isSelectable = true
         textView.drawsBackground = false
         textView.textColor = .labelColor
-        textView.insertionPointColor = .controlAccentColor
+        textView.insertionPointColor = NSColor(AppColor.accent)
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false

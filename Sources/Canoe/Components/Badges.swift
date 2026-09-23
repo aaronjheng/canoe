@@ -69,7 +69,7 @@ struct StatusCapsule: View {
     var body: some View {
         HStack(spacing: AppSpacing.xSmall) {
             Text("\(statusCode)")
-                .font(.subheadline.weight(.bold))
+                .font(AppFont.statusCode)
                 .monospacedDigit()
             Text(statusText)
                 .font(.caption)

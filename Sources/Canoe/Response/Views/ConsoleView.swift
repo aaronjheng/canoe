@@ -61,6 +61,7 @@ struct ConsoleView: View {
             }
             .labelStyle(.iconOnly)
             .buttonStyle(IconButtonStyle())
+            .font(AppFont.iconRow)
             .foregroundStyle(.secondary)
             // Clear wipes everything, not just the filtered view: with the
             // Errors filter on, an empty visible list must not enable the
@@ -75,11 +76,11 @@ struct ConsoleView: View {
     private var emptyState: some View {
         VStack(spacing: AppSpacing.small) {
             Text(errorsOnly ? "No errors in this session" : "No network activity yet")
-                .font(.callout)
+                .font(AppFont.emptyStateBody)
                 .foregroundStyle(.secondary)
             Text("Every request you send is logged here with its actual URL, headers, and response.")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+                .font(AppFont.emptyStateBody)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -194,7 +195,7 @@ private struct ConsoleEntryRow: View {
                     .foregroundStyle(AppColor.error)
             } else if let statusCode = entry.statusCode {
                 Text("\(statusCode)")
-                    .font(.caption.weight(.medium))
+                    .font(AppFont.statusCodeCompact)
                     .monospacedDigit()
                     .foregroundStyle(AppColor.statusColor(statusCode))
             }
@@ -313,7 +314,7 @@ private struct ConsoleEntryDetail: View {
 
     private func sectionTitle(_ title: String) -> some View {
         Text(title)
-            .font(.caption.weight(.semibold))
+            .font(AppFont.microHeader)
             .foregroundStyle(.secondary)
     }
 

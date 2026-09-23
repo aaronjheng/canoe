@@ -48,9 +48,9 @@ struct KeyValueEditor<T: KVItem>: View {
     /// "Variable" instead of "Key").
     var keyHeader: String = "Key"
     var valueHeader: String = "Value"
-    /// Optional fill for the column-header row (workspace variables pass a
-    /// gray wash; other tables keep the bare card background).
-    var headerBackground: Color?
+    /// Column-header fill for the table. Defaults to the shared gray wash so
+    /// every key/value grid reads as a table; callers may still override.
+    var headerBackground: Color? = AppColor.tableHeaderBackground
     /// Optional per-row secret column: when set to the item's flag, each row
     /// shows an eye button toggling it (environment variables' `isSecret`).
     var secretKeyPath: WritableKeyPath<T, Bool>?
@@ -256,7 +256,7 @@ struct KeyValueEditor<T: KVItem>: View {
 
     private func headerLabel(_ text: String) -> some View {
         Text(text)
-            .font(.caption.weight(.medium))
+            .font(AppFont.columnHeader)
             .foregroundStyle(.secondary)
             .padding(.horizontal, AppSpacing.small)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -278,7 +278,7 @@ struct KeyValueEditor<T: KVItem>: View {
                             .font(.caption2.weight(.medium))
                     }
                 }
-                .font(.caption.weight(.medium))
+                .font(AppFont.columnHeader)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -589,7 +589,7 @@ private struct KVRow: View {
                             .frame(width: gripGlyphWidth)
                     } else {
                         Image(systemName: "line.3.horizontal")
-                            .font(.caption)
+                            .font(AppFont.iconRow)
                             .foregroundStyle(.secondary)
                             .frame(width: gripGlyphWidth)
                             .frame(maxHeight: .infinity)
@@ -718,7 +718,7 @@ private struct KVRow: View {
         field()
             .font(AppFont.cellText)
             .foregroundStyle(isEnabled ? .primary : .secondary)
-            .opacity(isEnabled ? 1 : 0.5)
+            .opacity(isEnabled ? 1 : AppOpacity.disabled)
             .padding(.horizontal, AppSpacing.small)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .overlay {
@@ -771,7 +771,7 @@ private struct KVRow: View {
                 .labelsHidden()
                 .controlSize(.small)
                 .disabled(!isEnabled)
-                .opacity(isEnabled ? 1 : 0.5)
+                .opacity(isEnabled ? 1 : AppOpacity.disabled)
             }
         }
         .frame(width: kindMenuWidth)
@@ -794,7 +794,7 @@ private struct KVRow: View {
             .disabled(!isEnabled)
             .help("Choose a file to upload")
         }
-        .opacity(isEnabled ? 1 : 0.5)
+        .opacity(isEnabled ? 1 : AppOpacity.disabled)
     }
 
     /// One merged trailing cell: the secret eye (variables tables only)
@@ -824,7 +824,7 @@ private struct KVRow: View {
                 isSecret.wrappedValue.toggle()
             } label: {
                 Image(systemName: isSecret.wrappedValue ? "eye.slash" : "eye")
-                    .font(.caption)
+                    .font(AppFont.iconRow)
                     .foregroundStyle(.secondary)
                     .contentShape(Rectangle())
             }
@@ -843,7 +843,7 @@ private struct KVRow: View {
                     onDelete()
                 } label: {
                     Image(systemName: "trash")
-                        .font(.caption)
+                        .font(AppFont.iconRow)
                         .foregroundStyle(.secondary)
                         .contentShape(Rectangle())
                 }

@@ -107,11 +107,7 @@ struct SaveChipButton: View {
             .padding(.vertical, AppSpacing.xxSmall)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                    .fill(
-                        isDirty
-                            ? (isHovering ? AppColor.tabHoverBackground : AppColor.subtleBackground)
-                            : .clear
-                    )
+                    .fill(isDirty ? AppColor.subtleBackground : (isHovering ? AppColor.tabHoverBackground : .clear))
             )
         }
         .buttonStyle(.plain)

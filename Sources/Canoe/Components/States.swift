@@ -13,7 +13,7 @@ struct ErrorBanner: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(AppColor.error)
             Text(message)
-                .font(.subheadline)
+                .font(AppFont.emptyStateBody)
                 .foregroundStyle(.primary)
                 .lineLimit(3)
             Spacer()
@@ -43,7 +43,7 @@ struct LoadingState: View {
             ProgressView()
                 .controlSize(.small)
             Text(message)
-                .font(.caption)
+                .font(AppFont.emptyStateBody)
                 .foregroundStyle(.secondary)
         }
         .padding(AppSpacing.large)

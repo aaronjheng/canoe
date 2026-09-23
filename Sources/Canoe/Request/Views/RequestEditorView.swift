@@ -407,7 +407,7 @@ struct RequestEditorView: View {
 
     private var requestNameFieldBody: some View {
         TextField("Request Name", text: $draft.name)
-            .font(.subheadline.weight(.semibold))
+            .font(AppFont.panelTitle)
             .textFieldStyle(.plain)
             .focused($isNameFieldFocused)
             .padding(.horizontal, AppSpacing.small - AppSpacing.xxSmall)
@@ -510,7 +510,7 @@ struct RequestEditorView: View {
                         Text("Cancel")
                             .frame(minHeight: 22)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(SecondaryButtonStyle())
                     .keyboardShortcut(.cancelAction)
                     .help("Cancel Request (⎋)")
                 } else {
@@ -651,8 +651,8 @@ struct RequestEditorView: View {
             Group {
                 if filteredMethods.isEmpty {
                     Text("No Matching Method")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .font(AppFont.emptyStateBody)
+                        .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, minHeight: 28)
                 } else {
                     ForEach(filteredMethods) { method in

@@ -172,7 +172,7 @@ private struct GroupHeader<Actions: View>: View {
                         // header content column but the spacing matches.
                         .frame(width: AppSize.treeChevronWidth)
                     Text(title.uppercased())
-                        .font(.caption.weight(.semibold))
+                        .font(AppFont.microHeader)
                         .foregroundStyle(.secondary)
                         .padding(.leading, AppSpacing.xSmall)
                     Text("\(count)")
@@ -223,7 +223,7 @@ private struct EnvironmentRow: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if isActive {
                     Image(systemName: "checkmark")
-                        .font(.caption.weight(.semibold))
+                        .font(AppFont.microHeader)
                         .foregroundStyle(AppColor.accent)
                 }
             }
@@ -279,7 +279,7 @@ private struct HistoryView: View {
         VStack(spacing: 0) {
             HStack {
                 Text(store.history.isEmpty ? "No requests yet" : "\(store.history.count) requests")
-                    .font(.caption)
+                    .font(AppFont.columnHeader)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
                 if !store.history.isEmpty {
@@ -444,7 +444,7 @@ private func sidebarRowLabel(_ text: String, filter: String) -> Text {
                 options: [.caseInsensitive, .diacriticInsensitive]
             )
         else { break }
-        attributed[found].backgroundColor = AppColor.warning.opacity(0.35)
+        attributed[found].backgroundColor = AppColor.warning.opacity(AppOpacity.searchHighlight)
         searchRange = found.upperBound..<attributed.endIndex
     }
     return Text(attributed)
@@ -552,7 +552,7 @@ private struct InlineActionButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.caption)
+                .font(AppFont.iconRow)
                 .foregroundStyle(.secondary)
                 .frame(width: AppSize.compactControl, height: AppSize.compactControl)
                 .contentShape(Rectangle())
@@ -699,7 +699,7 @@ private struct CollectionTree: View {
                         .buttonStyle(.plain)
                         .help(isExpanded ? "Collapse collection" : "Expand collection")
                         sidebarRowLabel(collection.name, filter: store.sidebarFilter)
-                            .font(AppFont.sidebarRow.weight(.medium))
+                            .font(AppFont.sidebarRow)
                             .lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -875,7 +875,7 @@ private struct FolderTree: View {
                         HStack(spacing: AppSpacing.xSmall) {
                             ExpanderChevron(isExpanded: isExpanded)
                             Image(systemName: "folder")
-                                .font(.system(size: AppSize.compactControl))  // VS Code uses 16px tree icons
+                                .font(AppFont.iconLarge)  // VS Code uses 16px tree icons
                                 .foregroundStyle(.secondary)
                             sidebarRowLabel(folder.name, filter: store.sidebarFilter)
                                 .font(AppFont.sidebarRow)
@@ -1131,7 +1131,7 @@ private struct HistoryRow: View {
                     store.removeHistoryEntry(entry)
                 } label: {
                     Image(systemName: "trash")
-                        .font(.footnote)
+                        .font(AppFont.iconRow)
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))

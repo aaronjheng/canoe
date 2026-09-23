@@ -32,6 +32,8 @@ enum AppOpacity {
     static let variableHighlight: CGFloat = 0.22
     /// Soft accent shadow for the welcome mark.
     static let markShadow: CGFloat = 0.3
+    /// Match highlight wash behind search hits (sidebar filter, body find).
+    static let searchHighlight: CGFloat = 0.35
 }
 
 enum AppSize {

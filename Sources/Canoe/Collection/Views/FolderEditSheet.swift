@@ -128,7 +128,7 @@ struct FolderEditSheet: View {
                     )
                     dismiss()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(PrimaryButtonStyle())
                 .keyboardShortcut(.defaultAction)
             }
             .padding(.horizontal, AppSpacing.medium)

@@ -160,7 +160,7 @@ struct VariablesSidebarView: View {
             }
             Divider()
             Text("Select a request to see its collection variables.")
-                .font(.caption)
+                .font(AppFont.emptyStateBody)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, AppSpacing.medium)
@@ -326,7 +326,7 @@ private struct ScopeSection: View {
                 .font(.caption)
                 .foregroundStyle(AppColor.accent)
             Text(scope.kind.rawValue.uppercased())
-                .font(.caption.weight(.semibold))
+                .font(AppFont.microHeader)
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
             Text("\(isFiltering ? visibleVariables.count : scope.variables.count)")
@@ -374,7 +374,7 @@ private struct ScopeSection: View {
                 .frame(width: 5, height: 5)
             VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
                 Text(hint.message)
-                    .font(.caption)
+                    .font(AppFont.emptyStateBody)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 switch hint.action {
@@ -624,7 +624,7 @@ private struct VariableRow: View {
             variables: resolvedVariables,
             suggestions: suggestions,
             singleLineMinHeight: 18,
-            font: .monoCaption,
+            font: .monoSubheadline,
             placeholder: "value",
             onFocusChange: { focused in
                 isValueFocused = focused
@@ -672,9 +672,7 @@ private struct VariableRow: View {
                 // (or the text field) is an AppKit view in window space, so a
                 // direct bounds test replaces the .global frame conversion that
                 // made double-clicks on an already-focused value read outside.
-                if let responder = window.firstResponder as? NSView,
-                    responder.window === window
-                {
+                if let responder = window.firstResponder as? NSView, responder.window === window {
                     let point = responder.convert(event.locationInWindow, from: nil)
                     if responder.bounds.contains(point) {
                         return
@@ -701,7 +699,7 @@ private struct VariableRow: View {
                 Text(shownValue)
             }
         }
-        .font(AppFont.monoCaption)
+        .font(AppFont.monoSubheadline)
         .foregroundStyle(isDimmed ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
         .lineLimit(2)
         .truncationMode(.middle)
@@ -750,7 +748,7 @@ private struct ResolvedSection: View {
     var body: some View {
         VStack(spacing: 0) {
             Label("Resolved Variables", systemImage: "checkmark.circle.fill")
-                .font(.caption.weight(.semibold))
+                .font(AppFont.microHeader)
                 .foregroundStyle(AppColor.success)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, AppSpacing.medium)
@@ -795,12 +793,12 @@ private struct UnresolvedSection: View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
                 Label("Unresolved Variables", systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption.weight(.semibold))
+                    .font(AppFont.microHeader)
                     .foregroundStyle(AppColor.warning)
                 ForEach(orderedKeys, id: \.self) { key in
                     HStack(spacing: AppSpacing.xSmall) {
                         Text(key)
-                            .font(AppFont.monoCaption)
+                            .font(AppFont.monoSubheadline)
                             .foregroundStyle(.primary)
                             .lineLimit(1)
                             .truncationMode(.middle)

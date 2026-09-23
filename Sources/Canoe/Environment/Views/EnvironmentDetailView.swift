@@ -21,7 +21,7 @@ struct EnvironmentDetailView: View {
             HStack(spacing: AppSpacing.small) {
                 Image(systemName: "globe")
                     .foregroundStyle(AppColor.accent)
-                InlineNameField(text: $draft.name, placeholder: "Environment Name")
+                InlineNameField(text: $draft.name, placeholder: "Environment Name", font: AppFont.panelTitle)
                 Spacer(minLength: AppSpacing.medium)
                 saveButton
             }

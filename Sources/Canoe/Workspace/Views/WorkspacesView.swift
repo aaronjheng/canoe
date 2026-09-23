@@ -97,11 +97,11 @@ struct WorkspacesView: View {
                     .foregroundStyle(.secondary)
                     .background {
                         RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                            .fill(AppColor.codeBackground)
+                            .fill(AppColor.controlBackground)
                     }
             }
         }
-        .font(.system(size: AppSize.compactControl))
+        .font(AppFont.iconLarge)
     }
 
     var body: some View {
@@ -193,7 +193,7 @@ struct WorkspacesView: View {
                 } else if someVisibleChecked {
                     Image(systemName: "minus.square.fill")
                         .symbolRenderingMode(.multicolor)
-                        .font(.system(size: AppSize.compactControl))
+                        .font(AppFont.iconLarge)
                 } else {
                     checkmarkImage(isOn: false)
                 }
@@ -219,8 +219,9 @@ struct WorkspacesView: View {
                 .frame(width: ColumnWidth.actions)
                 .padding(.trailing, AppSpacing.medium)
         }
-        .font(.caption)
+        .font(AppFont.columnHeader)
         .foregroundStyle(.secondary)
+        .background(AppColor.tableHeaderBackground)
         .padding(.vertical, AppSpacing.xSmall)
         .clipped()
     }
@@ -247,7 +248,8 @@ struct WorkspacesView: View {
                 Text(workspace.name)
                     .lineLimit(1)
             }
-            .font(.subheadline.weight(.medium))
+            .font(.subheadline)
+            .foregroundStyle(.primary)
             .frame(minWidth: ColumnWidth.nameMin, maxWidth: .infinity, alignment: .leading)
             .contextMenu {
                 Button("Open Workspace") { store.openWorkspace(workspace.id) }

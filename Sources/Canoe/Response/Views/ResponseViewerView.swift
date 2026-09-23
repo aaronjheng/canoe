@@ -105,7 +105,7 @@ struct ResponseViewerView: View {
         // Postman-style hint: muted copy plus the actual send shortcut.
         VStack(spacing: AppSpacing.medium) {
             Text("Send a request to get a response")
-                .font(.callout)
+                .font(AppFont.emptyStateBody)
                 .foregroundStyle(.secondary)
             HStack(spacing: AppSpacing.xSmall) {
                 keyChip("⌘")
@@ -136,7 +136,7 @@ struct ResponseViewerView: View {
     private var statusBar: some View {
         HStack(spacing: AppSpacing.medium) {
             Text("Response")
-                .font(.subheadline.weight(.bold))
+                .font(AppFont.panelTitle)
             if store.isSending {
                 statusDot
                 ProgressView().controlSize(.small)
@@ -405,13 +405,13 @@ struct ResponseViewerView: View {
                 }
                 if !hasConnection, !hasTLS, !hasCert {
                     Text("No network details captured for this response.")
-                        .font(.callout)
+                        .font(AppFont.emptyStateBody)
                         .foregroundStyle(.secondary)
                         .padding(AppSpacing.medium)
                 }
             } else {
                 Text("No network details captured for this response.")
-                    .font(.callout)
+                    .font(AppFont.emptyStateBody)
                     .foregroundStyle(.secondary)
                     .padding(AppSpacing.medium)
             }
@@ -457,7 +457,7 @@ struct ResponseViewerView: View {
                 )
                 Divider()
                 hoverSection(
-                    icon: "arrow.up", tint: AppColor.warning, title: "Request Size",
+                    icon: "arrow.up", tint: AppColor.accent, title: "Request Size",
                     total: Int64(size.requestTotal).formattedByteCount,
                     rows: [
                         ("Headers", Int64(size.requestHeaders).formattedByteCount),
@@ -466,7 +466,7 @@ struct ResponseViewerView: View {
                 )
             } else {
                 Text("No size details captured for this response.")
-                    .font(.callout)
+                    .font(AppFont.emptyStateBody)
                     .foregroundStyle(.secondary)
                     .padding(AppSpacing.medium)
             }
@@ -493,7 +493,7 @@ struct ResponseViewerView: View {
                 .compactMap { label, value in value.map { (label, $0) } }
                 if rows.isEmpty {
                     Text("No timing phases captured for this response.")
-                        .font(.callout)
+                        .font(AppFont.emptyStateBody)
                         .foregroundStyle(.secondary)
                         .padding(AppSpacing.medium)
                 } else {
@@ -504,7 +504,7 @@ struct ResponseViewerView: View {
                 }
             } else {
                 Text("No timing details captured for this response.")
-                    .font(.callout)
+                    .font(AppFont.emptyStateBody)
                     .foregroundStyle(.secondary)
                     .padding(AppSpacing.medium)
             }
@@ -812,7 +812,8 @@ struct ResponseViewerView: View {
                 )
             else { break }
             attributed[found].backgroundColor =
-                index == currentIndex ? AppColor.accent.opacity(0.45) : AppColor.warning.opacity(0.35)
+                index == currentIndex
+                ? AppColor.accent.opacity(AppOpacity.searchHighlight) : AppColor.warning.opacity(AppOpacity.searchHighlight)
             searchRange = found.upperBound..<attributed.endIndex
             index += 1
         }
@@ -1030,8 +1031,8 @@ private struct BodyToolbarEdgeShadow: View {
             Divider()
             LinearGradient(
                 stops: [
-                    .init(color: .black.opacity(0.12), location: 0),
-                    .init(color: .black.opacity(0), location: 1),
+                    .init(color: Color.primary.opacity(0.12), location: 0),
+                    .init(color: Color.primary.opacity(0), location: 1),
                 ],
                 startPoint: .top,
                 endPoint: .bottom

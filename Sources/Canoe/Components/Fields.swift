@@ -17,7 +17,6 @@ struct FilterField: View {
     var isBoxed = false
 
     @FocusState private var isFocused: Bool
-    @State private var isHovered = false
     /// The box's screen frame - the blur monitor spares clicks inside it.
     @State private var fieldFrame: CGRect = .zero
     @State private var blurMonitor: Any?
@@ -58,7 +57,6 @@ struct FilterField: View {
             }
         }
         .padding(.horizontal, isBoxed ? AppSpacing.small : 0)
-        .onHover { isHovered = $0 }
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .global)
         } action: { frame in
@@ -68,14 +66,13 @@ struct FilterField: View {
         .onDisappear { removeBlurMonitor() }
     }
 
-    /// Boxed border tiers: idle hairline, hover one step stronger, focused
-    /// accent (the standard focused-input signal). Unboxed fields render no
-    /// border at all.
+    /// Boxed border tiers: idle `borderStrong` (matching the variable-field
+    /// borders so filters and inputs read the same), focused accent (the
+    /// standard focused-input signal). Unboxed fields render no border.
     private var borderColor: Color? {
         guard isBoxed else { return nil }
         if isFocused { return AppColor.accent }
-        if isHovered { return AppColor.borderStrong }
-        return AppColor.border
+        return AppColor.borderStrong
     }
 
     /// Observes without consuming: a leftMouseDown outside the box drops
@@ -184,7 +181,7 @@ struct UnderlineTab: View {
 struct InlineNameField: View {
     @Binding var text: String
     var placeholder: String = "Name"
-    var font: Font = .subheadline.weight(.semibold)
+    var font: Font = AppFont.detailTitle
     @FocusState private var isFocused: Bool
     @State private var isHovered = false
     /// Text at focus time; Esc restores it (commit happens on blur/Enter).

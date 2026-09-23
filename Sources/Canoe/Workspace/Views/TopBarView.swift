@@ -103,7 +103,7 @@ private struct WorkspaceSwitcher: View {
                 Image(systemName: "square.stack.3d.up.fill")
                     .font(.subheadline)
                 Text(store.activeWorkspace?.name ?? "No Workspace")
-                    .font(AppFont.sidebarRow.weight(.medium))
+                    .font(AppFont.sidebarRow)
                     .lineLimit(1)
             }
             .padding(.horizontal, AppSpacing.comfortable)

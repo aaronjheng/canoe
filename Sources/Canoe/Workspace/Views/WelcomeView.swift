@@ -14,7 +14,7 @@ struct WelcomeView: View {
                 Text("Welcome to Canoe")
                     .font(.largeTitle.weight(.semibold))
                 Text("Create a workspace to start organizing your API requests.")
-                    .font(.callout)
+                    .font(AppFont.emptyStateBody)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 420)

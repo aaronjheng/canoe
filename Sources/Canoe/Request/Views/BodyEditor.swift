@@ -83,7 +83,7 @@ struct BodyEditor: View {
         case .none:
             VStack {
                 Text("This request does not have a body.")
-                    .font(.callout)
+                    .font(AppFont.emptyStateBody)
                     .foregroundStyle(.secondary)
                     .padding(AppSpacing.large)
                 Spacer(minLength: 0)
@@ -156,7 +156,7 @@ private struct BinaryFileEditor: View {
                     .foregroundStyle(.secondary)
                 if path.isEmpty {
                     Text("No file selected. The raw file bytes are sent as the body.")
-                        .font(.callout)
+                        .font(AppFont.emptyStateBody)
                         .foregroundStyle(.secondary)
                 } else {
                     VStack(alignment: .leading, spacing: AppSpacing.xxSmall) {
@@ -176,7 +176,7 @@ private struct BinaryFileEditor: View {
                 Button("Select File…") {
                     if let url = openFilePanel() { path = url.path }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(SecondaryButtonStyle())
                 .controlSize(.small)
                 .help("Choose a file to send as the body")
                 if !path.isEmpty {

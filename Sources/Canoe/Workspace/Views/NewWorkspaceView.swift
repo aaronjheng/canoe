@@ -19,7 +19,7 @@ struct NewWorkspaceView: View {
             }
 
             Text("Give your workspace a name to organize related collections and requests.")
-                .font(.callout)
+                .font(AppFont.emptyStateBody)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 300)
@@ -37,7 +37,7 @@ struct NewWorkspaceView: View {
                 Button("Create", action: create)
                     // Standard sheet confirm, matching the folder editor's
                     // Save (hero buttons stay on the welcome/empty states).
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(PrimaryButtonStyle())
                     .keyboardShortcut(.defaultAction)
             }
         }

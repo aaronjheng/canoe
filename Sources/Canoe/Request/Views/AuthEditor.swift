@@ -120,10 +120,10 @@ struct AuthorizationForm: View {
             .labelsHidden()
             .fixedSize()
             Text("The Authorization header will be automatically generated when you send the request.")
-                .font(.caption)
+                .font(AppFont.emptyStateBody)
                 .foregroundStyle(.secondary)
             Text("Fields support {{variables}} from the active environment.")
-                .font(.caption)
+                .font(AppFont.emptyStateBody)
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
         }
@@ -144,7 +144,7 @@ struct AuthorizationForm: View {
                     EmptyView()
                 case .none:
                     Text("No Authorization header will be sent.")
-                        .font(.callout)
+                        .font(AppFont.emptyStateBody)
                         .foregroundStyle(.secondary)
                 case .basic:
                     fieldRow("Username") {
@@ -245,13 +245,13 @@ struct AuthorizationForm: View {
                 case .none, .inherit:
                     echoRow("Auth type") { echoField { Text(AuthType.none.label) } }
                     Text("\"\(source.ownerName)\" has no Authorization configured; requests under it send without one.")
-                        .font(.callout)
+                        .font(AppFont.emptyStateBody)
                         .foregroundStyle(.secondary)
                 }
             }
         } else {
             Text("This level takes its Authorization from its parent.")
-                .font(.callout)
+                .font(AppFont.emptyStateBody)
                 .foregroundStyle(.secondary)
         }
     }

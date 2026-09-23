@@ -632,8 +632,8 @@ struct EnvironmentPickerPanel: View {
 
             if visibleRows.isEmpty {
                 Text("No Matching Environments")
-                    .font(.callout)
-                    .foregroundStyle(.tertiary)
+                    .font(AppFont.emptyStateBody)
+                    .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: AppSize.tabHeight)
             } else {
                 // Rows wrapped in an explicit stack with the insets on the
@@ -815,7 +815,7 @@ private struct TabPill: View {
                     // while blocking the label completely.
                     .background {
                         RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                            .fill(isHoveringClose ? AppColor.tabActiveBackground : pillFill)
+                            .fill(isHoveringClose ? AppColor.tabHoverBackground : pillFill)
                             .background(
                                 AppColor.controlBackground,
                                 in: RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
@@ -1094,8 +1094,8 @@ struct TabDrawer: View {
 
             if matchingTabs.isEmpty {
                 Text("No Matching Tabs")
-                    .font(.callout)
-                    .foregroundStyle(.tertiary)
+                    .font(AppFont.emptyStateBody)
+                    .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: AppSize.tabHeight)
             } else {
                 ScrollViewReader { proxy in

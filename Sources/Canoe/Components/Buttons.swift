@@ -39,6 +39,38 @@ struct SendButtonStyle: ButtonStyle {
 /// primary action uses the same style.
 typealias PrimaryButtonStyle = SendButtonStyle
 
+/// Standard secondary button (Cancel, Select File): bordered neutral fill so
+/// it never drifts from the app accent via the system `.bordered` style.
+struct SecondaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.body)
+            .foregroundStyle(isEnabled ? .primary : .secondary)
+            .padding(.horizontal, AppSpacing.medium)
+            .padding(.vertical, AppSpacing.xSmall)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                    .fill(
+                        configuration.isPressed
+                            ? AppColor.border
+                            : (isEnabled && isHovering ? AppColor.subtleBackground : AppColor.fieldBackground)
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                    .strokeBorder(AppColor.borderStrong, lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+            .opacity(isEnabled ? 1 : AppOpacity.disabled)
+            .onHover { isHovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .animation(.easeOut(duration: 0.12), value: isHovering)
+    }
+}
+
 struct ToolbarButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
@@ -46,7 +78,7 @@ struct ToolbarButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .labelStyle(.iconOnly)
-            .font(.body)
+            .font(AppFont.iconChrome)
             .foregroundStyle(configuration.isPressed || (isEnabled && isHovering) ? .primary : .secondary)
             .padding(AppSpacing.small - AppSpacing.xxSmall)
             .background(
@@ -114,7 +146,7 @@ struct ToolbarToggleButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.subheadline)
+                .font(AppFont.iconCompact)
                 .foregroundStyle(isOn ? AppColor.accent : .secondary)
                 .frame(width: AppSize.topBarControlHeight, height: AppSize.topBarControlHeight)
                 .background(

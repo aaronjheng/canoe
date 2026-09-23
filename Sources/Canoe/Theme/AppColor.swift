@@ -2,8 +2,8 @@ import AppKit
 import SwiftUI
 
 /// Semantic color tokens used across the app, aligned with the GitHub Primer
-/// visual language: a blue accent, green primary actions, and scale-based
-/// status/method colors that adapt between light and dark appearances.
+/// visual language: a blue accent, Primer status/method colors, and scale-
+/// based fills that adapt between light and dark appearances.
 enum AppColor {
     // MARK: - Brand (Primer accent)
 
@@ -13,12 +13,6 @@ enum AppColor {
 
     /// Deeper brand blue for the bottom edge of brand gradients.
     static let accentDark = dynamic(light: RGB(red: 5, green: 80, blue: 174), dark: RGB(red: 17, green: 88, blue: 199))
-
-    // MARK: - Actions
-
-    /// Bright green for the top edge of primary-button gradients.
-    /// Primer `success.emphasis` hover step: #2da44e (light) / #2ea043 (dark).
-    static let successBright = dynamic(light: RGB(red: 45, green: 164, blue: 78), dark: RGB(red: 46, green: 160, blue: 67))
 
     // MARK: - Status
 
@@ -37,7 +31,6 @@ enum AppColor {
     /// Primer `neutral.emphasis`: #59636e (light) / #818b98 (dark).
     static let neutral = dynamic(light: RGB(red: 89, green: 99, blue: 110), dark: RGB(red: 129, green: 139, blue: 152))
 
-    static let info: Color = accent
     /// Content drawn on the brand accent (button labels, badges): always
     /// white in both appearances so accent fills stay readable.
     static let onAccent = Color.white
