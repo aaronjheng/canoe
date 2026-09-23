@@ -12,12 +12,12 @@ import SwiftUI
 /// resolution, overridden rows are annotated with the scope that wins, and
 /// secrets are masked.
 ///
-/// Scope values are editable in place - modification only: the editors push
-/// drafts through the same pipeline as the full variable editors (never add
-/// or delete rows, and names stay fixed), and the header's Save chip
-/// commits them (adding, deleting, reordering, renaming, and the secret
-/// flag stay in the full editors, reachable from the empty-scope hints and
-/// each owner's home screen).
+/// Scope values are editable in place - modification only. Every keystroke
+/// updates memory so the resolution preview stays live; the edit lands on
+/// disk as soon as the field commits (blur or Enter) - no Save button:
+/// adding, deleting, reordering, renaming, and the secret flag stay in the
+/// full editors, reachable from the empty-scope hints and each owner's home
+/// screen.
 ///
 /// Without a request it falls back to Postman's "All variables" view: the
 /// workspace- and environment-level scopes with actionable empty states, so
@@ -50,35 +50,13 @@ struct VariablesSidebarView: View {
         }
     }
 
-    /// The scopes the panel currently displays: request context covers the
-    /// request's workspace, collection, and active environment; otherwise
-    /// the active workspace + environment pair.
-    private var displayedScopes: [VariableScope] {
-        if let request = store.selectedRequest {
-            return store.variableScopesForRequest(request)
-        }
-        return store.workspaceVariableScopes()
-    }
-
-    /// Whether any displayed scope's owner has unsaved variable edits: the
-    /// inline editors push drafts like the full editors do, and the chip
-    /// commits them the same way (⌘S / the menu-bar Save works too).
-    private var isDirty: Bool {
-        store.hasPendingVariableEdits(in: displayedScopes)
-    }
-
     // MARK: - Header
 
     private var header: some View {
         InspectorHeader(
             title: store.selectedRequest == nil ? "All Variables" : "Variables in Request",
             closeHelp: "Hide Variables in Request (⇧⌘V)",
-            onClose: { store.showVariablesSidebar = false },
-            accessory: {
-                SaveChipButton(isDirty: isDirty, help: "Save Variables (⌘S)") {
-                    store.savePendingChanges()
-                }
-            }
+            onClose: { store.showVariablesSidebar = false }
         )
     }
 
@@ -377,6 +355,10 @@ private struct ScopeSection: View {
                     guard let ownerID = scope.ownerID else { return }
                     store.updateVariable(updated, kind: scope.kind, ownerID: ownerID)
                 },
+                onCommit: {
+                    guard let ownerID = scope.ownerID else { return }
+                    store.persistVariableEdits(kind: scope.kind, ownerID: ownerID)
+                },
                 revealedSecrets: $revealedSecrets
             )
             if index < visibleVariables.count - 1 {
@@ -477,14 +459,28 @@ private struct VariableRow: View {
     /// Completion candidates for the inline editors.
     var suggestions: [VariableSuggestion]?
     /// Pushes an edited copy of the variable to its owning scope (per
-    /// keystroke, like the full editors). Nil for read-only rows.
+    /// keystroke, so the resolution preview stays live). Nil for read-only
+    /// rows.
     var onUpdate: ((Variable) -> Void)?
+    /// Fires when the field commits (Enter or focus loss): the owning
+    /// scope's variables are persisted to disk right away.
+    var onCommit: (() -> Void)?
     @Binding var revealedSecrets: Set<UUID>
     @State private var isHovering = false
     /// Per-field chrome states: the hover tier and the focused accent ring
     /// come from the field itself (AppKit first-responder), not the row.
     @State private var isValueFocused = false
     @State private var isValueHovered = false
+    /// The value field's frame in global coordinates - the click-away blur
+    /// monitor needs it to spare clicks inside the field.
+    @State private var valueFieldFrame: CGRect = .zero
+    /// Local left-mouse-down monitor that ends the AppKit editing session
+    /// when a click lands outside the field: AppKit field editors don't
+    /// blur on background clicks on their own (the same hand-rolled monitor
+    /// the inline name field uses; `@FocusState` cannot drive these
+    /// AppKit-backed editors). Observes without consuming, so clicks into
+    /// other fields still land normally.
+    @State private var valueBlurMonitor: Any?
     /// Which hover action owns keyboard focus, if any. The actions stay
     /// visually hidden until hovered or focused - but unlike `disabled`,
     /// focus can always land on them, so keyboard and VoiceOver users can
@@ -546,6 +542,7 @@ private struct VariableRow: View {
                 if isEditable, let onUpdate {
                     Button {
                         onUpdate(updating(isEnabled: !variable.isEnabled))
+                        onCommit?()
                     } label: {
                         Image(systemName: variable.isEnabled ? "checkmark.square" : "square")
                     }
@@ -616,10 +613,11 @@ private struct VariableRow: View {
     }
 
     /// Inline value editor with the InlineNameField language: quiet text at
-    /// rest (no chrome - borders around every row felt cramped), a light
-    /// pill on hover, and the field fill + accent ring while focused (click
-    /// to edit). One persistent editor - no view swap on state change - so
-    /// caret and undo survive the transitions.
+    /// rest, a light pill on hover, and the same pill plus the accent ring
+    /// while focused (click to edit; `fieldBackground` is fainter than the
+    /// hover pill on the gray sidebar and would make the surface vanish
+    /// exactly when editing starts). One persistent editor - no view swap
+    /// on state change - so caret and undo survive the transitions.
     private var valueField: some View {
         VariableHighlightEditor(
             text: Binding(
@@ -631,26 +629,72 @@ private struct VariableRow: View {
             singleLineMinHeight: 18,
             font: .monoCaption,
             placeholder: "value",
-            onFocusChange: { isValueFocused = $0 }
+            onFocusChange: { focused in
+                isValueFocused = focused
+                // Leaving the field is a commit too: whatever is in memory
+                // lands on disk, matching Enter.
+                if !focused { onCommit?() }
+            },
+            onCommit: { commitAndExitEditing() }
         )
         .padding(.horizontal, AppSpacing.small - AppSpacing.xxSmall)
         .padding(.vertical, AppSpacing.xSmall)
         .background(
             RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                .fill(
-                    isValueFocused
-                        ? AppColor.fieldBackground
-                        : (isValueHovered ? AppColor.subtleBackground : .clear)
-                )
+                .fill(isValueFocused || isValueHovered ? AppColor.subtleBackground : .clear)
         )
         .overlay {
             if isValueFocused {
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                    .strokeBorder(AppColor.accent, lineWidth: 2)
+                    .strokeBorder(AppColor.accent, lineWidth: 1)
             }
         }
         .onHover { isValueHovered = $0 }
+        .onGeometryChange(for: CGRect.self) { proxy in
+            proxy.frame(in: .global)
+        } action: { frame in
+            valueFieldFrame = frame
+        }
+        .onAppear { installValueBlurMonitor() }
+        .onDisappear { removeValueBlurMonitor() }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Enter is a commit AND an exit: persist, then resign the field editor
+    /// (deferred out of the key-command stack) so the accent ring drops and
+    /// the row falls back to quiet text. The resign fires the blur commit,
+    /// which is a no-op once saved.
+    private func commitAndExitEditing() {
+        onCommit?()
+        DispatchQueue.main.async {
+            NSApp.keyWindow?.makeFirstResponder(nil)
+        }
+    }
+
+    private func installValueBlurMonitor() {
+        guard valueBlurMonitor == nil else { return }
+        valueBlurMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
+            MainActor.assumeIsolated {
+                guard isValueFocused, let window = event.window else { return }
+                // Same window-base -> screen-top-left conversion as the
+                // filter field: SwiftUI .global frames live in that space.
+                let screenTop = window.screen?.frame.maxY ?? 0
+                let point = CGPoint(
+                    x: window.frame.origin.x + event.locationInWindow.x,
+                    y: screenTop - window.frame.origin.y - event.locationInWindow.y)
+                if !valueFieldFrame.contains(point) {
+                    NSApp.keyWindow?.makeFirstResponder(nil)
+                }
+            }
+            return event
+        }
+    }
+
+    private func removeValueBlurMonitor() {
+        if let valueBlurMonitor {
+            NSEvent.removeMonitor(valueBlurMonitor)
+            self.valueBlurMonitor = nil
+        }
     }
 
     private var valueText: some View {

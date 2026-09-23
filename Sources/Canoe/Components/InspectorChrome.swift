@@ -51,28 +51,12 @@ struct InspectorSwitcher: View {
 /// Shared right-edge inspector header, Postman-style: the switcher stays
 /// centered with the close button pinned trailing, and a bold title bar
 /// below names the active panel ("Variables in Request", "Code Snippet"),
-/// identical placement in both panels. `Accessory` is optional trailing
-/// chrome in the title row (the variables inspector's Save chip); plain
-/// headers use the no-accessory convenience init.
-struct InspectorHeader<Accessory: View>: View {
+/// identical placement in both panels.
+struct InspectorHeader: View {
     /// Title of the active panel, shown under the switcher row.
     let title: String
     let closeHelp: String
     let onClose: () -> Void
-    /// Trailing chrome in the title row.
-    let accessory: Accessory
-
-    init(
-        title: String,
-        closeHelp: String,
-        onClose: @escaping () -> Void,
-        @ViewBuilder accessory: () -> Accessory
-    ) {
-        self.title = title
-        self.closeHelp = closeHelp
-        self.onClose = onClose
-        self.accessory = accessory()
-    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -89,22 +73,12 @@ struct InspectorHeader<Accessory: View>: View {
             }
             .padding(.horizontal, AppSpacing.medium)
             .frame(minHeight: AppSize.toolbarHeight)
-            HStack {
-                Text(title)
-                    .font(AppFont.panelTitle)
-                Spacer(minLength: 0)
-                accessory
-            }
-            .padding(.horizontal, AppSpacing.medium)
-            .padding(.top, AppSpacing.xSmall)
-            .padding(.bottom, AppSpacing.small)
+            Text(title)
+                .font(AppFont.panelTitle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, AppSpacing.medium)
+                .padding(.top, AppSpacing.xSmall)
+                .padding(.bottom, AppSpacing.small)
         }
-    }
-}
-
-extension InspectorHeader where Accessory == EmptyView {
-    /// Standard header without trailing chrome.
-    init(title: String, closeHelp: String, onClose: @escaping () -> Void) {
-        self.init(title: title, closeHelp: closeHelp, onClose: onClose, accessory: { EmptyView() })
     }
 }

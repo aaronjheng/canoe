@@ -327,6 +327,29 @@ private enum VariablePlaceholderStyling {
 /// NSTextField-backed single-line editor: no wrap, horizontal auto-scroll,
 /// with `{{variable}}` runs tinted via the attributed value and `{{`
 /// completion driven by the field editor.
+/// NSTextField that reports keyboard focus changes. The delegate's
+/// `controlTextDidBeginEditing` waits for the first keystroke: a click
+/// that only places the caret starts no editing session, so a focus mirror
+/// driven by the delegate alone stays stale (no ring until typing). The
+/// blur side keeps flowing through `controlTextDidEndEditing`, which the
+/// window fires reliably when the field editor is retired.
+private final class FocusObservingTextField: NSTextField {
+    var onDidBecomeFirstResponder: (() -> Void)?
+    var onDidResignFirstResponder: (() -> Void)?
+
+    override func becomeFirstResponder() -> Bool {
+        let ok = super.becomeFirstResponder()
+        if ok { onDidBecomeFirstResponder?() }
+        return ok
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let ok = super.resignFirstResponder()
+        if ok { onDidResignFirstResponder?() }
+        return ok
+    }
+}
+
 private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
     @Binding var text: String
     let variables: [String: String]
@@ -346,7 +369,8 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSTextField {
-        let field = NSTextField()
+        let coordinator = context.coordinator
+        let field = FocusObservingTextField()
         field.isBordered = false
         field.isBezeled = false
         field.drawsBackground = false
@@ -363,8 +387,10 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
         field.cell?.isScrollable = true
         field.placeholderString = placeholder
         field.attributedStringValue = VariablePlaceholderStyling.attributed(text, font: font, variables: variables)
-        field.delegate = context.coordinator
-        context.coordinator.completion.setCandidates(suggestions)
+        field.delegate = coordinator
+        field.onDidBecomeFirstResponder = { [weak coordinator] in coordinator?.fieldDidGainFocus() }
+        field.onDidResignFirstResponder = { [weak coordinator] in coordinator?.fieldDidLoseFocus() }
+        coordinator.completion.setCandidates(suggestions)
         return field
     }
 
@@ -491,6 +517,25 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
             clearFocusClaim()
             parent.onFocusChange?(false)
             parent.onEditingEnded?()
+        }
+
+        /// Actual keyboard-focus reports from the field subclass: the
+        /// editing-session notifications wait for the first keystroke, so a
+        /// click that only places the caret would leave the focus mirror
+        /// and the callbacks stale without these. Idempotent with the
+        /// session notifications (whichever fires first wins).
+        func fieldDidGainFocus() {
+            parent.onFocusChange?(true)
+            guard let focus = parent.focus, let focusValue = parent.focusValue else { return }
+            if focus.wrappedValue != focusValue {
+                focus.wrappedValue = focusValue
+            }
+        }
+
+        func fieldDidLoseFocus() {
+            completion.hide()
+            clearFocusClaim()
+            parent.onFocusChange?(false)
         }
 
         /// Drops the focus claim when this field still holds it.
