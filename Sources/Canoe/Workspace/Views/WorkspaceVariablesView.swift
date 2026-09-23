@@ -42,6 +42,7 @@ struct WorkspaceVariablesView: View {
                 suggestions: suggestions,
                 keyHeader: "Variable",
                 valueHeader: "Value",
+                headerBackground: AppColor.tableHeaderBackground,
                 secretKeyPath: \.isSecret
             )
             .id(draft.id)

@@ -67,6 +67,12 @@ enum AppColor {
     )
     /// Barely-there wash for borderless input fields (the variable editors).
     static let fieldBackground: Color = Color.primary.opacity(0.03)
+    /// Column-header fill for the variables tables: a fixed light gray in
+    /// light mode (#F9F9F9), a matching charcoal step in dark mode.
+    static let tableHeaderBackground: Color = dynamic(
+        light: RGB(red: 249, green: 249, blue: 249),
+        dark: RGB(red: 44, green: 44, blue: 46)
+    )
     /// Postman-style sidebar fill: light gray in light mode, charcoal in
     /// dark mode - always a visible step away from the center content.
     static let sidebarBackground: Color = dynamic(

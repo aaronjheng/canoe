@@ -48,6 +48,9 @@ struct KeyValueEditor<T: KVItem>: View {
     /// "Variable" instead of "Key").
     var keyHeader: String = "Key"
     var valueHeader: String = "Value"
+    /// Optional fill for the column-header row (workspace variables pass a
+    /// gray wash; other tables keep the bare card background).
+    var headerBackground: Color?
     /// Optional per-row secret column: when set to the item's flag, each row
     /// shows an eye button toggling it (environment variables' `isSecret`).
     var secretKeyPath: WritableKeyPath<T, Bool>?
@@ -241,6 +244,7 @@ struct KeyValueEditor<T: KVItem>: View {
             Color.clear.frame(width: trailingIconWidth)
         }
         .frame(height: AppSize.tabHeight)
+        .background(headerBackground ?? .clear)
     }
 
     /// Indent matching the body rows' leading icon column (including its
