@@ -53,10 +53,21 @@ enum AppKitFocusRing {
     static func prepare(in window: NSWindow) {
         let probe = NSTextField(frame: NSRect(x: -100, y: -100, width: 1, height: 1))
         probe.isEditable = true
+        probe.isBordered = false
+        probe.isBezeled = false
+        probe.drawsBackground = false
+        probe.focusRingType = .none
+        probe.cell?.focusRingType = .none
         probe.stringValue = "x"
         window.contentView?.addSubview(probe)
         defer { probe.removeFromSuperview() }
-        _ = window.fieldEditor(true, for: probe)
+        window.contentView?.layoutSubtreeIfNeeded()
+        if window.makeFirstResponder(probe), let editor = probe.currentEditor() as? NSTextView {
+            editor.focusRingType = .none
+            editor.drawsBackground = false
+            editor.backgroundColor = .clear
+        }
+        window.makeFirstResponder(nil)
     }
 
     /// Replace `focusRingType` / `drawFocusRingMask` on `cls`. Only ever
