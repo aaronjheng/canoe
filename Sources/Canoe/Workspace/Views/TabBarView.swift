@@ -1163,6 +1163,5 @@ struct TabDrawer: View {
         // `tabDrawerOverlay`); only the vertical hug lives here.
         .fixedSize(horizontal: false, vertical: true)
         .popupPanel()
-        .onAppear { searchFocused = true }
     }
 }
