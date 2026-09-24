@@ -318,8 +318,6 @@ struct RequestEditorView: View {
             hoveredMethod = nil
             keyboardMethod = nil
             methodFilter = ""
-            // Postman drops you into the filter so typing narrows the list.
-            DispatchQueue.main.async { methodFilterFieldFocused = true }
         }
         .onAppear {
             draft = request
@@ -626,7 +624,8 @@ struct RequestEditorView: View {
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                 TextField("Filter methods", text: $methodFilter)
-                    .borderlessFieldChrome(isFocused: methodFilterFieldFocused)
+                    .textFieldStyle(.plain)
+                    .focusEffectDisabled()
                     .font(.subheadline)
                     .focused($methodFilterFieldFocused)
                     .onSubmit {
@@ -648,6 +647,7 @@ struct RequestEditorView: View {
                         keyboardMethod = nil
                     }
             }
+            .borderlessFieldChrome(isFocused: methodFilterFieldFocused)
             .padding(.horizontal, AppSpacing.small)
             .frame(minHeight: 30)
 
