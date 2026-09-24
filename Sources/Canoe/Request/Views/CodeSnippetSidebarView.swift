@@ -114,7 +114,7 @@ struct CodeSnippetSidebarView: View {
                     let isBody = httpBlank.map { index > $0 } ?? false
                     HStack(alignment: .firstTextBaseline, spacing: AppSpacing.medium) {
                         Text("\(index + 1)")
-                            .font(AppFont.monoSubheadline)
+                            .font(AppFont.monoSnippet)
                             .monospacedDigit()
                             .foregroundStyle(.tertiary)
                             .frame(minWidth: 18, alignment: .trailing)
@@ -126,13 +126,14 @@ struct CodeSnippetSidebarView: View {
                                 isBody: isBody
                             )
                         )
-                        .font(AppFont.monoSubheadline)
+                        .font(AppFont.monoSnippet)
                         .textSelection(.enabled)
                         // Wrap at the pane width instead of scrolling
                         // horizontally; the gutter number stays on the
                         // first visual line via the baseline alignment.
                         .fixedSize(horizontal: false, vertical: true)
                     }
+                    .frame(minHeight: 18)
                 }
             }
             .padding(AppSpacing.medium)

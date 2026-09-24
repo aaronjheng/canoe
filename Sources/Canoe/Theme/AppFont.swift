@@ -19,6 +19,8 @@ enum AppFont {
     /// URL bar content and placeholder (12pt mono, sits between body and
     /// subheadline so the bar reads denser than prose but larger than cells).
     static let monoURLBar = Font.system(size: 12, design: .monospaced)
+    /// Code snippet pane body (12pt mono).
+    static let monoSnippet = Font.system(size: 12, design: .monospaced)
     /// Sidebar tree row label (collections, folders, requests). Postman keeps
     /// one uniform size across every tree level.
     static let sidebarRow = Font.system(size: 13)
