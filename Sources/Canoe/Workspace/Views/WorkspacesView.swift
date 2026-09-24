@@ -146,6 +146,8 @@ struct WorkspacesView: View {
                     }
                 }
             }
+            Divider()
+            WorkspaceListStatusBarView(workspaceCount: workspaces.count)
         }
         .background(.background)
         .confirmationDialog(
@@ -220,7 +222,7 @@ struct WorkspacesView: View {
                 toggleSort(.name)
             } label: {
                 HStack(spacing: AppSpacing.xSmall) {
-                    Text("Workspace")
+                    Text("Name")
                     if sortMode == .name {
                         Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
                     }
@@ -371,10 +373,6 @@ struct WorkspacesView: View {
         HStack(spacing: AppSpacing.small) {
             Text("Workspaces")
                 .font(AppFont.panelTitle)
-            Text("\(workspaces.count)")
-                .font(AppFont.countBadge)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
             Spacer(minLength: 0)
             if !checked.isEmpty {
                 Button("Delete (\(checked.count))", role: .destructive) {

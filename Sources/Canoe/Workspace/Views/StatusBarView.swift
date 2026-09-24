@@ -43,3 +43,23 @@ struct StatusBarView: View {
         .background(AppColor.controlBackground)
     }
 }
+
+struct WorkspaceListStatusBarView: View {
+    let workspaceCount: Int
+
+    var body: some View {
+        HStack(spacing: AppSpacing.small) {
+            Text("Workspaces")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("\(workspaceCount)")
+                .font(AppFont.countBadge)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, AppSpacing.medium)
+        .frame(height: AppSize.statusBarHeight)
+        .background(AppColor.controlBackground)
+    }
+}
