@@ -132,6 +132,11 @@ struct WorkspacesView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 tableHeader
+                    .overlay(alignment: .top) {
+                        Rectangle()
+                            .fill(AppColor.borderStrong)
+                            .frame(height: AppLine.field)
+                    }
                 Divider()
                 ScrollView {
                     LazyVStack(spacing: 0) {
