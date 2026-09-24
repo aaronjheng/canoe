@@ -17,6 +17,7 @@ struct WorkspacesView: View {
     @Environment(AppStore.self) private var store
     @State private var filter = ""
     @State private var sortMode: SortMode = .name
+    @State private var sortAscending = true
     @State private var deleteTargets: Set<Workspace.ID> = []
     @State private var checked: Set<Workspace.ID> = []
     @State private var hoveredID: Workspace.ID?
@@ -45,13 +46,16 @@ struct WorkspacesView: View {
         switch sortMode {
         case .name:
             return filtered.sorted {
-                $0.name.localizedStandardCompare($1.name) == .orderedAscending
+                let comparison = $0.name.localizedStandardCompare($1.name)
+                return sortAscending ? comparison == .orderedAscending : comparison == .orderedDescending
             }
         case .activity:
             return filtered.sorted {
                 switch (store.lastActivity(in: $0.id), store.lastActivity(in: $1.id)) {
                 case let (lhs?, rhs?):
-                    if lhs != rhs { return lhs > rhs }
+                    if lhs != rhs {
+                        return sortAscending ? lhs < rhs : lhs > rhs
+                    }
                     return $0.name.localizedStandardCompare($1.name) == .orderedAscending
                 case (_?, nil): return true
                 case (nil, _?): return false
@@ -59,6 +63,15 @@ struct WorkspacesView: View {
                     return $0.name.localizedStandardCompare($1.name) == .orderedAscending
                 }
             }
+        }
+    }
+
+    private func toggleSort(_ mode: SortMode) {
+        if sortMode == mode {
+            sortAscending.toggle()
+        } else {
+            sortMode = mode
+            sortAscending = mode != .activity
         }
     }
 
@@ -203,16 +216,42 @@ struct WorkspacesView: View {
             .help("Select/deselect all workspaces")
             .frame(width: ColumnWidth.check, alignment: .center)
             .padding(.leading, AppSpacing.medium)
-            Text("Workspace")
+            Button {
+                toggleSort(.name)
+            } label: {
+                HStack(spacing: AppSpacing.xSmall) {
+                    Text("Workspace")
+                    if sortMode == .name {
+                        Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
+                    }
+                }
                 .frame(minWidth: ColumnWidth.nameMin, maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(sortMode == .name ? Color.primary : Color.secondary)
+            .help("Sort by workspace name")
             Text("Collections")
                 .frame(width: ColumnWidth.count, alignment: .trailing)
             Text("Requests")
                 .frame(width: ColumnWidth.count, alignment: .trailing)
             Text("Environments")
                 .frame(width: ColumnWidth.environments, alignment: .trailing)
-            Text("Last Activity")
+            Button {
+                toggleSort(.activity)
+            } label: {
+                HStack(spacing: AppSpacing.xSmall) {
+                    Text("Last Activity")
+                    if sortMode == .activity {
+                        Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
+                    }
+                }
                 .frame(width: ColumnWidth.activity, alignment: .trailing)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(sortMode == .activity ? Color.primary : Color.secondary)
+            .help("Sort by last activity")
             // Spacer, not Color.clear: a sizeless view takes whatever height
             // it is offered (blowing the header up); Spacer never inflates.
             Spacer()
@@ -336,15 +375,6 @@ struct WorkspacesView: View {
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
-            Picker("Sort Workspaces", selection: $sortMode) {
-                ForEach(SortMode.allCases) { mode in
-                    Text(mode.rawValue).tag(mode)
-                }
-            }
-            .pickerStyle(.menu)
-            .labelsHidden()
-            .fixedSize()
-            .help("Sort workspaces")
             if !checked.isEmpty {
                 Button("Delete (\(checked.count))", role: .destructive) {
                     deleteTargets = checked
