@@ -35,7 +35,11 @@ enum AppKitFocusRing {
         let call = unsafeBitCast(original, to: Original.self)
         let editor = call(window, fieldEditorSelector, createFlag, object)
         if let editor {
-            // Private field-editor class only - patch before AppKit's first paint.
+            MainActor.assumeIsolated {
+                editor.focusRingType = .none
+                editor.drawsBackground = false
+                editor.backgroundColor = .clear
+            }
             disable(on: type(of: editor))
         }
         return editor
@@ -45,11 +49,22 @@ enum AppKitFocusRing {
         installFieldEditorHook()
     }
 
+    @MainActor
+    static func prepare(in window: NSWindow) {
+        let probe = NSTextField(frame: NSRect(x: -100, y: -100, width: 1, height: 1))
+        probe.isEditable = true
+        probe.stringValue = "x"
+        window.contentView?.addSubview(probe)
+        defer { probe.removeFromSuperview() }
+        _ = window.fieldEditor(true, for: probe)
+    }
+
     /// Replace `focusRingType` / `drawFocusRingMask` on `cls`. Only ever
     /// called on the private field-editor class (via the fieldEditor hook)
     /// - never on NSTextView / NSTextField, whose methods must stay intact
     /// for text layout.
     private static func disable(on cls: AnyClass) {
+        guard cls != NSView.self, cls != NSTextView.self, cls != NSTextField.self else { return }
         let key = ObjectIdentifier(cls)
         guard swizzled.insert(key).inserted else { return }
         class_replaceMethod(

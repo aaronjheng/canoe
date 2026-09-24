@@ -57,6 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // size and position the user left. No saved frame yet - first run -
         // keeps the contentRect above.
         mainWindow.setFrameAutosaveName("Canoe Main Window")
+        AppKitFocusRing.prepare(in: mainWindow)
         mainWindow.makeKeyAndOrderFront(nil)
         (AppAppearance(rawValue: SettingsStore.shared.settings.appearance) ?? .system)
             .applyToWindow(mainWindow)
