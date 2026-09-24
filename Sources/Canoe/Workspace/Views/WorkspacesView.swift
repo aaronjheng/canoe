@@ -346,9 +346,10 @@ struct WorkspacesView: View {
             .fixedSize()
             .help("Sort workspaces")
             if !checked.isEmpty {
-                LinkButton("Delete (\(checked.count))", isDestructive: true) {
+                Button("Delete (\(checked.count))", role: .destructive) {
                     deleteTargets = checked
                 }
+                .buttonStyle(SecondaryButtonStyle(isDestructive: true, minHeight: AppSize.toolbarHeight))
                 .help("Delete selected workspaces")
             }
             Button {
@@ -356,7 +357,7 @@ struct WorkspacesView: View {
             } label: {
                 Label("New Workspace", systemImage: "plus")
             }
-            .buttonStyle(PrimaryButtonStyle())
+            .buttonStyle(PrimaryButtonStyle(minHeight: AppSize.toolbarHeight))
             .help("Create a workspace")
         }
         .padding(.horizontal, AppSpacing.medium)

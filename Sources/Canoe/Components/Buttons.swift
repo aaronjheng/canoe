@@ -16,6 +16,7 @@ import SwiftUI
 /// The primary call-to-action button (Primer `accent.fg` blue): Send, Create,
 /// New Request. Disabled state dims so it never reads as tappable.
 struct SendButtonStyle: ButtonStyle {
+    var minHeight: CGFloat?
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
 
@@ -25,6 +26,7 @@ struct SendButtonStyle: ButtonStyle {
             .foregroundStyle(AppColor.onAccent)
             .padding(.horizontal, AppSpacing.large)
             .padding(.vertical, AppSpacing.xSmall)
+            .frame(minHeight: minHeight)
             .background(AppColor.accent)
             .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
             .brightness(configuration.isPressed ? -0.10 : (isEnabled && isHovering ? 0.06 : 0))
@@ -43,15 +45,18 @@ typealias PrimaryButtonStyle = SendButtonStyle
 /// Standard secondary button (Cancel, Select File): bordered neutral fill so
 /// it never drifts from the app accent via the system `.bordered` style.
 struct SecondaryButtonStyle: ButtonStyle {
+    var isDestructive = false
+    var minHeight: CGFloat?
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.body)
-            .foregroundStyle(isEnabled ? .primary : .secondary)
+            .foregroundStyle(isEnabled ? (isDestructive ? AppColor.error : .primary) : .secondary)
             .padding(.horizontal, AppSpacing.medium)
             .padding(.vertical, AppSpacing.xSmall)
+            .frame(minHeight: minHeight)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                     .fill(
@@ -62,7 +67,10 @@ struct SecondaryButtonStyle: ButtonStyle {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                    .strokeBorder(AppColor.borderStrong, lineWidth: 1)
+                    .strokeBorder(
+                        isDestructive ? AppColor.error.opacity(0.55) : AppColor.borderStrong,
+                        lineWidth: 1
+                    )
             )
             .contentShape(Rectangle())
             .opacity(isEnabled ? 1 : AppOpacity.disabled)
