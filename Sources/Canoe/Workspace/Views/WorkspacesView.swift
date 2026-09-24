@@ -258,10 +258,11 @@ struct WorkspacesView: View {
                 .frame(width: ColumnWidth.actions)
                 .padding(.trailing, AppSpacing.medium)
         }
+        .containerRelativeFrame(.horizontal, alignment: .leading)
         .font(AppFont.columnHeader)
         .foregroundStyle(.secondary)
-        .background(AppColor.tableHeaderBackground)
         .padding(.vertical, AppSpacing.xSmall)
+        .background(AppColor.tableHeaderBackground)
         .clipped()
     }
 
