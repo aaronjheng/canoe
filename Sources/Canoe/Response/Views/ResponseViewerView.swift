@@ -136,7 +136,7 @@ struct ResponseViewerView: View {
     private var statusBar: some View {
         HStack(spacing: AppSpacing.medium) {
             Text("Response")
-                .font(AppFont.panelTitle)
+                .font(AppFont.detailTitle)
             if store.isSending {
                 statusDot
                 ProgressView().controlSize(.small)
@@ -436,7 +436,7 @@ struct ResponseViewerView: View {
                 }
             }
         }
-        .font(.callout)
+        .font(AppFont.small)
         .padding(.horizontal, AppSpacing.medium)
         .padding(.vertical, AppSpacing.small)
     }
@@ -548,7 +548,7 @@ struct ResponseViewerView: View {
                 }
             }
         }
-        .font(.callout)
+        .font(AppFont.small)
         .padding(.horizontal, AppSpacing.medium)
         .padding(.vertical, AppSpacing.small)
     }
@@ -731,7 +731,7 @@ struct ResponseViewerView: View {
                 // Cached render (see updateBodyRenderCache) - never rebuild
                 // the highlighted Text here.
                 rendered
-                    .font(AppFont.monoBody)
+                    .font(AppFont.monoSubheadline)
                     .textSelection(.enabled)
                     .frame(maxWidth: wordWrap ? .infinity : nil, alignment: .leading)
                     .fixedSize(horizontal: !wordWrap, vertical: false)
@@ -957,6 +957,7 @@ struct ResponseViewerView: View {
                                 .textSelection(.enabled)
                         }
                     }
+                    .font(AppFont.small)
                     .contextMenu {
                         Button("Copy All as Text") {
                             copyToPasteboard(
