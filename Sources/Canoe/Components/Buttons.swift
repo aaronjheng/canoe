@@ -209,11 +209,11 @@ extension View {
 /// whenever the user recolors their system accent.
 struct LinkButton: View {
     let title: String
-    var font: Font = .subheadline
+    var font: Font = AppFont.small
     var isDestructive: Bool = false
     let action: () -> Void
 
-    init(_ title: String, font: Font = .subheadline, isDestructive: Bool = false, action: @escaping () -> Void) {
+    init(_ title: String, font: Font = AppFont.small, isDestructive: Bool = false, action: @escaping () -> Void) {
         self.title = title
         self.font = font
         self.isDestructive = isDestructive

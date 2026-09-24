@@ -66,7 +66,7 @@ struct CodeSnippetSidebarView: View {
             copySnippet()
         } label: {
             Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                .font(.subheadline)
+                .font(AppFont.small)
                 .foregroundStyle(copied ? AppColor.success : .secondary)
         }
         .buttonStyle(IconButtonStyle())

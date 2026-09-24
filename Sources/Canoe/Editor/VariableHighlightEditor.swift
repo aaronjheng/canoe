@@ -3,8 +3,7 @@ import SwiftUI
 
 /// Font tokens for the AppKit-backed variable editors: `NSFont` for the text
 /// views, SwiftUI `Font` for the placeholder overlay. Sizes mirror the
-/// `AppFont` monospaced tokens (subheadline 11, body 13, URL bar 12,
-/// caption 10).
+/// `AppFont` monospaced tokens (small 12, body 13, URL bar 12).
 enum VariableEditorFont {
     case systemSubheadline
     case monoSubheadline
@@ -14,7 +13,7 @@ enum VariableEditorFont {
 
     var swiftUIFont: Font {
         switch self {
-        case .systemSubheadline: .subheadline
+        case .systemSubheadline: AppFont.small
         case .monoSubheadline: AppFont.monoSubheadline
         case .monoBody: AppFont.monoBody
         case .monoURLBar: AppFont.monoURLBar
@@ -24,18 +23,15 @@ enum VariableEditorFont {
 
     var nsFont: NSFont {
         switch self {
-        case .systemSubheadline: NSFont.preferredFont(forTextStyle: .subheadline)
+        case .systemSubheadline: NSFont.systemFont(ofSize: size)
         default: NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
         }
     }
 
     private var size: CGFloat {
         switch self {
-        case .systemSubheadline: NSFont.smallSystemFontSize
-        case .monoSubheadline: 11
+        case .systemSubheadline, .monoSubheadline, .monoURLBar, .monoCaption: 12
         case .monoBody: 13
-        case .monoURLBar: 12
-        case .monoCaption: 10
         }
     }
 }

@@ -127,7 +127,7 @@ struct SaveChipButton: View {
                 Image(systemName: "square.and.arrow.down")
                 Text("Save")
             }
-            .font(.subheadline.weight(.medium))
+            .font(AppFont.small.weight(.medium))
             .foregroundStyle(isDirty ? AppColor.accent : .secondary)
             .padding(.horizontal, AppSpacing.comfortable)
             .padding(.vertical, AppSpacing.xxSmall)

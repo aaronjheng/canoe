@@ -454,13 +454,13 @@ struct RequestEditorView: View {
                 // from the head like a file path while the layout-priority
                 // request name below stays fully visible.
                 Text(breadcrumbPath.joined(separator: " › "))
-                    .font(.subheadline)
+                    .font(AppFont.small)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.head)
                     .help(breadcrumbPath.joined(separator: " › "))
                 Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.semibold))
+                    .font(AppFont.small.weight(.semibold))
                     .foregroundStyle(.tertiary)
             }
             // The HTTP method joins the editable name, mirroring the sidebar
@@ -723,12 +723,12 @@ struct RequestEditorView: View {
         VStack(spacing: 0) {
             HStack(spacing: AppSpacing.xSmall) {
                 Image(systemName: "magnifyingglass")
-                    .font(.caption)
+                    .font(AppFont.small)
                     .foregroundStyle(.tertiary)
                 TextField("Filter methods", text: $methodFilter)
                     .textFieldStyle(.plain)
                     .focusEffectDisabled()
-                    .font(.subheadline)
+                    .font(AppFont.small)
                     .focused($methodFilterFieldFocused)
                     .onSubmit {
                         guard let pick = keyboardMethod ?? filteredMethods.first else { return }
@@ -768,7 +768,7 @@ struct RequestEditorView: View {
                             isMethodMenuVisible = false
                         } label: {
                             Text(method.rawValue)
-                                .font(.footnote.weight(.semibold))
+                                .font(AppFont.small.weight(.semibold))
                                 .foregroundStyle(method.color)
                                 .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
                                 .padding(.horizontal, AppSpacing.small)
@@ -931,11 +931,11 @@ private struct MethodPicker: View {
         } label: {
             HStack(spacing: AppSpacing.xSmall) {
                 Text(selection.rawValue)
-                    .font(.footnote.weight(.semibold))
+                    .font(AppFont.small.weight(.semibold))
                     .foregroundStyle(selection.color)
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.down")
-                    .font(.caption2.weight(.medium))
+                    .font(AppFont.small.weight(.medium))
                     .foregroundStyle(.secondary)
             }
             .padding(.leading, AppSpacing.xSmall)

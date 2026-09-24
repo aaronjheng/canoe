@@ -219,7 +219,7 @@ struct AuthorizationForm: View {
                             label: {
                                 Label("Edit in Parent", systemImage: "pencil")
                                     .labelStyle(.titleAndIcon)
-                                    .font(.subheadline)
+                                    .font(AppFont.small)
                             }
                         )
                         .buttonStyle(IconButtonStyle(iconSquare: false))
@@ -276,7 +276,7 @@ struct AuthorizationForm: View {
     private func fieldRow(_ label: String, @ViewBuilder field: () -> some View) -> some View {
         HStack(spacing: AppSpacing.medium) {
             Text(label)
-                .font(.subheadline)
+                .font(AppFont.small)
                 .frame(width: 90, alignment: .leading)
             field()
         }
@@ -287,7 +287,7 @@ struct AuthorizationForm: View {
     private func echoRow(_ label: String, @ViewBuilder field: () -> some View) -> some View {
         HStack(spacing: AppSpacing.medium) {
             Text(label)
-                .font(.subheadline)
+                .font(AppFont.small)
                 .foregroundStyle(.secondary)
                 .frame(width: 90, alignment: .leading)
             field()

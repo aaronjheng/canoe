@@ -487,12 +487,12 @@ struct EnvironmentPicker: View {
         // Button label was hit-testing (the chevron, not the text).
         HStack(spacing: AppSpacing.xxSmall) {
             Text(store.activeEnvironment?.name ?? "No environment")
-                .font(.subheadline)
+                .font(AppFont.small)
                 .foregroundStyle(store.activeEnvironment == nil ? .secondary : .primary)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Image(systemName: "chevron.down")
-                .font(.caption2.weight(.medium))
+                .font(AppFont.small.weight(.medium))
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, AppSpacing.small)
@@ -590,7 +590,7 @@ struct EnvironmentPickerPanel: View {
             HStack(spacing: AppSpacing.small) {
                 TextField("Search", text: $search)
                     .borderlessFieldChrome(isFocused: searchFocused)
-                    .font(.subheadline)
+                    .font(AppFont.small)
                     .focused($searchFocused)
                     .onSubmit {
                         guard let row = keyboard ?? visibleRows.first else { return }
@@ -648,12 +648,12 @@ struct EnvironmentPickerPanel: View {
                             // it is offered, and the row is only minHeight-capped
                             // (see WorkspacesView's header for the same gotcha).
                             Image(systemName: "checkmark")
-                                .font(.subheadline.weight(.medium))
+                                .font(AppFont.small.weight(.medium))
                                 .foregroundStyle(.primary)
                                 .frame(width: AppSize.compactControl)
                                 .opacity(row == activeRow ? 1 : 0)
                             Text(name(for: row))
-                                .font(.subheadline)
+                                .font(AppFont.small)
                                 .foregroundStyle(.primary)
                                 .lineLimit(1)
                                 .truncationMode(.tail)
@@ -804,7 +804,7 @@ private struct TabPill: View {
                 store.requestCloseTab(tab)
             } label: {
                 Image(systemName: "xmark")
-                    .font(.subheadline.weight(.semibold))
+                    .font(AppFont.small.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: Self.closeButtonSide, height: Self.closeButtonSide)
                     // Opaque rounded square matching the pill's fill: the
@@ -866,7 +866,7 @@ private struct TabPill: View {
         case .request(let id):
             if let request = store.vault.collections.flatMap(\.requests).first(where: { $0.id == id }) {
                 Text(request.name)
-                    .font(.subheadline)
+                    .font(AppFont.small)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .help(request.urlString.isEmpty ? request.name : "\(request.name)\n\(request.urlString)")
@@ -874,14 +874,14 @@ private struct TabPill: View {
         case .environment(let id):
             if let env = store.vault.environments.first(where: { $0.id == id }) {
                 Text(env.name)
-                    .font(.subheadline)
+                    .font(AppFont.small)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         case .collection(let id):
             if let collection = store.vault.collections.first(where: { $0.id == id }) {
                 Text(collection.name)
-                    .font(.subheadline)
+                    .font(AppFont.small)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .help("\(collection.name) - collection settings")
@@ -889,7 +889,7 @@ private struct TabPill: View {
         case .workspace(let id):
             if let workspace = store.vault.workspaces.first(where: { $0.id == id }) {
                 Text(workspace.name)
-                    .font(.subheadline)
+                    .font(AppFont.small)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .help("\(workspace.name) - workspace overview")
@@ -897,7 +897,7 @@ private struct TabPill: View {
         case .workspaceVariables(let id):
             if let workspace = store.vault.workspaces.first(where: { $0.id == id }) {
                 Text(workspace.name)
-                    .font(.subheadline)
+                    .font(AppFont.small)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .help("\(workspace.name) - workspace variables")
@@ -1000,19 +1000,19 @@ private struct TabItemIcon: View {
             }
         case .environment:
             Image(systemName: "globe")
-                .font(.caption)
+                .font(AppFont.small)
                 .foregroundStyle(AppColor.accent)
         case .collection:
             Image(systemName: "folder.fill")
-                .font(.caption)
+                .font(AppFont.small)
                 .foregroundStyle(AppColor.accent)
         case .workspace:
             Image(systemName: "square.stack.3d.up.fill")
-                .font(.caption)
+                .font(AppFont.small)
                 .foregroundStyle(AppColor.accent)
         case .workspaceVariables:
             Image(systemName: "curlybraces")
-                .font(.caption)
+                .font(AppFont.small)
                 .foregroundStyle(AppColor.accent)
         }
     }
@@ -1067,7 +1067,7 @@ struct TabDrawer: View {
             HStack(spacing: AppSpacing.small) {
                 TextField("Search tabs", text: $search)
                     .borderlessFieldChrome(isFocused: searchFocused)
-                    .font(.subheadline)
+                    .font(AppFont.small)
                     .focused($searchFocused)
                     .onSubmit {
                         if let tab = keyboard ?? matchingTabs.first {
@@ -1108,7 +1108,7 @@ struct TabDrawer: View {
                                 HStack(spacing: AppSpacing.xSmall) {
                                     TabItemIcon(tab: tab)
                                     Text(store.tabDisplayName(tab))
-                                        .font(.subheadline)
+                                        .font(AppFont.small)
                                         .foregroundStyle(.primary)
                                         .lineLimit(1)
                                         .truncationMode(.tail)

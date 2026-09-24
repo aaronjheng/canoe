@@ -171,11 +171,11 @@ private struct ConsoleEntryRow: View {
     private var summaryRow: some View {
         HStack(spacing: AppSpacing.small) {
             Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                .font(.caption2.weight(.semibold))
+                .font(AppFont.small.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: 12)
             Image(systemName: entry.isError ? "exclamationmark.triangle.fill" : "arrow.down.circle")
-                .font(.caption)
+                .font(AppFont.small)
                 .foregroundStyle(entry.isError ? AppColor.error : AppColor.success)
             if let method = HTTPMethod(rawValue: entry.method) {
                 MethodTag(method: method)
@@ -191,7 +191,7 @@ private struct ConsoleEntryRow: View {
             Spacer(minLength: AppSpacing.small)
             if entry.isError {
                 Text("Error")
-                    .font(.caption.weight(.medium))
+                    .font(AppFont.small.weight(.medium))
                     .foregroundStyle(AppColor.error)
             } else if let statusCode = entry.statusCode {
                 Text("\(statusCode)")
@@ -201,7 +201,7 @@ private struct ConsoleEntryRow: View {
             }
             if let duration = entry.formattedDuration {
                 Text(duration)
-                    .font(.caption)
+                    .font(AppFont.small)
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
@@ -227,7 +227,7 @@ private struct ConsoleEntryDetail: View {
         VStack(alignment: .leading, spacing: AppSpacing.small) {
             HStack {
                 Text(entry.formattedTime)
-                    .font(.caption)
+                    .font(AppFont.small)
                     .monospacedDigit()
                     .foregroundStyle(.tertiary)
                 Spacer(minLength: 0)
@@ -239,7 +239,7 @@ private struct ConsoleEntryDetail: View {
                             systemImage: showRaw ? "list.bullet.rectangle" : "curlybraces.square"
                         )
                         .labelStyle(.titleAndIcon)
-                        .font(.caption)
+                        .font(AppFont.small)
                     }
                 )
                 .buttonStyle(LinkButtonStyle())
@@ -247,7 +247,7 @@ private struct ConsoleEntryDetail: View {
                 Button(action: onCopyRaw) {
                     Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
                         .labelStyle(.titleAndIcon)
-                        .font(.caption)
+                        .font(AppFont.small)
                 }
                 .buttonStyle(LinkButtonStyle())
                 .foregroundStyle(AppColor.accent)
@@ -265,11 +265,11 @@ private struct ConsoleEntryDetail: View {
                     sectionTitle("Response")
                     HStack(spacing: AppSpacing.small) {
                         Text(entry.statusText)
-                            .font(.subheadline.weight(.medium))
+                            .font(AppFont.small.weight(.medium))
                             .foregroundStyle(AppColor.statusColor(statusCode))
                         if let duration = entry.formattedDuration {
                             Text(duration)
-                                .font(.caption)
+                                .font(AppFont.small)
                                 .monospacedDigit()
                                 .foregroundStyle(.secondary)
                         }

@@ -201,7 +201,7 @@ struct CollectionDetailView: View {
                 .font(.title2.weight(.semibold))
                 .monospacedDigit()
             Text(label)
-                .font(.caption)
+                .font(AppFont.small)
                 .foregroundStyle(.secondary)
         }
     }

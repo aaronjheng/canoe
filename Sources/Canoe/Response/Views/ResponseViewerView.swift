@@ -117,7 +117,7 @@ struct ResponseViewerView: View {
 
     private func keyChip(_ label: String) -> some View {
         Text(label)
-            .font(.caption.weight(.medium))
+            .font(AppFont.small.weight(.medium))
             .monospaced()
             .foregroundStyle(.secondary)
             .padding(.horizontal, AppSpacing.small - AppSpacing.xxSmall)
@@ -141,7 +141,7 @@ struct ResponseViewerView: View {
                 statusDot
                 ProgressView().controlSize(.small)
                 Text("Sending…")
-                    .font(.caption)
+                    .font(AppFont.small)
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -153,7 +153,7 @@ struct ResponseViewerView: View {
 
     private var statusDot: some View {
         Text("\u{00B7}")
-            .font(.caption)
+            .font(AppFont.small)
             .foregroundStyle(.tertiary)
     }
 
@@ -169,7 +169,7 @@ struct ResponseViewerView: View {
             onHover: onHover,
             content: {
                 Label(value, systemImage: systemImage)
-                    .font(.caption)
+                    .font(AppFont.small)
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
@@ -353,7 +353,7 @@ struct ResponseViewerView: View {
             },
             content: {
                 Image(systemName: "network")
-                    .font(.caption)
+                    .font(AppFont.small)
                     .foregroundStyle(.secondary)
             }
         )
@@ -367,7 +367,7 @@ struct ResponseViewerView: View {
                 Image(systemName: "network")
                     .foregroundStyle(.secondary)
                 Text("Network")
-                    .font(.subheadline.weight(.semibold))
+                    .font(AppFont.small.weight(.semibold))
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, AppSpacing.medium)
@@ -522,7 +522,7 @@ struct ResponseViewerView: View {
         VStack(alignment: .leading, spacing: AppSpacing.small) {
             HStack(spacing: AppSpacing.small) {
                 Image(systemName: icon)
-                    .font(.caption2.weight(.bold))
+                    .font(AppFont.small.weight(.bold))
                     .foregroundStyle(tint)
                     .frame(width: 20, height: 20)
                     .background(
@@ -530,10 +530,10 @@ struct ResponseViewerView: View {
                             .fill(tint.opacity(0.15))
                     )
                 Text(title)
-                    .font(.subheadline.weight(.semibold))
+                    .font(AppFont.small.weight(.semibold))
                 Spacer(minLength: 0)
                 Text(total)
-                    .font(.subheadline.weight(.semibold))
+                    .font(AppFont.small.weight(.semibold))
                     .monospacedDigit()
             }
             ForEach(rows, id: \.0) { label, value in
@@ -718,9 +718,9 @@ struct ResponseViewerView: View {
                 let total = totalCount.formatted()
                 HStack {
                     Image(systemName: "info.circle")
-                        .font(.caption2)
+                        .font(AppFont.small)
                     Text("Showing the first \(shown) of \(total) characters. Save the body to keep it all.")
-                        .font(.caption2)
+                        .font(AppFont.small)
                 }
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, AppSpacing.medium)
@@ -837,11 +837,11 @@ struct ResponseViewerView: View {
     private func findBar(matchCount: Int, currentIndex: Int?) -> some View {
         HStack(spacing: AppSpacing.xSmall) {
             Image(systemName: "magnifyingglass")
-                .font(.caption)
+                .font(AppFont.small)
                 .foregroundStyle(.tertiary)
             TextField("Find", text: $findQuery)
                 .borderlessFieldChrome(isFocused: findFieldFocused)
-                .font(.subheadline)
+                .font(AppFont.small)
                 .frame(width: 150)
                 .focused($findFieldFocused)
                 .onSubmit { stepFind(1, matchCount: matchCount) }
@@ -862,7 +862,7 @@ struct ResponseViewerView: View {
                     Text("\(currentIndex + 1) of \(matchCount)")
                 }
             }
-            .font(.caption2)
+            .font(AppFont.small)
             .monospacedDigit()
             .foregroundStyle(.secondary)
             Button {

@@ -26,12 +26,12 @@ struct FilterField: View {
     var body: some View {
         HStack(spacing: AppSpacing.xSmall) {
             Image(systemName: "magnifyingglass")
-                .font(.caption)
+                .font(AppFont.small)
                 .foregroundStyle(.secondary)
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
                 .focusEffectDisabled()
-                .font(.subheadline)
+                .font(AppFont.small)
                 .focused($isFocused)
             if !text.isEmpty {
                 Button("Clear Filter", systemImage: "xmark.circle.fill") {
@@ -146,11 +146,11 @@ struct UnderlineTab: View {
                 // regular, so switching selectedness would otherwise change
                 // the tab's width and jitter the whole tab row.
                 Text(title)
-                    .font(.subheadline.weight(.semibold))
+                    .font(AppFont.small.weight(.semibold))
                     .hidden()
                     .overlay {
                         Text(title)
-                            .font(.subheadline.weight(isSelected ? .semibold : .regular))
+                            .font(AppFont.small.weight(isSelected ? .semibold : .regular))
                             // Hover lifts an unselected tab's label to primary
                             // so the row reads as interactive before the click.
                             .foregroundStyle(isSelected || isHovering ? .primary : .secondary)

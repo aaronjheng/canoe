@@ -26,7 +26,7 @@ struct NewWorkspaceView: View {
                 .frame(maxWidth: 300)
 
             TextField("Workspace Name", text: $name)
-                .font(.subheadline)
+                .font(AppFont.small)
                 .variableFieldBordered(
                     isFocused: isFocused,
                     isHovered: isHovered,

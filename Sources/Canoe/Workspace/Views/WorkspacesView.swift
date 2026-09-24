@@ -293,7 +293,7 @@ struct WorkspacesView: View {
                 Text(workspace.name)
                     .lineLimit(1)
             }
-            .font(.subheadline)
+            .font(AppFont.small)
             .foregroundStyle(.primary)
             .frame(minWidth: ColumnWidth.nameMin, maxWidth: .infinity, alignment: .leading)
             .contextMenu {

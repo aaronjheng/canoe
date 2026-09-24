@@ -164,7 +164,7 @@ private struct GroupHeader<Actions: View>: View {
             HStack(spacing: 0) {
                 HStack(spacing: 0) {
                     Image(systemName: "chevron.right")
-                        .font(.footnote.weight(.semibold))
+                        .font(AppFont.small.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                         // Same chevron rhythm as tree rows: a 16pt centered
@@ -420,7 +420,7 @@ private struct ExpanderChevron: View {
 
     var body: some View {
         Image(systemName: "chevron.right")
-            .font(.footnote.weight(.semibold))
+            .font(AppFont.small.weight(.semibold))
             .foregroundStyle(.secondary)
             .rotationEffect(.degrees(isExpanded ? 90 : 0))
             .frame(width: AppSize.treeChevronWidth)

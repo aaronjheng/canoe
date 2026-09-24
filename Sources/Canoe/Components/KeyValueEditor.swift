@@ -310,7 +310,7 @@ struct KeyValueEditor<T: KVItem>: View {
                     Text(text)
                     if let keySortOrder {
                         Image(systemName: keySortOrder == .ascending ? "arrow.up" : "arrow.down")
-                            .font(.caption2.weight(.medium))
+                            .font(AppFont.small.weight(.medium))
                     }
                 }
                 .font(AppFont.columnHeader)
@@ -752,7 +752,7 @@ private struct KVRow: View {
     /// SwiftUI shell report into the same `hoveredCell`.
     private func cell(_ id: HoveredCell, @ViewBuilder field: () -> some View) -> some View {
         field()
-            .font(.subheadline)
+            .font(AppFont.small)
             .foregroundStyle(isEnabled ? .primary : .secondary)
             .opacity(isEnabled ? 1 : AppOpacity.disabled)
             .padding(.horizontal, AppSpacing.small)
@@ -825,13 +825,13 @@ private struct KVRow: View {
     private var fileValueCell: some View {
         HStack(spacing: AppSpacing.xSmall) {
             Text(value.isEmpty ? "No file selected" : URL(fileURLWithPath: value).lastPathComponent)
-                .font(.subheadline)
+                .font(AppFont.small)
                 .foregroundStyle(value.isEmpty ? .tertiary : .primary)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .helpIf(!value.isEmpty, value)
-            LinkButton("Browse…", font: .caption) {
+            LinkButton("Browse…", font: AppFont.small) {
                 if let url = openFilePanel() { value = url.path }
             }
             .disabled(!isEnabled)
@@ -953,7 +953,7 @@ private struct ReadOnlyKVRow: View {
 
     private func readOnlyCell(_ text: String, showsInfo: Bool = false) -> some View {
         Text(text)
-            .font(.subheadline)
+            .font(AppFont.small)
             .foregroundStyle(isMuted ? Color.secondary : Color.primary)
             .lineLimit(1)
             .truncationMode(.middle)

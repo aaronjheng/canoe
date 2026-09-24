@@ -50,7 +50,7 @@ struct WorkspaceListStatusBarView: View {
     var body: some View {
         HStack(spacing: AppSpacing.small) {
             Text("Workspaces")
-                .font(.caption)
+                .font(AppFont.small)
                 .foregroundStyle(.secondary)
             Text("\(workspaceCount)")
                 .font(AppFont.countBadge)

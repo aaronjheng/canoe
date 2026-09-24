@@ -167,7 +167,7 @@ private struct BinaryFileEditor: View {
                             .help(path)
                         if let fileSize {
                             Text(fileSize)
-                                .font(.caption)
+                                .font(AppFont.small)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -203,10 +203,10 @@ private struct BodyTypeRadio: View {
         Button(action: action) {
             HStack(spacing: AppSpacing.xSmall) {
                 Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
-                    .font(.subheadline)
+                    .font(AppFont.small)
                     .foregroundStyle(isSelected ? AppColor.accent : .secondary)
                 Text(type.label)
-                    .font(.subheadline)
+                    .font(AppFont.small)
                     .foregroundStyle(isSelected ? .primary : .secondary)
             }
             .padding(.horizontal, AppSpacing.xxSmall)

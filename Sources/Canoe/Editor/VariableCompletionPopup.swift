@@ -62,7 +62,7 @@ struct VariableSuggestionList: View {
                     Image(systemName: kind.systemImage)
                         .font(AppFont.completionMetaSmall)
                     Text(kind.rawValue)
-                        .font(.caption2)
+                        .font(AppFont.small)
                 }
                 .foregroundStyle(.secondary)
             }
@@ -78,7 +78,7 @@ struct VariableSuggestionList: View {
 
     private var footer: some View {
         Text("↑↓ Navigate   ↩ Insert   esc Dismiss")
-            .font(.caption2)
+            .font(AppFont.small)
             .foregroundStyle(.tertiary)
             .frame(maxWidth: .infinity, minHeight: Self.footerHeight, maxHeight: Self.footerHeight)
             .overlay(Divider(), alignment: .top)

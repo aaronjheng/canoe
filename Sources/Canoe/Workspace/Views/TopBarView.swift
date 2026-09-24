@@ -115,7 +115,7 @@ private struct WorkspaceSwitcher: View {
                 // Menu labels render images as monochrome templates, so this
                 // icon stays a quiet gray - same as Postman's workspace icon.
                 Image(systemName: "square.stack.3d.up.fill")
-                    .font(.subheadline)
+                    .font(AppFont.small)
                 Text(store.activeWorkspace?.name ?? "No Workspace")
                     .font(AppFont.sidebarRow)
                     .lineLimit(1)

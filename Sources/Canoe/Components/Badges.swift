@@ -72,7 +72,7 @@ struct StatusCapsule: View {
                 .font(AppFont.statusCode)
                 .monospacedDigit()
             Text(statusText)
-                .font(.caption)
+                .font(AppFont.small)
         }
         .foregroundStyle(color)
         .padding(.horizontal, AppSpacing.small)

@@ -323,7 +323,7 @@ private struct ScopeSection: View {
     private var header: some View {
         HStack(spacing: AppSpacing.xSmall) {
             Image(systemName: scope.kind.systemImage)
-                .font(.caption)
+                .font(AppFont.small)
                 .foregroundStyle(AppColor.accent)
             Text(scope.kind.rawValue.uppercased())
                 .font(AppFont.microHeader)
@@ -393,7 +393,7 @@ private struct ScopeSection: View {
     }
 
     private func linkButton(_ title: String, action: @escaping () -> Void) -> some View {
-        LinkButton(title, font: .caption.weight(.medium), action: action)
+        LinkButton(title, font: AppFont.small.weight(.medium), action: action)
     }
 }
 
@@ -421,7 +421,7 @@ private struct SelectEnvironmentMenu: View {
             }
         } label: {
             Text("Select Environment")
-                .font(.caption.weight(.medium))
+                .font(AppFont.small.weight(.medium))
                 .foregroundStyle(AppColor.accent)
                 .underline()
         }
@@ -519,7 +519,7 @@ private struct VariableRow: View {
                     }
                     if let source {
                         Image(systemName: source.systemImage)
-                            .font(.caption2)
+                            .font(AppFont.small)
                             .foregroundStyle(AppColor.accent)
                             .frame(width: 14, height: 14)
                             .contentShape(Rectangle())
@@ -578,7 +578,7 @@ private struct VariableRow: View {
                 .accessibilityLabel("Copy value")
                 .help("Copy Value")
             }
-            .font(.caption)
+            .font(AppFont.small)
             .opacity(isHovering || focusedAction != nil ? 1 : 0)
             // The buttons fade with the row hover; an invisible button must
             // not keep hit-testing (stray clicks could reveal a secret or
@@ -593,7 +593,7 @@ private struct VariableRow: View {
 
     private var keyText: some View {
         Text(trimmedKey.isEmpty ? "(blank key)" : trimmedKey)
-            .font(.subheadline)
+            .font(AppFont.small)
             .fontWeight(.semibold)
             .foregroundStyle(variable.isEnabled ? .primary : .tertiary)
             .lineLimit(1)
@@ -707,7 +707,7 @@ private struct VariableRow: View {
                 Text(shownValue)
             }
         }
-        .font(.subheadline)
+        .font(AppFont.small)
         .foregroundStyle(isDimmed ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
         .lineLimit(2)
         .truncationMode(.middle)
@@ -806,7 +806,7 @@ private struct UnresolvedSection: View {
                 ForEach(orderedKeys, id: \.self) { key in
                     HStack(spacing: AppSpacing.xSmall) {
                         Text(key)
-                            .font(.subheadline)
+                            .font(AppFont.small)
                             .fontWeight(.semibold)
                             .foregroundStyle(.primary)
                             .lineLimit(1)
@@ -815,11 +815,11 @@ private struct UnresolvedSection: View {
                         Spacer(minLength: 0)
                         if cyclicKeys.contains(key) {
                             Text("Cyclic reference")
-                                .font(.caption2)
+                                .font(AppFont.small)
                                 .foregroundStyle(AppColor.warning)
                         } else {
                             Text("Not defined")
-                                .font(.caption2)
+                                .font(AppFont.small)
                                 .foregroundStyle(AppColor.warning)
                         }
                     }
