@@ -651,7 +651,7 @@ private struct VariableRow: View {
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                     .strokeBorder(
                         isValueFocused ? AppColor.accent : AppColor.borderStrong,
-                        lineWidth: AppLine.field
+                        lineWidth: isValueFocused ? AppLine.focusedField : AppLine.field
                     )
             }
         }

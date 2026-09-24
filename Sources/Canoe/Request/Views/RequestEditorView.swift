@@ -427,7 +427,7 @@ struct RequestEditorView: View {
                     RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                         .strokeBorder(
                             isNameFieldFocused ? AppColor.accent : AppColor.borderStrong,
-                            lineWidth: AppLine.field
+                            lineWidth: isNameFieldFocused ? AppLine.focusedField : AppLine.field
                         )
                 }
             }
@@ -585,7 +585,7 @@ struct RequestEditorView: View {
                     // URL bar keeps its border constant too and signals hover
                     // through the fill instead.
                     urlFieldFocused == .url ? AppColor.accent : AppColor.borderStrong,
-                    lineWidth: AppLine.field
+                    lineWidth: urlFieldFocused == .url ? AppLine.focusedField : AppLine.field
                 )
                 .allowsHitTesting(false)
         }
@@ -850,7 +850,7 @@ private struct MethodPicker: View {
         .overlay {
             shape.strokeBorder(
                 isExpanded ? AppColor.accent : AppColor.borderStrong,
-                lineWidth: AppLine.field
+                lineWidth: isExpanded ? AppLine.focusedField : AppLine.field
             )
         }
         .frame(width: AppSize.methodPickerWidth)

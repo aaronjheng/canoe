@@ -25,9 +25,8 @@ enum AppRadius {
 }
 
 enum AppLine {
-    /// Field border width (1pt): rest box on bordered inputs, hover/focus
-    /// ring on borderless ones - one width everywhere so fields read the same.
     static let field: CGFloat = 1
+    static let focusedField: CGFloat = 2
 }
 
 enum AppOpacity {

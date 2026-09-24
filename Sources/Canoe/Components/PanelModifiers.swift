@@ -185,7 +185,7 @@ struct FocusRingBorderModifier: ViewModifier {
             RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                 .strokeBorder(
                     isFocused ? AppColor.accent : AppColor.borderStrong,
-                    lineWidth: AppLine.field)
+                    lineWidth: isFocused ? AppLine.focusedField : AppLine.field)
         )
     }
 }
@@ -216,7 +216,7 @@ struct BorderlessFieldChromeModifier: ViewModifier {
                     RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                         .strokeBorder(
                             isFocused ? AppColor.accent : AppColor.borderStrong,
-                            lineWidth: AppLine.field
+                            lineWidth: isFocused ? AppLine.focusedField : AppLine.field
                         )
                 }
             }

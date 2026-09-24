@@ -735,7 +735,7 @@ private struct KVRow: View {
                     Rectangle()
                         .strokeBorder(
                             isCellFocused(id) ? AppColor.accent : AppColor.borderStrong,
-                            lineWidth: AppLine.field
+                            lineWidth: isCellFocused(id) ? AppLine.focusedField : AppLine.field
                         )
                         .padding(.leading, -1)
                         .padding(.trailing, -1)

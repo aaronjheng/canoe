@@ -55,7 +55,7 @@ struct FilterField: View {
             if let borderColor = borderColor {
                 RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
                     // Standard field width for rest and hover/focus alike.
-                    .strokeBorder(borderColor, lineWidth: AppLine.field)
+                    .strokeBorder(borderColor, lineWidth: isFocused ? AppLine.focusedField : AppLine.field)
                     .animation(.easeOut(duration: 0.12), value: borderColor)
             }
         }
@@ -250,7 +250,7 @@ struct InlineNameField: View {
                     RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                         .strokeBorder(
                             isFocused ? AppColor.accent : AppColor.borderStrong,
-                            lineWidth: AppLine.field
+                            lineWidth: isFocused ? AppLine.focusedField : AppLine.field
                         )
                 }
             }
