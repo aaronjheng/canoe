@@ -79,10 +79,27 @@ private struct WorkspaceSwitcher: View {
     var body: some View {
         Menu {
             ForEach(sortedWorkspaces) { workspace in
-                Button(workspace.name) { store.setActiveWorkspace(workspace.id) }
+                Toggle(
+                    workspace.name,
+                    isOn: Binding(
+                        get: { store.activeWorkspace?.id == workspace.id },
+                        set: { isSelected in
+                            if isSelected {
+                                store.setActiveWorkspace(workspace.id)
+                            }
+                        }
+                    )
+                )
             }
             Divider()
-            Button("Workspace Variables", systemImage: "curlybraces.square") {
+            Button("Overview", systemImage: "square.stack.3d.up") {
+                if let active = store.activeWorkspace {
+                    store.openWorkspace(active.id)
+                }
+            }
+            .disabled(store.activeWorkspace == nil)
+            .help("Open the active workspace overview")
+            Button("Variables", systemImage: "curlybraces.square") {
                 if let active = store.activeWorkspace {
                     store.openWorkspaceVariables(active.id)
                 }

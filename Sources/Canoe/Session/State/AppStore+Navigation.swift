@@ -303,7 +303,7 @@ extension AppStore {
         case .workspace(let id):
             vault.workspaces.first { $0.id == id }?.name ?? "Workspace"
         case .workspaceVariables(let id):
-            vault.workspaces.first { $0.id == id }?.name ?? "Workspace Variables"
+            vault.workspaces.first { $0.id == id }?.name ?? "Variables"
         }
     }
 

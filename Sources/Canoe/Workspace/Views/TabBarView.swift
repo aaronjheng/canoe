@@ -787,7 +787,7 @@ private struct TabPill: View {
             if let workspace = store.vault.workspaces.first(where: { $0.id == id }) {
                 "\(workspace.name) - workspace variables"
             } else {
-                "Workspace Variables"
+                "Variables"
             }
         }
     }
