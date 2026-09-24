@@ -107,9 +107,6 @@ private struct WorkspaceSwitcher: View {
             .disabled(store.activeWorkspace == nil)
             .help("Edit the active workspace's variables")
             Divider()
-            // Postman-style footer: workspace management lives here - create
-            // and browse together, apart from the active-workspace actions.
-            Button("New Workspace", systemImage: "plus") { store.addWorkspace() }
             Button("View all workspaces", systemImage: "square.stack.3d.up") {
                 store.enterWorkspacesManager()
             }
