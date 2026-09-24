@@ -807,6 +807,7 @@ private struct UnresolvedSection: View {
                     HStack(spacing: AppSpacing.xSmall) {
                         Text(key)
                             .font(.subheadline)
+                            .fontWeight(.semibold)
                             .foregroundStyle(.primary)
                             .lineLimit(1)
                             .truncationMode(.middle)
