@@ -665,6 +665,7 @@ private struct KVRow: View {
                         text: $key,
                         variables: variables,
                         suggestions: suggestions,
+                        font: .systemSubheadline,
                         placeholder: keyPlaceholder,
                         focus: focus,
                         focusValue: keyFocus,
@@ -685,6 +686,7 @@ private struct KVRow: View {
                         text: $value,
                         variables: variables,
                         suggestions: suggestions,
+                        font: .systemSubheadline,
                         placeholder: valuePlaceholder,
                         focus: focus,
                         focusValue: valueFocus,
@@ -750,7 +752,7 @@ private struct KVRow: View {
     /// SwiftUI shell report into the same `hoveredCell`.
     private func cell(_ id: HoveredCell, @ViewBuilder field: () -> some View) -> some View {
         field()
-            .font(AppFont.cellText)
+            .font(.subheadline)
             .foregroundStyle(isEnabled ? .primary : .secondary)
             .opacity(isEnabled ? 1 : AppOpacity.disabled)
             .padding(.horizontal, AppSpacing.small)
@@ -823,7 +825,7 @@ private struct KVRow: View {
     private var fileValueCell: some View {
         HStack(spacing: AppSpacing.xSmall) {
             Text(value.isEmpty ? "No file selected" : URL(fileURLWithPath: value).lastPathComponent)
-                .font(AppFont.monoSubheadline)
+                .font(.subheadline)
                 .foregroundStyle(value.isEmpty ? .tertiary : .primary)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -951,7 +953,7 @@ private struct ReadOnlyKVRow: View {
 
     private func readOnlyCell(_ text: String, showsInfo: Bool = false) -> some View {
         Text(text)
-            .font(AppFont.cellText)
+            .font(.subheadline)
             .foregroundStyle(isMuted ? Color.secondary : Color.primary)
             .lineLimit(1)
             .truncationMode(.middle)
