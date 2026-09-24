@@ -6,6 +6,7 @@ import SwiftUI
 /// `AppFont` monospaced tokens (subheadline 11, body 13, URL bar 12,
 /// caption 10).
 enum VariableEditorFont {
+    case systemSubheadline
     case monoSubheadline
     case monoBody
     case monoURLBar
@@ -13,6 +14,7 @@ enum VariableEditorFont {
 
     var swiftUIFont: Font {
         switch self {
+        case .systemSubheadline: .subheadline
         case .monoSubheadline: AppFont.monoSubheadline
         case .monoBody: AppFont.monoBody
         case .monoURLBar: AppFont.monoURLBar
@@ -21,11 +23,15 @@ enum VariableEditorFont {
     }
 
     var nsFont: NSFont {
-        NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        switch self {
+        case .systemSubheadline: NSFont.preferredFont(forTextStyle: .subheadline)
+        default: NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        }
     }
 
     private var size: CGFloat {
         switch self {
+        case .systemSubheadline: NSFont.smallSystemFontSize
         case .monoSubheadline: 11
         case .monoBody: 13
         case .monoURLBar: 12

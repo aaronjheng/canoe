@@ -593,7 +593,7 @@ private struct VariableRow: View {
 
     private var keyText: some View {
         Text(trimmedKey.isEmpty ? "(blank key)" : trimmedKey)
-            .font(AppFont.monoSubheadline)
+            .font(.subheadline)
             .fontWeight(.semibold)
             .foregroundStyle(variable.isEnabled ? .primary : .tertiary)
             .lineLimit(1)
@@ -622,7 +622,7 @@ private struct VariableRow: View {
             variables: resolvedVariables,
             suggestions: suggestions,
             singleLineMinHeight: 18,
-            font: .monoSubheadline,
+            font: .systemSubheadline,
             placeholder: "value",
             onFocusChange: { focused in
                 isValueFocused = focused
@@ -707,7 +707,7 @@ private struct VariableRow: View {
                 Text(shownValue)
             }
         }
-        .font(AppFont.monoSubheadline)
+        .font(.subheadline)
         .foregroundStyle(isDimmed ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
         .lineLimit(2)
         .truncationMode(.middle)
@@ -806,7 +806,7 @@ private struct UnresolvedSection: View {
                 ForEach(orderedKeys, id: \.self) { key in
                     HStack(spacing: AppSpacing.xSmall) {
                         Text(key)
-                            .font(AppFont.monoSubheadline)
+                            .font(.subheadline)
                             .foregroundStyle(.primary)
                             .lineLimit(1)
                             .truncationMode(.middle)
