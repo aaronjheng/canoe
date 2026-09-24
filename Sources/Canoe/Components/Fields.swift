@@ -63,6 +63,8 @@ struct FilterField: View {
         }
         .padding(.horizontal, isBoxed ? AppSpacing.small : 0)
         .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+        .animation(.easeOut(duration: 0.12), value: isFocused)
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .global)
         } action: { frame in
@@ -72,22 +74,21 @@ struct FilterField: View {
         .onDisappear { removeBlurMonitor() }
     }
 
-    /// Fill tiers: boxed idle control surface; hover/focus lift one
+    /// Fill tiers: boxed idle field wash; hover/focus lift one
     /// luminance step (`fieldHoverBackground` / `fieldFocusBackground`).
     /// Unboxed rest is clear - only hover/focus paint (see body).
     private var boxBackground: Color {
         if isFocused { return AppColor.fieldFocusBackground }
         if isHovered { return AppColor.fieldHoverBackground }
-        return AppColor.controlBackground
+        return isBoxed ? AppColor.fieldBackground : AppColor.controlBackground
     }
 
-    /// Border tiers: idle `borderStrong` (matching the variable-field
-    /// borders so filters and inputs read the same), focused accent (the
-    /// standard focused-input signal). All at `AppLine.field` width;
+    /// Border tiers: idle `borderStrong`, brighter hover, focused accent.
+    /// All at `AppLine.field` width;
     /// unboxed only draws on hover/focus (clear at rest).
     private var borderColor: Color? {
         if isFocused { return AppColor.accent }
-        if isHovered { return AppColor.borderStrong }
+        if isHovered { return AppColor.fieldHoverBorder }
         return isBoxed ? AppColor.borderStrong : nil
     }
 

@@ -61,6 +61,7 @@ enum AppColor {
         light: RGB(red: 255, green: 255, blue: 255),
         dark: RGB(red: 50, green: 50, blue: 52)
     )
+    static let fieldHoverBorder: Color = Color.primary.opacity(0.24)
     /// Focus fill for inputs: the brightest raised surface - every focused
     /// field reads the same whether it started as a wash or a clear pill.
     static let fieldFocusBackground: Color = dynamic(

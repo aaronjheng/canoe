@@ -192,7 +192,7 @@ struct FocusRingBorderModifier: ViewModifier {
 
 /// Chrome for fields with no border at rest: hover/focus add a brighter
 /// fill and the standard field border (`AppLine.field`) - accent when
-/// focused, `borderStrong` on hover.
+/// focused, `fieldHoverBorder` on hover.
 struct BorderlessFieldChromeModifier: ViewModifier {
     let isFocused: Bool
     @State private var isHovered = false
@@ -215,7 +215,7 @@ struct BorderlessFieldChromeModifier: ViewModifier {
                 if isFocused || isHovered {
                     RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                         .strokeBorder(
-                            isFocused ? AppColor.accent : AppColor.borderStrong,
+                            isFocused ? AppColor.accent : AppColor.fieldHoverBorder,
                             lineWidth: isFocused ? AppLine.focusedField : AppLine.field
                         )
                 }
