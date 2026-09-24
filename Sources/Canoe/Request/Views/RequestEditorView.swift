@@ -507,7 +507,7 @@ struct RequestEditorView: View {
 
     private var requestNameFieldBody: some View {
         TextField("Request Name", text: $draft.name)
-            .font(AppFont.panelTitle)
+            .font(AppFont.detailTitle)
             .textFieldStyle(.plain)
             .focused($isNameFieldFocused)
             .padding(.horizontal, AppSpacing.small - AppSpacing.xxSmall)
