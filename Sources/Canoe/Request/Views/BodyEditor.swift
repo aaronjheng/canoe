@@ -94,8 +94,8 @@ struct BodyEditor: View {
                 makeNew: { FormField() },
                 variables: resolvedVariables,
                 suggestions: requestSuggestions,
-                keyPlaceholder: "key",
-                valuePlaceholder: "value",
+                keyPlaceholder: "Key",
+                valuePlaceholder: "Value",
                 kindKeyPath: \.fieldKind
             )
             .id(request.id)
@@ -105,8 +105,8 @@ struct BodyEditor: View {
                 makeNew: { FormField() },
                 variables: resolvedVariables,
                 suggestions: requestSuggestions,
-                keyPlaceholder: "key",
-                valuePlaceholder: "value"
+                keyPlaceholder: "Key",
+                valuePlaceholder: "Value"
             )
             .id(request.id)
         case .raw:

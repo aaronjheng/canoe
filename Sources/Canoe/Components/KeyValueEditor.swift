@@ -15,6 +15,20 @@ extension QueryParam: KVItem {}
 extension FormField: KVItem {}
 extension Variable: KVItem {}
 
+struct KeyValueReadOnlyItem: Identifiable, Hashable {
+    let id: String
+    let key: String
+    let value: String
+    var isMuted: Bool = false
+}
+
+struct KeyValueEditorTitleAction {
+    let title: String
+    let systemImage: String
+    let help: String
+    let action: () -> Void
+}
+
 /// Which cell owns keyboard focus. Real rows address their id; the trailing
 /// ghost row has its own markers.
 private enum CellFocus: Hashable {
@@ -37,13 +51,15 @@ struct KeyValueEditor<T: KVItem>: View {
     /// Optional section title rendered above the table (Postman shows
     /// "Query Params" above the params grid).
     var title: String?
+    var titleAction: KeyValueEditorTitleAction?
+    var readOnlyItems: [KeyValueReadOnlyItem] = []
     /// Resolved variable scope for `{{placeholder}}` highlighting.
     var variables: [String: String] = [:]
     /// Completion candidates for `{{` auto-completion; nil derives names
     /// from `variables`.
     var suggestions: [VariableSuggestion]?
-    var keyPlaceholder: String = "key"
-    var valuePlaceholder: String = "value"
+    var keyPlaceholder: String = "Key"
+    var valuePlaceholder: String = "Value"
     /// Header labels above the two text columns (the variables tables say
     /// "Variable" instead of "Key").
     var keyHeader: String = "Key"
@@ -120,6 +136,14 @@ struct KeyValueEditor<T: KVItem>: View {
                         .font(AppFont.sectionTitle)
                         .foregroundStyle(.primary)
                     Spacer(minLength: 0)
+                    if let titleAction {
+                        Button(action: titleAction.action) {
+                            Label(titleAction.title, systemImage: titleAction.systemImage)
+                        }
+                        .labelStyle(.titleAndIcon)
+                        .buttonStyle(SecondaryButtonStyle(minHeight: AppSize.tabHeight))
+                        .help(titleAction.help)
+                    }
                 }
                 .padding(.horizontal, AppSpacing.medium)
                 .padding(.top, AppSpacing.small)
@@ -144,6 +168,17 @@ struct KeyValueEditor<T: KVItem>: View {
         VStack(spacing: 0) {
             headerRow
             Divider()
+            ForEach(readOnlyItems) { item in
+                ReadOnlyKVRow(
+                    key: item.key,
+                    value: item.value,
+                    isMuted: item.isMuted,
+                    leadingColumnWidth: leadingColumnWidth,
+                    trailingColumnWidth: trailingColumnWidth,
+                    showsGrip: allowsReorder,
+                    gripWidth: gripGlyphWidth
+                )
+            }
             ForEach($items) { $item in
                 let kindBinding = kindKeyPath.map { path -> Binding<FormFieldKind> in
                     Binding(
@@ -238,7 +273,7 @@ struct KeyValueEditor<T: KVItem>: View {
             headerLabel(valueHeader)
             Color.clear.frame(width: trailingIconWidth)
         }
-        .frame(height: AppSize.tabHeight)
+        .frame(height: AppSize.tableRowHeight)
         .background(headerBackground ?? .clear)
     }
 
@@ -661,7 +696,7 @@ private struct KVRow: View {
             verticalRule
             trailingColumn
         }
-        .frame(height: AppSize.toolbarHeight)
+        .frame(height: AppSize.tableRowHeight)
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         // Bottom hairline lives inside the row (replacing the VStack's
@@ -862,6 +897,77 @@ private struct KVRow: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+    }
+
+    private var verticalRule: some View {
+        Rectangle()
+            .fill(AppColor.hairline)
+            .frame(width: 1)
+    }
+}
+
+private struct ReadOnlyKVRow: View {
+    let key: String
+    let value: String
+    let isMuted: Bool
+    let leadingColumnWidth: CGFloat
+    let trailingColumnWidth: CGFloat
+    let showsGrip: Bool
+    let gripWidth: CGFloat
+
+    var body: some View {
+        HStack(spacing: 0) {
+            readOnlyLeadingCell
+            verticalRule
+            readOnlyCell(key, showsInfo: true)
+            verticalRule
+            readOnlyCell(value)
+            verticalRule
+            Color.clear.frame(width: trailingColumnWidth)
+        }
+        .frame(height: AppSize.tableRowHeight)
+        .background(alignment: .bottom) {
+            Rectangle()
+                .fill(AppColor.hairline)
+                .frame(height: 1)
+        }
+    }
+
+    private var readOnlyLeadingCell: some View {
+        HStack(spacing: AppSpacing.xxSmall) {
+            if showsGrip {
+                Color.clear
+                    .frame(width: gripWidth)
+                    .frame(maxHeight: .infinity)
+            }
+            Toggle("", isOn: .constant(true))
+                .labelsHidden()
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
+                .allowsHitTesting(false)
+        }
+        .frame(width: leadingColumnWidth)
+    }
+
+    private func readOnlyCell(_ text: String, showsInfo: Bool = false) -> some View {
+        Text(text)
+            .font(AppFont.cellText)
+            .foregroundStyle(isMuted ? Color.secondary : Color.primary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .textSelection(.enabled)
+            .padding(.leading, AppSpacing.small)
+            .padding(.trailing, showsInfo ? AppSpacing.large : AppSpacing.small)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .overlay(alignment: .trailing) {
+                if showsInfo {
+                    Image(systemName: "info.circle")
+                        .font(AppFont.iconRow)
+                        .foregroundStyle(.secondary)
+                        .padding(.trailing, AppSpacing.xSmall)
+                        .help("Calculated when request is sent")
+                }
+            }
     }
 
     private var verticalRule: some View {

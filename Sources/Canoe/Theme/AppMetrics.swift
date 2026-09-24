@@ -45,6 +45,8 @@ enum AppSize {
     /// Shared bar height (breadcrumb rows, panel headers, response status
     /// bar) - kept compact to maximize content space.
     static let toolbarHeight: CGFloat = 32
+    /// Dense key/value table rows (query, headers, body params, variables).
+    static let tableRowHeight: CGFloat = 24
     /// Postman-style top bar that replaces the system title bar (workspace
     /// switcher row; the traffic lights sit inline on it).
     static let topBarHeight: CGFloat = 36

@@ -21,6 +21,8 @@ enum HTTPClientError: Error, LocalizedError {
 /// Executes a `Request` (with variables resolved) using URLSession async
 /// and returns a transient `ResponseModel`.
 enum HTTPClient {
+    static let userAgent = "Canoe/1.0.0"
+
     /// Leaf-certificate fields pulled during the server-trust challenge.
     private struct CertificateSnapshot: Sendable {
         let subjectCN: String?
@@ -340,6 +342,7 @@ enum HTTPClient {
 
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = request.method
+        urlRequest.setValue(userAgent, forHTTPHeaderField: "User-Agent")
 
         // Headers (skip rows with an empty name - URLRequest ignores them and
         // they only add noise).

@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 /// Postman-style request editor: a breadcrumb name bar
@@ -33,6 +34,105 @@ struct RequestEditorView: View {
     /// Shown on the Headers tab; same non-blank rule as Params.
     private var enabledHeaderCount: Int {
         draft.headers.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count
+    }
+
+    private var generatedHeaders: [KeyValueReadOnlyItem] {
+        let userHeaderNames = Set(
+            draft.headers
+                .filter(\.isEnabled)
+                .map {
+                    VariableResolver.resolve($0.key, variables: resolvedVariables)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .lowercased()
+                }
+                .filter { !$0.isEmpty }
+        )
+        var headers: [KeyValueReadOnlyItem] = []
+        func append(_ key: String, _ value: String, isMuted: Bool = false) {
+            let normalizedKey = key.lowercased()
+            guard !userHeaderNames.contains(normalizedKey) else { return }
+            headers.append(
+                KeyValueReadOnlyItem(
+                    id: normalizedKey,
+                    key: key,
+                    value: value,
+                    isMuted: isMuted
+                )
+            )
+        }
+
+        if generatedAuthorization != nil {
+            append("Authorization", String(repeating: "•", count: 8), isMuted: true)
+        }
+        append("Host", "<calculated when request is sent>")
+        append("User-Agent", HTTPClient.userAgent)
+        append("Accept", "*/*")
+        append("Accept-Encoding", "gzip, deflate, br")
+        append("Connection", "keep-alive")
+        if let contentType = generatedContentType {
+            append("Content-Type", contentType)
+            append("Content-Length", generatedContentLength ?? "Generated at send time")
+        }
+        return headers
+    }
+
+    private var generatedContentType: String? {
+        switch draft.requestBodyType {
+        case .none:
+            return nil
+        case .raw:
+            let body = VariableResolver.resolve(draft.bodyText, variables: resolvedVariables)
+            guard !body.isEmpty else { return nil }
+            let contentType = VariableResolver.resolve(draft.bodyContentType, variables: resolvedVariables)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return contentType.isEmpty ? draft.rawBodyKind.contentType : contentType
+        case .urlEncoded:
+            guard
+                draft.urlEncodedFields.contains(where: {
+                    $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                })
+            else {
+                return nil
+            }
+            return "application/x-www-form-urlencoded"
+        case .formData:
+            guard
+                draft.formFields.contains(where: {
+                    $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                })
+            else {
+                return nil
+            }
+            return "multipart/form-data"
+        case .binary:
+            let path = VariableResolver.resolve(draft.binaryFilePath, variables: resolvedVariables)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !path.isEmpty else { return nil }
+            return MultipartForm.mimeType(forPath: path)
+        }
+    }
+
+    private var generatedContentLength: String? {
+        guard draft.requestBodyType == .raw else { return nil }
+        let body = VariableResolver.resolve(draft.bodyText, variables: resolvedVariables)
+        return body.data(using: .utf8).map { String($0.count) }
+    }
+
+    private var generatedAuthorization: String? {
+        let authorization = store.authorizationForRequest(draft)
+        switch authorization.type {
+        case .basic:
+            let username = VariableResolver.resolve(authorization.username, variables: resolvedVariables)
+            let password = VariableResolver.resolve(authorization.password, variables: resolvedVariables)
+            guard !username.isEmpty || !password.isEmpty else { return nil }
+            let credentials = Data("\(username):\(password)".utf8).base64EncodedString()
+            return "Basic \(credentials)"
+        case .bearer:
+            let token = VariableResolver.resolve(authorization.token, variables: resolvedVariables)
+            return token.isEmpty ? nil : "Bearer \(token)"
+        case .none, .inherit:
+            return nil
+        }
     }
 
     /// Shown on the Authorization tab. Unlike `Request.hasAuthConfigured`
@@ -94,6 +194,7 @@ struct RequestEditorView: View {
     /// The dropdown's type-to-filter query.
     @State private var methodFilter = ""
     @FocusState private var methodFilterFieldFocused: Bool
+    @State private var showGeneratedHeaders = false
     /// Inline request-name editing (Postman-style): hover pill + focus ring.
     @FocusState private var isNameFieldFocused: Bool
     @State private var isNameHovered = false
@@ -276,6 +377,7 @@ struct RequestEditorView: View {
             draft = request
             urlText = composedURLText(base: request.urlString, params: request.params)
             section = .params
+            showGeneratedHeaders = false
         }
         .onChange(of: request.folderID) { _, newFolderID in
             // Vault-side folder moves (deleteFolder) must reach the local
@@ -755,8 +857,8 @@ struct RequestEditorView: View {
                 title: "Query Params",
                 variables: resolvedVariables,
                 suggestions: requestSuggestions,
-                keyPlaceholder: "parameter",
-                valuePlaceholder: "value",
+                keyPlaceholder: "Key",
+                valuePlaceholder: "Value",
                 allowsReorder: true
             )
             // Fresh table state per request: the editor holds ghost-row and
@@ -767,10 +869,17 @@ struct RequestEditorView: View {
                 items: $draft.headers,
                 makeNew: { HTTPHeader() },
                 title: "Headers",
+                titleAction: KeyValueEditorTitleAction(
+                    title: showGeneratedHeaders ? "Hide auto-generated headers" : "\(generatedHeaders.count) hidden",
+                    systemImage: showGeneratedHeaders ? "eye.slash" : "eye",
+                    help: showGeneratedHeaders ? "Hide auto-generated headers" : "Show auto-generated headers",
+                    action: { showGeneratedHeaders.toggle() }
+                ),
+                readOnlyItems: showGeneratedHeaders ? generatedHeaders : [],
                 variables: resolvedVariables,
                 suggestions: requestSuggestions,
-                keyPlaceholder: "Header-Name",
-                valuePlaceholder: "value",
+                keyPlaceholder: "Key",
+                valuePlaceholder: "Value",
                 allowsReorder: true
             )
             .id(draft.id)

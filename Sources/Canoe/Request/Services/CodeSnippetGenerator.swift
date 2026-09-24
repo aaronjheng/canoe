@@ -178,6 +178,7 @@ enum CodeSnippetGenerator {
         var headers: [(key: String, value: String)] = []
         var hasContentType = false
         var hasAuthorization = false
+        var hasUserAgent = false
         for header in request.headers where header.isEnabled {
             let key = resolve(header.key)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -185,6 +186,10 @@ enum CodeSnippetGenerator {
             headers.append((key: key, value: resolve(header.value)))
             if key.lowercased() == "content-type" { hasContentType = true }
             if key.lowercased() == "authorization" { hasAuthorization = true }
+            if key.lowercased() == "user-agent" { hasUserAgent = true }
+        }
+        if !hasUserAgent {
+            headers.insert((key: "User-Agent", value: HTTPClient.userAgent), at: 0)
         }
 
         // Authorization helper, same precedence as HTTPClient (manual header
