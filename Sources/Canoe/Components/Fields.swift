@@ -15,6 +15,7 @@ struct FilterField: View {
     /// floating inside the parent's padding (the workspace sidebar's
     /// filter). The default stays borderless for the other call sites.
     var isBoxed = false
+    var minHeight: CGFloat?
 
     @FocusState private var isFocused: Bool
     @State private var isHovered = false
@@ -44,6 +45,7 @@ struct FilterField: View {
         }
         .padding(.horizontal, AppSpacing.medium)
         .padding(.vertical, verticalPadding)
+        .frame(minHeight: minHeight)
         .background {
             // Boxed always paints; unboxed only on hover/focus (rest is clear).
             if isBoxed || isFocused || isHovered {

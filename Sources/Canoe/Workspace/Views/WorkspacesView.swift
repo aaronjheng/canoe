@@ -120,8 +120,6 @@ struct WorkspacesView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            FilterField(text: $filter, placeholder: "Search Workspaces", isBoxed: true)
-                .padding(.vertical, AppSpacing.xSmall)
             // Note: no "no workspaces" state here. This mode is unreachable
             // with an empty vault (ContentView shows the welcome screen),
             // and deleting the last workspace exits back to it.
@@ -370,24 +368,35 @@ struct WorkspacesView: View {
     }
 
     private var header: some View {
-        HStack(spacing: AppSpacing.small) {
-            Text("Workspaces")
-                .font(AppFont.panelTitle)
-            Spacer(minLength: 0)
-            if !checked.isEmpty {
-                Button("Delete (\(checked.count))", role: .destructive) {
-                    deleteTargets = checked
+        VStack(spacing: AppSpacing.small) {
+            HStack {
+                Text("Workspaces")
+                    .font(AppFont.panelTitle)
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: AppSpacing.small) {
+                FilterField(
+                    text: $filter,
+                    placeholder: "Search Workspaces",
+                    isBoxed: true,
+                    minHeight: AppSize.tabHeight
+                )
+                .frame(maxWidth: .infinity)
+                if !checked.isEmpty {
+                    Button("Delete (\(checked.count))", role: .destructive) {
+                        deleteTargets = checked
+                    }
+                    .buttonStyle(SecondaryButtonStyle(isDestructive: true, minHeight: AppSize.tabHeight))
+                    .help("Delete selected workspaces")
                 }
-                .buttonStyle(SecondaryButtonStyle(isDestructive: true, minHeight: AppSize.toolbarHeight))
-                .help("Delete selected workspaces")
+                Button {
+                    store.addWorkspace()
+                } label: {
+                    Label("New Workspace", systemImage: "plus")
+                }
+                .buttonStyle(PrimaryButtonStyle(minHeight: AppSize.tabHeight))
+                .help("Create a workspace")
             }
-            Button {
-                store.addWorkspace()
-            } label: {
-                Label("New Workspace", systemImage: "plus")
-            }
-            .buttonStyle(PrimaryButtonStyle(minHeight: AppSize.toolbarHeight))
-            .help("Create a workspace")
         }
         .padding(.horizontal, AppSpacing.medium)
         .padding(.vertical, AppSpacing.small)
