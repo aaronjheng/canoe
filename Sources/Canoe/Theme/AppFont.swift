@@ -28,7 +28,7 @@ enum AppFont {
     static let monoSnippet = Font.system(size: 12, design: .monospaced)
     /// Sidebar tree row label (collections, folders, requests). Postman keeps
     /// one uniform size across every tree level.
-    static let sidebarRow = Font.system(size: 13)
+    static let sidebarRow = Font.system(size: 12)
 
     // MARK: - Semantic text roles (same scale, one source)
 
