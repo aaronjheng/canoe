@@ -141,7 +141,7 @@ struct KeyValueEditor<T: KVItem>: View {
                             Label(titleAction.title, systemImage: titleAction.systemImage)
                         }
                         .labelStyle(.titleAndIcon)
-                        .buttonStyle(SecondaryButtonStyle(minHeight: AppSize.tabHeight))
+                        .buttonStyle(SecondaryButtonStyle(minHeight: AppSize.controlHeight))
                         .help(titleAction.help)
                     }
                 }

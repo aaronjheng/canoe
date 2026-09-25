@@ -299,7 +299,7 @@ struct AuthorizationForm: View {
             .font(AppFont.monoSubheadline)
             .foregroundStyle(.secondary)
             .padding(.horizontal, AppSpacing.small)
-            .frame(maxWidth: .infinity, minHeight: AppSize.tabHeight, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: AppSize.controlHeight, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                     .fill(AppColor.subtleBackground)

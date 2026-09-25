@@ -50,7 +50,7 @@ struct BodyEditor: View {
         }
         // The Raw format picker is taller than the radio labels: without a
         // floor the whole row grows when switching to Raw.
-        .frame(minHeight: AppSize.tabHeight)
+        .frame(minHeight: AppSize.controlHeight)
         .padding(.horizontal, AppSpacing.medium)
         .padding(.vertical, AppSpacing.small)
     }

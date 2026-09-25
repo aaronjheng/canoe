@@ -384,14 +384,14 @@ struct WorkspacesView: View {
                     text: $filter,
                     placeholder: "Search Workspaces",
                     isBoxed: true,
-                    minHeight: AppSize.tabHeight
+                    minHeight: AppSize.controlHeight
                 )
                 .frame(maxWidth: .infinity)
                 if !checked.isEmpty {
                     Button("Delete (\(checked.count))", role: .destructive) {
                         deleteTargets = checked
                     }
-                    .buttonStyle(SecondaryButtonStyle(isDestructive: true, minHeight: AppSize.tabHeight))
+                    .buttonStyle(SecondaryButtonStyle(isDestructive: true, minHeight: AppSize.controlHeight))
                     .help("Delete selected workspaces")
                 }
                 Button {
@@ -399,7 +399,7 @@ struct WorkspacesView: View {
                 } label: {
                     Label("New Workspace", systemImage: "plus")
                 }
-                .buttonStyle(PrimaryButtonStyle(minHeight: AppSize.tabHeight))
+                .buttonStyle(PrimaryButtonStyle(minHeight: AppSize.controlHeight))
                 .help("Create a workspace")
             }
         }

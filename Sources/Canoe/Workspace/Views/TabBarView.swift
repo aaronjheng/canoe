@@ -169,7 +169,8 @@ struct TabBarView: View {
                             stripGeometry.plusButtonFrame = frame
                         }
                     }
-                    .padding(.horizontal, AppSpacing.small)
+                    .padding(.leading, tabPitch)
+                    .padding(.trailing, AppSpacing.small)
                     .padding(.vertical, AppSpacing.xSmall)
                     // Opening a tab (or switching to one parked off-screen)
                     // must reveal it: scroll the minimum amount that brings
@@ -229,8 +230,10 @@ struct TabBarView: View {
             .padding(.trailing, AppSpacing.small)
         }
         // The ScrollView is vertically greedy - pin the strip to its content
-        // height so it never squeezes the request editor below.
+        // height so it never squeezes the request editor below. The bar is
+        // fixed at `tabBarHeight` with the pills centered in it.
         .fixedSize(horizontal: false, vertical: true)
+        .frame(height: AppSize.tabBarHeight)
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .global)
         } action: { frame in
@@ -364,6 +367,11 @@ struct TabBarView: View {
     /// `xxSmall` token so the strip stays dense without touching other uses.
     private let tabPillSpacing: CGFloat = 1
 
+    /// Pill-to-pill pitch: a gap on each side of the separator's 1pt column.
+    /// The strip's leading inset matches it so the first tab sits one "tab
+    /// gap" from the sidebar divider, same rhythm as between the pills.
+    private var tabPitch: CGFloat { tabPillSpacing * 2 + 1 }
+
     /// Postman-style tab sizing: tabs share the strip width equally. They cap
     /// at `tabMaxWidth` when there are few and shrink to `tabMinWidth` when
     /// crowded; horizontal scrolling only takes over beyond that floor. The
@@ -374,7 +382,7 @@ struct TabBarView: View {
         // One gap between each pair of tabs plus one before the "+" button
         // (matches the pills HStack's tabPillSpacing).
         let gaps = tabPillSpacing * CGFloat(count)
-        let usable = availableWidth - AppSpacing.small * 2 - gaps - newTabButtonWidth
+        let usable = availableWidth - tabPitch - AppSpacing.small - gaps - newTabButtonWidth
         return min(AppSize.tabMaxWidth, max(AppSize.tabMinWidth, usable / CGFloat(count)))
     }
 
@@ -626,7 +634,7 @@ struct EnvironmentPickerPanel: View {
                 .help("New Environment")
             }
             .padding(.horizontal, AppSpacing.small)
-            .frame(minHeight: AppSize.tabHeight)
+            .frame(minHeight: AppSize.controlHeight)
 
             Divider()
 
@@ -634,7 +642,7 @@ struct EnvironmentPickerPanel: View {
                 Text("No Matching Environments")
                     .font(AppFont.emptyStateBody)
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: AppSize.tabHeight)
+                    .frame(maxWidth: .infinity, minHeight: AppSize.controlHeight)
             } else {
                 // Rows wrapped in an explicit stack with the insets on the
                 // container: padding applied to the ForEach itself would
@@ -660,7 +668,7 @@ struct EnvironmentPickerPanel: View {
                             Spacer(minLength: 0)
                         }
                         .padding(.horizontal, AppSpacing.small)
-                        .frame(maxWidth: .infinity, minHeight: AppSize.tabHeight, alignment: .leading)
+                        .frame(maxWidth: .infinity, minHeight: AppSize.controlHeight, alignment: .leading)
                         .background(
                             RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
                                 .fill(row == hovered || row == keyboard ? AppColor.subtleBackground : .clear)
@@ -827,7 +835,7 @@ private struct TabPill: View {
             .onHover { isHoveringClose = $0 }
             .help("Close Tab (⌘W)")
             // Derived from the shared token so the right inset always equals
-            // the tile's top/bottom margins ((28 - 22) / 2 = 3pt).
+            // the tile's top/bottom margins ((24 - 18) / 2 = 3pt).
             .padding(.trailing, (AppSize.tabHeight - Self.closeButtonSide) / 2)
         } else if isDirty {
             // Postman-style dirty dot: unsaved tabs show a dot where the
@@ -852,9 +860,9 @@ private struct TabPill: View {
     }
 
     /// Close × tile: grown to the largest square an even 3pt margin to the
-    /// pill's top, bottom, and right edges allows (28pt strip - 2 × 3pt),
+    /// pill's top, bottom, and right edges allows (24pt pill - 2 × 3pt),
     /// so the solid background covers the truncated text underneath.
-    private static let closeButtonSide: CGFloat = 22
+    private static let closeButtonSide: CGFloat = 18
 
     /// Whether this pill is the live single-click preview tab (VSCode-style
     /// italic until pinned).
@@ -1088,7 +1096,7 @@ struct TabDrawer: View {
                     }
             }
             .padding(.horizontal, AppSpacing.small)
-            .frame(minHeight: AppSize.tabHeight)
+            .frame(minHeight: AppSize.controlHeight)
 
             Divider()
 
@@ -1096,7 +1104,7 @@ struct TabDrawer: View {
                 Text("No Matching Tabs")
                     .font(AppFont.emptyStateBody)
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: AppSize.tabHeight)
+                    .frame(maxWidth: .infinity, minHeight: AppSize.controlHeight)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -1121,7 +1129,7 @@ struct TabDrawer: View {
                                     }
                                 }
                                 .padding(.horizontal, AppSpacing.small)
-                                .frame(maxWidth: .infinity, minHeight: AppSize.tabHeight, alignment: .leading)
+                                .frame(maxWidth: .infinity, minHeight: AppSize.controlHeight, alignment: .leading)
                                 .background(
                                     RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
                                         .fill(tab == hovered || tab == keyboard ? AppColor.subtleBackground : .clear)

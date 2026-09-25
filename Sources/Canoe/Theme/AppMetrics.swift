@@ -73,9 +73,15 @@ enum AppSize {
     static let tabMinWidth: CGFloat = 100
     static let tabMaxWidth: CGFloat = 200
     static let methodPickerWidth: CGFloat = 112
-    /// Height of the tab pills in the workspace tab strip - a step above the
-    /// shared bars so tabs keep a comfortable hit target.
-    static let tabHeight: CGFloat = 28
+    /// Height of the tab pills inside the workspace tab strip, centered in
+    /// `tabBarHeight`.
+    static let tabHeight: CGFloat = 24
+    /// Total height of the workspace tab strip (pills plus the chrome above
+    /// and below them).
+    static let tabBarHeight: CGFloat = 32
+    /// Standard height of standalone controls (primary/secondary buttons,
+    /// filter fields) and popup panel rows (environment picker, tab drawer).
+    static let controlHeight: CGFloat = 28
     /// Vertical divider inside the tab strip (environment picker separator).
     static let tabStripDividerHeight: CGFloat = 18
     /// Compact 16px control box in tab pills (spinner, close button) and the
