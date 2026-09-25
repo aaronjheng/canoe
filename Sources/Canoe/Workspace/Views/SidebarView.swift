@@ -26,7 +26,7 @@ struct SidebarView: View {
                 HistoryView()
             }
         }
-        .background(AppColor.sidebarBackground)
+        .background(AppColor.primaryBackground)
     }
 }
 
@@ -572,7 +572,7 @@ private struct RowActionBackground: View {
         RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
             .fill(tint)
             .background(
-                AppColor.sidebarBackground,
+                AppColor.primaryBackground,
                 in: RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
             )
     }

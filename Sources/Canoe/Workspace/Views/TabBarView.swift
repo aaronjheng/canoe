@@ -239,7 +239,7 @@ struct TabBarView: View {
         } action: { frame in
             stripGeometry.barFrame = frame
         }
-        .background(AppColor.controlBackground)
+        .background(AppColor.primaryBackground)
         // VS Code-style drag ghost: the lifted pill rides above the whole
         // bar (outside the clipping ScrollView) at the grab point, with a
         // drop shadow to read as floating. Hit-test transparent - the
@@ -263,7 +263,7 @@ struct TabBarView: View {
                 // strip's own background color keeps it reading as a lifted
                 // tile over whatever area the cursor crosses.
                 .background(
-                    AppColor.controlBackground,
+                    AppColor.primaryBackground,
                     in: RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
                 )
                 .shadow(color: AppColor.popupShadow, radius: 10, y: 3)
@@ -818,14 +818,14 @@ private struct TabPill: View {
                     // Opaque rounded square matching the pill's fill: the
                     // tints are translucent (primary at 5-8%), so a tile
                     // filled with them alone would still show the truncated
-                    // text underneath. An opaque controlBackground base
+                    // text underneath. An opaque primaryBackground base
                     // under the tint reproduces the pill's resolved color
                     // while blocking the label completely.
                     .background {
                         RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
                             .fill(isHoveringClose ? AppColor.tabHoverBackground : pillFill)
                             .background(
-                                AppColor.controlBackground,
+                                AppColor.primaryBackground,
                                 in: RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
                             )
                     }

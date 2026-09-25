@@ -74,10 +74,12 @@ enum AppColor {
         light: RGB(red: 249, green: 249, blue: 249),
         dark: RGB(red: 44, green: 44, blue: 46)
     )
-    /// Postman-style sidebar fill: light gray in light mode, charcoal in
-    /// dark mode - always a visible step away from the center content.
-    static let sidebarBackground: Color = dynamic(
-        light: RGB(red: 245, green: 245, blue: 245),
+    /// Primary window-chrome fill (#F9F9F9 in light mode): the fixed gray
+    /// surface every framing panel shares - top bar, sidebar, tab strip,
+    /// and the side inspectors - so the app reads as one continuous frame
+    /// a visible step away from the center content.
+    static let primaryBackground: Color = dynamic(
+        light: RGB(red: 249, green: 249, blue: 249),
         dark: RGB(red: 37, green: 37, blue: 38)
     )
     /// Hover wash for inline rows / text controls (tree rows, method

@@ -39,7 +39,7 @@ struct VariablesSidebarView: View {
         // Greedy in both dimensions - without this the VStack hugs its ideal
         // height and centers inside the pane, leaving a void above the header.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(AppColor.sidebarBackground)
+        .background(AppColor.primaryBackground)
         // The inspector outlives request switches (it sits outside the
         // detail pane), so reset per-request state explicitly: otherwise a
         // filter typed for one request yields a bogus "No Results" on the

@@ -5,9 +5,9 @@ import SwiftUI
 /// follows them, and a settings shortcut sits at the trailing edge. The bar
 /// draws a solid, opaque background on purpose - it replaces the system
 /// title bar, and the macOS "liquid glass" chrome underneath it must never
-/// show through. It shares the sidebar's fill so the left chrome (bar +
-/// sidebar) reads as one continuous surface, separated from the content row
-/// by the hairline under the bar.
+/// show through. It shares the primary chrome fill so the left chrome (bar
+/// + sidebar) reads as one continuous surface, separated from the content
+/// row by the hairline under the bar.
 struct TopBarView: View {
     /// macOS hides the traffic lights while fullscreen, so the gutter
     /// reserved for them would turn into dead blank space - track the
@@ -23,7 +23,7 @@ struct TopBarView: View {
         .padding(.leading, isFullScreen ? AppSpacing.medium : AppSize.trafficLightInset)
         .padding(.trailing, AppSpacing.medium)
         .frame(height: AppSize.topBarHeight)
-        .background(AppColor.sidebarBackground)
+        .background(AppColor.primaryBackground)
         .background {
             // The bar replaces the title bar, so it takes over dragging:
             // empty regions move the window, controls keep their clicks.

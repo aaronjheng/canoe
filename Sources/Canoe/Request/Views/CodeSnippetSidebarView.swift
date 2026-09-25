@@ -30,7 +30,7 @@ struct CodeSnippetSidebarView: View {
         }
         // Greedy in both dimensions so the panel fills the inspector pane.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(AppColor.sidebarBackground)
+        .background(AppColor.primaryBackground)
     }
 
     // MARK: - Header
