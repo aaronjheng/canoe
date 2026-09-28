@@ -12,6 +12,15 @@ struct ContentView: View {
     /// panel: the drawer floats at window level too (see `tabDrawerOverlay`).
     @State private var isTabDrawerShown = false
     @State private var tabDrawerAnchor: Anchor<CGRect>?
+    /// Whether the request editor's method dropdown is open. Owned here for
+    /// the same reason as the environment panel: hanging it off the editor
+    /// clips it where it overflows the pane into the response viewer below
+    /// (see `methodMenuOverlay`).
+    @State private var isMethodMenuShown = false
+    @State private var methodMenuAnchor: Anchor<CGRect>?
+    /// Pick from the window-level method dropdown, handed down to the
+    /// editor's draft (the panel can't reach the draft itself).
+    @State private var pendingMethodPick: HTTPMethod?
     /// Inspector width at drag start; the drag applies deltas against it.
     @State private var inspectorDragStartWidth: CGFloat?
     /// Keeps the splash up long enough to perceive even when the vault
@@ -62,8 +71,10 @@ struct ContentView: View {
         .focusEffectDisabled()
         .overlay { tabDrawerOverlay }
         .overlay { envPickerOverlay }
+        .overlay { methodMenuOverlay }
         .onPreferenceChange(EnvPickerAnchorKey.self) { envPickerAnchor = $0 }
         .onPreferenceChange(TabDrawerAnchorKey.self) { tabDrawerAnchor = $0 }
+        .onPreferenceChange(MethodMenuAnchorKey.self) { methodMenuAnchor = $0 }
     }
 
     /// Postman-style environment dropdown: no popover bubble or arrow, just
@@ -119,6 +130,43 @@ struct ContentView: View {
                             .offset(
                                 x: max(button.maxX - cardWidth, 0),
                                 y: button.maxY + AppSpacing.xSmall)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Postman-style method dropdown, window-level like `envPickerOverlay`:
+    /// the card hangs below the URL bar row, left-aligned with the method
+    /// picker (the row's resolved leading edge). The highlight follows the
+    /// store's copy of the method - `updateRequest` mirrors every draft
+    /// change there, so it is the same value the editor shows.
+    private var methodMenuOverlay: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                // The anchor guard keeps a stale "open" flag from leaving an
+                // invisible backdrop swallowing clicks after the editor's
+                // unmount has cleared the preference.
+                if isMethodMenuShown, methodMenuAnchor != nil {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { isMethodMenuShown = false }
+                    Button("Close Method Menu") { isMethodMenuShown = false }
+                        .keyboardShortcut(.cancelAction)
+                        .frame(width: 0, height: 0)
+                        .opacity(0)
+                        .accessibilityHidden(true)
+                    if let anchor = methodMenuAnchor {
+                        let row = proxy[anchor]
+                        MethodMenuPanel(
+                            selectedMethod: store.selectedRequest?.httpMethod ?? .get,
+                            onPick: { method in
+                                pendingMethodPick = method
+                                isMethodMenuShown = false
+                            },
+                            onDismiss: { isMethodMenuShown = false }
+                        )
+                        .offset(x: row.minX, y: row.maxY + AppSpacing.xSmall)
                     }
                 }
             }
@@ -255,7 +303,11 @@ struct ContentView: View {
     @ViewBuilder
     private var detailContent: some View {
         if let request = store.selectedRequest {
-            RequestWorkspaceView(request: request)
+            RequestWorkspaceView(
+                request: request,
+                isMethodMenuShown: $isMethodMenuShown,
+                pendingMethodPick: $pendingMethodPick
+            )
         } else if let env = store.selectedEnvironmentTab {
             EnvironmentDetailView(environment: env)
                 .id(env.id)
@@ -279,11 +331,19 @@ struct ContentView: View {
 struct RequestWorkspaceView: View {
     @Environment(AppStore.self) private var store
     let request: Request
+    /// Passed through to the editor; the dropdown panel itself lives at
+    /// window level in ContentView (see `methodMenuOverlay`).
+    @Binding var isMethodMenuShown: Bool
+    @Binding var pendingMethodPick: HTTPMethod?
 
     var body: some View {
         VSplitView {
-            RequestEditorView(request: request)
-                .frame(minHeight: 240)
+            RequestEditorView(
+                request: request,
+                isMethodMenuVisible: $isMethodMenuShown,
+                pendingMethodPick: $pendingMethodPick
+            )
+            .frame(minHeight: 240)
             ResponseViewerView()
                 .frame(minHeight: 200)
             // Postman-style docked console: opens below the Response pane.

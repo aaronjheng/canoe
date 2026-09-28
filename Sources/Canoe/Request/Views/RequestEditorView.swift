@@ -8,6 +8,15 @@ import SwiftUI
 struct RequestEditorView: View {
     @Environment(AppStore.self) private var store
     let request: Request
+    /// Whether the method dropdown is open. Owned by ContentView: the panel
+    /// floats at window level there (see `methodMenuOverlay`), because
+    /// hanging it off the editor clips it where it overflows the pane into
+    /// the response viewer below.
+    @Binding var isMethodMenuVisible: Bool
+    /// Pick delivered by the window-level dropdown, applied to the draft on
+    /// the next update - the panel can't reach the draft, and the store
+    /// mirrors it only after the editor has changed.
+    @Binding var pendingMethodPick: HTTPMethod?
 
     @State private var draft: Request
     @State private var section: RequestSection = .params
@@ -20,9 +29,11 @@ struct RequestEditorView: View {
         var id: String { rawValue }
     }
 
-    init(request: Request) {
+    init(request: Request, isMethodMenuVisible: Binding<Bool>, pendingMethodPick: Binding<HTTPMethod?>) {
         self.request = request
         _draft = State(initialValue: request)
+        _isMethodMenuVisible = isMethodMenuVisible
+        _pendingMethodPick = pendingMethodPick
     }
 
     /// Shown on the Params tab. Mirrors what HTTPClient actually sends:
@@ -184,20 +195,6 @@ struct RequestEditorView: View {
     /// method picker's own hover signal, so the two halves of the bar read
     /// as one control).
     @State private var isURLBarHovered = false
-    /// Whether the method dropdown panel is open.
-    @State private var isMethodMenuVisible = false
-    /// Set by a method pick so the dropdown's close handler hands focus back
-    /// to the URL bar. Other close paths (Escape, backdrop click, request
-    /// switch) leave focus alone.
-    @State private var refocusURLAfterMethodPick = false
-    /// Method under the pointer in the dropdown (hover highlight).
-    @State private var hoveredMethod: HTTPMethod?
-    /// Method moved to with ↑/↓ in the dropdown filter. Return picks this
-    /// (falling back to the first match); nil until the user arrows.
-    @State private var keyboardMethod: HTTPMethod?
-    /// The dropdown's type-to-filter query.
-    @State private var methodFilter = ""
-    @FocusState private var methodFilterFieldFocused: Bool
     @State private var showGeneratedHeaders = false
     /// Inline request-name editing (Postman-style): hover pill + focus ring.
     @FocusState private var isNameFieldFocused: Bool
@@ -211,33 +208,6 @@ struct RequestEditorView: View {
     /// lands outside the field. Installed while the editor is on screen.
     @State private var nameDismissMonitor: Any?
 
-    /// Methods matching the dropdown's filter (empty shows all).
-    private var filteredMethods: [HTTPMethod] {
-        guard !methodFilter.isEmpty else { return HTTPMethod.allCases }
-        return HTTPMethod.allCases.filter { $0.rawValue.localizedCaseInsensitiveContains(methodFilter) }
-    }
-
-    /// Moves the keyboard selection in the method dropdown, clamped to the
-    /// current matches. Starts from the current method so the first arrow
-    /// lands on a neighbor, not the list edge.
-    private func moveKeyboardMethod(by delta: Int) {
-        guard !filteredMethods.isEmpty else { return }
-        let base = keyboardMethod ?? draft.httpMethod
-        let idx = filteredMethods.firstIndex(of: base) ?? (delta > 0 ? -1 : filteredMethods.count)
-        keyboardMethod = filteredMethods[min(max(idx + delta, 0), filteredMethods.count - 1)]
-        hoveredMethod = nil
-    }
-
-    /// Picks a method from the dropdown. The focus handoff is deferred to the
-    /// close handler (see `onChange(of: isMethodMenuVisible)`) rather than
-    /// claimed here: the pick runs while the filter field is still tearing
-    /// down, and a claim from inside that teardown races first responder.
-    private func pickMethod(_ method: HTTPMethod) {
-        draft.httpMethod = method
-        refocusURLAfterMethodPick = true
-        isMethodMenuVisible = false
-    }
-    @State private var methodMenuAnchor: Anchor<CGRect>?
     /// The raw text currently shown in the URL bar.
     @State private var urlText = ""
 
@@ -374,8 +344,6 @@ struct RequestEditorView: View {
         // and races the field editor's mouseDown, which makes clicking into
         // the name field itself fail most of the time.
         .onPreferenceChange(RequestNameFrameKey.self) { nameFieldFrame = $0 }
-        .overlay { methodMenuOverlay }
-        .onPreferenceChange(MethodMenuAnchorKey.self) { methodMenuAnchor = $0 }
         .onChange(of: draft) { _, newDraft in
             store.updateRequest(newDraft)
             // Params-table edits (and request switches) re-compose the URL
@@ -421,35 +389,37 @@ struct RequestEditorView: View {
             guard focused == .url else { return }
             isMethodMenuVisible = false
         }
+        .onChange(of: pendingMethodPick) { _, pick in
+            guard let pick else { return }
+            draft.httpMethod = pick
+            pendingMethodPick = nil
+        }
         .onChange(of: isMethodMenuVisible) { wasOpen, visible in
-            guard visible else {
-                // Dismissing must release the filter's focus claim and drop
-                // the arrowed position; otherwise a stranded focus keeps
-                // swallowing keystrokes invisibly.
-                methodFilterFieldFocused = false
-                keyboardMethod = nil
-                // A pick hands the keyboard back to the URL bar so typing
-                // continues there (Postman-style). Deferred to this close
-                // observation because the pick action runs while the filter
-                // field is still tearing down. Other closes - Escape,
-                // backdrop click, a request switch - leave focus alone; the
-                // request-switch handler clears it deliberately.
-                if wasOpen {
-                    urlFieldFocused = .url
-                }
+            if visible {
+                urlFieldFocused = nil
                 return
             }
-            urlFieldFocused = nil
-            hoveredMethod = nil
-            keyboardMethod = nil
-            methodFilter = ""
+            // Dismissal hands the keyboard back to the URL bar so typing
+            // continues there (Postman-style). The claim lands in this close
+            // observation rather than in the pick action: that runs while the
+            // filter field is still tearing down, and a claim from inside
+            // that teardown races first responder. The filter's focus and
+            // arrowed position live in the panel and die with it.
+            if wasOpen {
+                urlFieldFocused = .url
+            }
         }
         .onAppear {
             draft = request
             urlText = composedURLText(base: draft.urlString, params: draft.params)
             installNameDismissMonitor()
         }
-        .onDisappear { removeNameDismissMonitor() }
+        .onDisappear {
+            removeNameDismissMonitor()
+            // A detail switch can unmount the editor while the window-level
+            // dropdown is open; close it or its backdrop would linger.
+            isMethodMenuVisible = false
+        }
     }
 
     // MARK: - Name bar
@@ -727,113 +697,6 @@ struct RequestEditorView: View {
         }
     }
 
-    private var methodMenuOverlay: some View {
-        GeometryReader { proxy in
-            let rowBottom = methodMenuAnchor.map { proxy[$0].maxY } ?? 0
-            ZStack(alignment: .topLeading) {
-                if isMethodMenuVisible {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture { isMethodMenuVisible = false }
-                    Button("Close Method Menu") { isMethodMenuVisible = false }
-                        .keyboardShortcut(.cancelAction)
-                        .frame(width: 0, height: 0)
-                        .opacity(0)
-                        .accessibilityHidden(true)
-                    methodMenuPanel
-                        // Anchors below the URL bar row (its resolved bottom),
-                        // left-aligned with the method field (the section's
-                        // leading padding).
-                        .offset(y: rowBottom + AppSpacing.xSmall)
-                        .padding(.leading, AppSpacing.medium)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                }
-            }
-        }
-    }
-
-    /// Postman-style method dropdown: a filter field up top (type to narrow
-    /// the list, Return picks the first match), then colored method names,
-    /// the current one (or the hovered one) highlighted with a soft pill.
-    private var methodMenuPanel: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: AppSpacing.xSmall) {
-                Image(systemName: "magnifyingglass")
-                    .font(AppFont.small)
-                    .foregroundStyle(.tertiary)
-                TextField("Filter methods", text: $methodFilter)
-                    .textFieldStyle(.plain)
-                    .focusEffectDisabled()
-                    .font(AppFont.small)
-                    .focused($methodFilterFieldFocused)
-                    .onSubmit {
-                        guard let pick = keyboardMethod ?? filteredMethods.first else { return }
-                        pickMethod(pick)
-                    }
-                    .onExitCommand { isMethodMenuVisible = false }
-                    .onKeyPress(.upArrow) {
-                        moveKeyboardMethod(by: -1)
-                        return .handled
-                    }
-                    .onKeyPress(.downArrow) {
-                        moveKeyboardMethod(by: 1)
-                        return .handled
-                    }
-                    .onChange(of: methodFilter) { _, _ in
-                        // A new filter invalidates the arrowed position.
-                        keyboardMethod = nil
-                    }
-            }
-            .borderlessFieldChrome(isFocused: methodFilterFieldFocused)
-            .padding(.horizontal, AppSpacing.small)
-            .frame(minHeight: 30)
-
-            Divider()
-
-            Group {
-                if filteredMethods.isEmpty {
-                    Text("No Matching Method")
-                        .font(AppFont.emptyStateBody)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 28)
-                } else {
-                    ForEach(filteredMethods) { method in
-                        Button {
-                            pickMethod(method)
-                        } label: {
-                            Text(method.rawValue)
-                                .font(AppFont.small.weight(.semibold))
-                                .foregroundStyle(method.color)
-                                .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
-                                .padding(.horizontal, AppSpacing.small)
-                                .background(
-                                    RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                                        .fill(
-                                            method == draft.httpMethod || method == hoveredMethod
-                                                || method == keyboardMethod
-                                                ? AppColor.subtleBackground
-                                                : Color.clear
-                                        )
-                                )
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .onHover { hovering in
-                            hoveredMethod = hovering ? method : nil
-                            // A single highlight: the pointer takes over from
-                            // the keyboard position.
-                            if hovering { keyboardMethod = nil }
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal, AppSpacing.xSmall)
-            .padding(.vertical, AppSpacing.xSmall)
-        }
-        .frame(width: 144)
-        .popupPanel()
-    }
-
     // MARK: - Section tabs
 
     private var sectionTabs: some View {
@@ -968,7 +831,9 @@ private struct SplicedBarRestOutline: ViewModifier {
 
 // MARK: - Method picker
 
-private struct MethodMenuAnchorKey: PreferenceKey {
+/// The URL bar row's bounds, consumed by ContentView to place the
+/// window-level method dropdown (see `methodMenuOverlay` there).
+struct MethodMenuAnchorKey: PreferenceKey {
     static let defaultValue: Anchor<CGRect>? = nil
     static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
         value = value ?? nextValue()
@@ -1040,5 +905,125 @@ private struct MethodPicker: View {
             .opacity(isExpanded ? 1 : 0)
         }
         .frame(width: AppSize.methodPickerWidth)
+    }
+}
+
+/// Postman-style method dropdown: a filter field up top (type to narrow
+/// the list, Return picks the first match), then colored method names,
+/// the current one (or the hovered one) highlighted with a soft pill.
+/// Rendered at window level by ContentView (see `methodMenuOverlay`), so
+/// it carries its own filter/hover/keyboard state and talks back through
+/// callbacks - it cannot reach the editor's draft directly.
+struct MethodMenuPanel: View {
+    /// Current method of the editor draft; shown highlighted until a pick.
+    var selectedMethod: HTTPMethod
+    /// Pick routed back into the draft (via `pendingMethodPick`).
+    var onPick: (HTTPMethod) -> Void
+    /// Backdrop click / Escape dismissal.
+    var onDismiss: () -> Void
+
+    /// The dropdown's type-to-filter query.
+    @State private var filter = ""
+    /// Method under the pointer (hover highlight).
+    @State private var hoveredMethod: HTTPMethod?
+    /// Method moved to with ↑/↓. Return picks this (falling back to the
+    /// first match); nil until the user arrows.
+    @State private var keyboardMethod: HTTPMethod?
+    @FocusState private var filterFieldFocused: Bool
+
+    /// Methods matching the filter (empty shows all).
+    private var filteredMethods: [HTTPMethod] {
+        guard !filter.isEmpty else { return HTTPMethod.allCases }
+        return HTTPMethod.allCases.filter { $0.rawValue.localizedCaseInsensitiveContains(filter) }
+    }
+
+    /// Moves the keyboard selection in the dropdown, clamped to the current
+    /// matches. Starts from the current method so the first arrow lands on a
+    /// neighbor, not the list edge.
+    private func moveKeyboardMethod(by delta: Int) {
+        guard !filteredMethods.isEmpty else { return }
+        let base = keyboardMethod ?? selectedMethod
+        let idx = filteredMethods.firstIndex(of: base) ?? (delta > 0 ? -1 : filteredMethods.count)
+        keyboardMethod = filteredMethods[min(max(idx + delta, 0), filteredMethods.count - 1)]
+        hoveredMethod = nil
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: AppSpacing.xSmall) {
+                Image(systemName: "magnifyingglass")
+                    .font(AppFont.small)
+                    .foregroundStyle(.tertiary)
+                TextField("Filter methods", text: $filter)
+                    .textFieldStyle(.plain)
+                    .focusEffectDisabled()
+                    .font(AppFont.small)
+                    .focused($filterFieldFocused)
+                    .onSubmit {
+                        guard let pick = keyboardMethod ?? filteredMethods.first else { return }
+                        onPick(pick)
+                    }
+                    .onExitCommand { onDismiss() }
+                    .onKeyPress(.upArrow) {
+                        moveKeyboardMethod(by: -1)
+                        return .handled
+                    }
+                    .onKeyPress(.downArrow) {
+                        moveKeyboardMethod(by: 1)
+                        return .handled
+                    }
+                    .onChange(of: filter) { _, _ in
+                        // A new filter invalidates the arrowed position.
+                        keyboardMethod = nil
+                    }
+            }
+            .borderlessFieldChrome(isFocused: filterFieldFocused)
+            .padding(.horizontal, AppSpacing.small)
+            .frame(minHeight: 30)
+
+            Divider()
+
+            Group {
+                if filteredMethods.isEmpty {
+                    Text("No Matching Method")
+                        .font(AppFont.emptyStateBody)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 28)
+                } else {
+                    ForEach(filteredMethods) { method in
+                        Button {
+                            onPick(method)
+                        } label: {
+                            Text(method.rawValue)
+                                .font(AppFont.small.weight(.semibold))
+                                .foregroundStyle(method.color)
+                                .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+                                .padding(.horizontal, AppSpacing.small)
+                                .background(
+                                    RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                                        .fill(
+                                            method == selectedMethod || method == hoveredMethod
+                                                || method == keyboardMethod
+                                                ? AppColor.subtleBackground
+                                                : Color.clear
+                                        )
+                                )
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .onHover { hovering in
+                            hoveredMethod = hovering ? method : nil
+                            // A single highlight: the pointer takes over from
+                            // the keyboard position.
+                            if hovering { keyboardMethod = nil }
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, AppSpacing.xSmall)
+            .padding(.vertical, AppSpacing.xSmall)
+        }
+        .frame(width: 144)
+        .popupPanel()
     }
 }
