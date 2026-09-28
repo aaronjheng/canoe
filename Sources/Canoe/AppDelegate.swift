@@ -48,6 +48,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         mainWindow.tabbingMode = .disallowed
         mainWindow.tabbingIdentifier = "Canoe"
         mainWindow.collectionBehavior.insert(.fullScreenPrimary)
+        // ARC owns the window: with the default isReleasedWhenClosed, close
+        // would release it a second time and crash at the run loop's pool
+        // drain (see windowWillClose).
+        mainWindow.isReleasedWhenClosed = false
         // Enforce the minimum interactively: the SwiftUI frame(minWidth:)
         // modifier does not propagate to the NSWindow, and a restored frame
         // must be clamped too (see the autosave name below).
@@ -183,6 +187,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         )
         window.contentViewController = split
         window.tabbingMode = .disallowed
+        // ARC owns the window (see windowWillClose).
+        window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 780, height: 520)
         window.setContentSize(NSSize(width: 780, height: 520))
         let toolbarController = SettingsToolbarController(navigation: navigation)
@@ -201,10 +207,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// Releases the Settings window (and its split/toolbar controllers) on
     /// close instead of holding a hidden zombie: reopening builds a fresh
     /// window instead of reusing stale navigation state.
+    ///
+    /// The release is deferred past the close call: `windowWillClose` runs
+    /// inside `-[NSWindow close]`, so dropping ARC's last reference there
+    /// deallocates the window mid-close while AppKit still holds its own
+    /// close-time reference - a double release that only surfaces later, as
+    /// a crash when the run loop drains the autorelease pool. With
+    /// `isReleasedWhenClosed = false` ARC owns the window outright, so the
+    /// refs are safe to drop once close returns.
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow, window == settingsWindow else { return }
-        settingsWindow = nil
-        settingsToolbarController = nil
+        DispatchQueue.main.async { [weak self, weak window] in
+            // Identity: a reopen could have replaced the state already.
+            // Visible: reopened before this ran - it is live again, so its
+            // own close will schedule a fresh disposal.
+            guard let self, let window, self.settingsWindow === window, !window.isVisible else { return }
+            self.settingsWindow = nil
+            self.settingsToolbarController = nil
+        }
     }
 
     // MARK: - Inspectors
