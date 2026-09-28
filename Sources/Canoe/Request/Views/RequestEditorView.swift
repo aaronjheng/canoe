@@ -337,7 +337,7 @@ struct RequestEditorView: View {
             Divider()
             sectionContent
         }
-        .background(.background)
+        .background(AppColor.controlBackground)
         // Click-anywhere-to-blur for the name field is driven by an NSEvent
         // monitor (see installNameDismissMonitor) - deliberately NOT a
         // SwiftUI tap gesture: a root gesture delays primary mouse events

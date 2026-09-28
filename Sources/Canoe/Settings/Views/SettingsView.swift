@@ -57,6 +57,8 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(AppColor.controlBackground)
     }
 
     // MARK: - Sync
@@ -99,6 +101,8 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(AppColor.controlBackground)
     }
 
     private var syncStatus: String {

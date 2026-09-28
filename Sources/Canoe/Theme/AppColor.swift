@@ -51,36 +51,56 @@ enum AppColor {
 
     // MARK: - Backgrounds
 
-    static let codeBackground: Color = Color(nsColor: .textBackgroundColor)
-    static let controlBackground: Color = Color(nsColor: .controlBackgroundColor)
+    /// Code / response-body surfaces. Tracks `controlBackground`: both are
+    /// the app's content layer.
+    static let codeBackground = dynamic(
+        light: RGB(red: 255, green: 255, blue: 255),
+        dark: RGB(red: 33, green: 33, blue: 33)
+    )
+    /// The app's content layer: center panes, the status bar, boxed fields,
+    /// and floating popup cards. White in light mode; the fixed #212121 in
+    /// dark - one neutral step below the window chrome.
+    static let controlBackground = dynamic(
+        light: RGB(red: 255, green: 255, blue: 255),
+        dark: RGB(red: 33, green: 33, blue: 33)
+    )
     /// Barely-there wash for borderless input fields (the variable editors).
     static let fieldBackground: Color = Color.primary.opacity(0.03)
     /// Hover fill for inputs: one luminance step brighter than the idle
     /// wash (toward white in light mode, a charcoal step up in dark).
     static let fieldHoverBackground: Color = dynamic(
         light: RGB(red: 255, green: 255, blue: 255),
-        dark: RGB(red: 50, green: 50, blue: 52)
+        dark: RGB(red: 50, green: 50, blue: 50)
     )
     static let fieldHoverBorder: Color = Color.primary.opacity(0.24)
     /// Focus fill for inputs: the brightest raised surface - every focused
     /// field reads the same whether it started as a wash or a clear pill.
     static let fieldFocusBackground: Color = dynamic(
         light: RGB(red: 255, green: 255, blue: 255),
-        dark: RGB(red: 58, green: 58, blue: 60)
+        dark: RGB(red: 58, green: 58, blue: 58)
     )
     /// Column-header fill for the variables tables: a fixed light gray in
-    /// light mode (#F9F9F9), a matching charcoal step in dark mode.
+    /// light mode (#F9F9F9), a neutral charcoal step above the content
+    /// layer in dark mode.
     static let tableHeaderBackground: Color = dynamic(
         light: RGB(red: 249, green: 249, blue: 249),
-        dark: RGB(red: 44, green: 44, blue: 46)
+        dark: RGB(red: 44, green: 44, blue: 44)
     )
     /// Primary window-chrome fill (#F9F9F9 in light mode): the fixed gray
     /// surface every framing panel shares - top bar, sidebar, tab strip,
     /// and the side inspectors - so the app reads as one continuous frame
-    /// a visible step away from the center content.
+    /// a visible step away from the center content. Neutral #262626 dark.
     static let primaryBackground: Color = dynamic(
         light: RGB(red: 249, green: 249, blue: 249),
-        dark: RGB(red: 37, green: 37, blue: 38)
+        dark: RGB(red: 38, green: 38, blue: 38)
+    )
+    /// AppKit twin of `controlBackground` for `NSWindow.backgroundColor`:
+    /// the detail/content column has no background of its own and shows the
+    /// window fill, so an explicit content-layer color keeps the system's
+    /// desktop-tinted window background from bleeding through in dark mode.
+    static let controlBackgroundNS: NSColor = dynamicNS(
+        light: RGB(red: 255, green: 255, blue: 255),
+        dark: RGB(red: 33, green: 33, blue: 33)
     )
     /// Hover wash for inline rows / text controls (tree rows, method
     /// picker, link labels). Icon chrome uses `tabHoverBackground` instead
@@ -148,12 +168,15 @@ enum AppColor {
     }
 
     private static func dynamic(light: RGB, dark: RGB) -> Color {
+        Color(nsColor: dynamicNS(light: light, dark: dark))
+    }
+
+    private static func dynamicNS(light: RGB, dark: RGB) -> NSColor {
         let lightColor = light.nsColor
         let darkColor = dark.nsColor
-        let dynamic = NSColor(
+        return NSColor(
             name: nil,
             dynamicProvider: { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? darkColor : lightColor }
         )
-        return Color(nsColor: dynamic)
     }
 }

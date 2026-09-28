@@ -13,6 +13,8 @@ struct SettingsSidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .background(AppColor.primaryBackground)
     }
 
     /// `List` hands back an optional selection; routing it through `select`

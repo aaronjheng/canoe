@@ -152,7 +152,7 @@ struct WorkspacesView: View {
             Divider()
             WorkspaceListStatusBarView(workspaceCount: workspaces.count)
         }
-        .background(.background)
+        .background(AppColor.controlBackground)
         .confirmationDialog(
             deleteTitle,
             isPresented: Binding(

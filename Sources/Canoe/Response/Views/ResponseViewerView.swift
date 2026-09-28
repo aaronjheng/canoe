@@ -81,7 +81,7 @@ struct ResponseViewerView: View {
             }
             content
         }
-        .background(.background)
+        .background(AppColor.controlBackground)
     }
 
     // MARK: - Content
@@ -958,6 +958,8 @@ struct ResponseViewerView: View {
                         }
                     }
                     .font(AppFont.small)
+                    .scrollContentBackground(.hidden)
+                    .background(AppColor.controlBackground)
                     .contextMenu {
                         Button("Copy All as Text") {
                             copyToPasteboard(

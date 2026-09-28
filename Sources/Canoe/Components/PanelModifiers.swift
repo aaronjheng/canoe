@@ -161,7 +161,7 @@ struct PopupPanelModifier: ViewModifier {
         content
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                    .fill(.background)
+                    .fill(AppColor.controlBackground)
                     .shadow(color: AppColor.popupShadow, radius: 12, y: 4)
             )
             .overlay(
@@ -233,6 +233,13 @@ extension View {
 
     func popupPanel() -> some View {
         modifier(PopupPanelModifier())
+    }
+
+    /// Sheet chrome: replaces the system presentation material (which picks up
+    /// the desktop tint and reads warm in dark mode) with the theme's chrome
+    /// color, so a sheet matches the window it drops from.
+    func sheetSurface() -> some View {
+        presentationBackground(AppColor.primaryBackground)
     }
 
     /// Border language for fields: rest is the strong border at the

@@ -156,7 +156,7 @@ struct KeyValueEditor<T: KVItem>: View {
             .padding(.bottom, AppSpacing.medium)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(.background)
+        .background(AppColor.controlBackground)
         .onChange(of: focusedCell) { _, newValue in
             pruneAbandonedEmptyRows(newValue)
         }
@@ -252,7 +252,7 @@ struct KeyValueEditor<T: KVItem>: View {
                 allowsReorder: allowsReorder
             )
         }
-        .background(.background)
+        .background(AppColor.controlBackground)
         .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)

@@ -38,6 +38,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         )
         mainWindow.center()
         mainWindow.title = "Canoe"
+        // Explicit content-layer window fill: the detail column has no
+        // background of its own, and the system's window background is
+        // desktop-tinted in dark mode.
+        mainWindow.backgroundColor = AppColor.controlBackgroundNS
         // Postman-style top bar: the SwiftUI content supplies the window
         // chrome (a solid top bar hosting the traffic lights), so the system
         // title bar is hidden - and its liquid-glass material with it.
@@ -187,6 +191,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         )
         window.contentViewController = split
         window.tabbingMode = .disallowed
+        // Match the main window: content-layer fill behind a transparent
+        // titlebar, with the unified toolbar drawing over the app surfaces
+        // instead of the system material.
+        window.backgroundColor = AppColor.controlBackgroundNS
+        window.titlebarAppearsTransparent = true
         // ARC owns the window (see windowWillClose).
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 780, height: 520)

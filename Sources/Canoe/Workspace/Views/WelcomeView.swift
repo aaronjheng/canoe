@@ -28,7 +28,7 @@ struct WelcomeView: View {
             .buttonStyle(SendButtonStyle())
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.background)
+        .background(AppColor.controlBackground)
     }
 
     /// The app icon rendered large, with a soft shadow like the Postman

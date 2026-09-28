@@ -35,7 +35,7 @@ struct VariableSuggestionList: View {
         .frame(width: AppSize.inspectorWidth)
         .background(
             RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                .fill(.background)
+                .fill(AppColor.controlBackground)
         )
         .overlay(
             RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)

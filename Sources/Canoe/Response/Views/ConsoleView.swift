@@ -31,7 +31,7 @@ struct ConsoleView: View {
                 entryList
             }
         }
-        .background(.background)
+        .background(AppColor.controlBackground)
     }
 
     // MARK: - Toolbar

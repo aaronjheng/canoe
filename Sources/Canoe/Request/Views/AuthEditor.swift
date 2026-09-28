@@ -106,7 +106,7 @@ struct AuthorizationForm: View {
                 .padding(AppSpacing.medium)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(.background)
+        .background(AppColor.controlBackground)
     }
 
     // MARK: - Left column (type picker + helper)
