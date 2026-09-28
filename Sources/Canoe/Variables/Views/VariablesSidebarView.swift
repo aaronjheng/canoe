@@ -266,10 +266,6 @@ private struct ScopeSection: View {
     @Binding var revealedSecrets: Set<UUID>
     let onEdit: () -> Void
 
-    /// Leading inset for the hairline between rows so it lines up with the
-    /// key column (used-marker dot + gap).
-    private static let rowIndent: CGFloat = AppSpacing.large + 9
-
     private enum HintAction {
         /// Opens the scope's variable editor in a tab.
         case openEditor
@@ -341,7 +337,9 @@ private struct ScopeSection: View {
     }
 
     private var rows: some View {
-        ForEach(Array(visibleVariables.enumerated()), id: \.element.id) { index, variable in
+        // No hairlines between rows: the sections are divided, the variables
+        // within a section read as one compact list.
+        ForEach(visibleVariables) { variable in
             VariableRow(
                 variable: variable,
                 // Disabled rows are excluded from resolution, so they never
@@ -361,10 +359,6 @@ private struct ScopeSection: View {
                 },
                 revealedSecrets: $revealedSecrets
             )
-            if index < visibleVariables.count - 1 {
-                Divider()
-                    .padding(.leading, Self.rowIndent)
-            }
         }
     }
 
@@ -587,7 +581,7 @@ private struct VariableRow: View {
         }
         .padding(.leading, AppSpacing.large)
         .padding(.trailing, AppSpacing.medium)
-        .padding(.vertical, AppSpacing.small)
+        .padding(.vertical, AppSpacing.xSmall)
         .onHover { isHovering = $0 }
     }
 
