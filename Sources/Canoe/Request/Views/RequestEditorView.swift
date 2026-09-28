@@ -186,6 +186,10 @@ struct RequestEditorView: View {
     @State private var isURLBarHovered = false
     /// Whether the method dropdown panel is open.
     @State private var isMethodMenuVisible = false
+    /// Set by a method pick so the dropdown's close handler hands focus back
+    /// to the URL bar. Other close paths (Escape, backdrop click, request
+    /// switch) leave focus alone.
+    @State private var refocusURLAfterMethodPick = false
     /// Method under the pointer in the dropdown (hover highlight).
     @State private var hoveredMethod: HTTPMethod?
     /// Method moved to with ↑/↓ in the dropdown filter. Return picks this
@@ -222,6 +226,16 @@ struct RequestEditorView: View {
         let idx = filteredMethods.firstIndex(of: base) ?? (delta > 0 ? -1 : filteredMethods.count)
         keyboardMethod = filteredMethods[min(max(idx + delta, 0), filteredMethods.count - 1)]
         hoveredMethod = nil
+    }
+
+    /// Picks a method from the dropdown. The focus handoff is deferred to the
+    /// close handler (see `onChange(of: isMethodMenuVisible)`) rather than
+    /// claimed here: the pick runs while the filter field is still tearing
+    /// down, and a claim from inside that teardown races first responder.
+    private func pickMethod(_ method: HTTPMethod) {
+        draft.httpMethod = method
+        refocusURLAfterMethodPick = true
+        isMethodMenuVisible = false
     }
     @State private var methodMenuAnchor: Anchor<CGRect>?
     /// The raw text currently shown in the URL bar.
@@ -407,13 +421,22 @@ struct RequestEditorView: View {
             guard focused == .url else { return }
             isMethodMenuVisible = false
         }
-        .onChange(of: isMethodMenuVisible) { _, visible in
+        .onChange(of: isMethodMenuVisible) { wasOpen, visible in
             guard visible else {
                 // Dismissing must release the filter's focus claim and drop
                 // the arrowed position; otherwise a stranded focus keeps
                 // swallowing keystrokes invisibly.
                 methodFilterFieldFocused = false
                 keyboardMethod = nil
+                // A pick hands the keyboard back to the URL bar so typing
+                // continues there (Postman-style). Deferred to this close
+                // observation because the pick action runs while the filter
+                // field is still tearing down. Other closes - Escape,
+                // backdrop click, a request switch - leave focus alone; the
+                // request-switch handler clears it deliberately.
+                if wasOpen {
+                    urlFieldFocused = .url
+                }
                 return
             }
             urlFieldFocused = nil
@@ -594,6 +617,13 @@ struct RequestEditorView: View {
                             isNameFieldFocused = false
                         }
                     )
+                    // Hairline divider between the two halves. The container
+                    // supplies the rest outline; each half draws only its own
+                    // focus accent, so focus targets just one side.
+                    Rectangle()
+                        .fill(AppColor.border)
+                        .frame(width: AppLine.hairline, height: AppSize.pickerDividerHeight)
+                        .allowsHitTesting(false)
                     Color.clear
                         .frame(height: 30)
                         .overlay(alignment: .topLeading) {
@@ -601,6 +631,15 @@ struct RequestEditorView: View {
                         }
                         .zIndex(1)
                 }
+                // Continuous rest outline (Postman-style): one border spans
+                // the spliced bar and retreats behind the half that owns
+                // focus (see SplicedBarRestOutline).
+                .modifier(
+                    SplicedBarRestOutline(
+                        methodMenuExpanded: isMethodMenuVisible,
+                        urlFieldFocused: urlFieldFocused == .url
+                    )
+                )
 
                 // One morphing slot: Send becomes Cancel while a response is
                 // pending. A click meant for Cancel can land on the freshly
@@ -660,7 +699,6 @@ struct RequestEditorView: View {
             placeholderLeadingPadding: 0,
             focus: $urlFieldFocused,
             focusValue: .url,
-            autoFocusOnUpdate: false,
             onCommit: { urlFieldFocused = nil },
             onHoverChanged: { hover in
                 isURLBarHovered = hover
@@ -669,8 +707,9 @@ struct RequestEditorView: View {
         .padding(.horizontal, AppSpacing.compact)
         .padding(.vertical, 3)
         // Background tiers mirror the method picker: idle wash at rest,
-        // brighter hover fill, brightest focus fill (accent border at the
-        // standard field width).
+        // brighter hover fill, brightest focus fill. Only the focus accent is
+        // drawn here (the rest outline comes from SplicedBarRestOutline), and
+        // it stays on the editor so it follows the wrapped expansion.
         .background(
             urlFieldFocused == .url
                 ? AppColor.fieldFocusBackground
@@ -680,14 +719,11 @@ struct RequestEditorView: View {
         .overlay {
             shape
                 .strokeBorder(
-                    // Both halves of the bar share the same border tier: the
-                    // method picker's idle/hover border never changes, so the
-                    // URL bar keeps its border constant too and signals hover
-                    // through the fill instead.
-                    urlFieldFocused == .url ? AppColor.accent : AppColor.borderStrong,
-                    lineWidth: urlFieldFocused == .url ? AppLine.focusedField : AppLine.field
+                    AppColor.accent,
+                    lineWidth: AppLine.focusedField
                 )
                 .allowsHitTesting(false)
+                .opacity(urlFieldFocused == .url ? 1 : 0)
         }
     }
 
@@ -732,8 +768,7 @@ struct RequestEditorView: View {
                     .focused($methodFilterFieldFocused)
                     .onSubmit {
                         guard let pick = keyboardMethod ?? filteredMethods.first else { return }
-                        draft.httpMethod = pick
-                        isMethodMenuVisible = false
+                        pickMethod(pick)
                     }
                     .onExitCommand { isMethodMenuVisible = false }
                     .onKeyPress(.upArrow) {
@@ -764,8 +799,7 @@ struct RequestEditorView: View {
                 } else {
                     ForEach(filteredMethods) { method in
                         Button {
-                            draft.httpMethod = method
-                            isMethodMenuVisible = false
+                            pickMethod(method)
                         } label: {
                             Text(method.rawValue)
                                 .font(AppFont.small.weight(.semibold))
@@ -893,6 +927,45 @@ struct RequestEditorView: View {
     }
 }
 
+/// Rest outline for the spliced URL bar (method picker | divider | URL
+/// field): one continuous `borderStrong` outline while neither half owns
+/// focus, retreating to the *other* half when one does. The focused half
+/// draws its own accent ring, and this overlay paints last - left in place
+/// over a focused half, its outer pixel would cover the accent. Masking the
+/// focused half away also keeps the stroke off the URL editor's wrap
+/// expansion, which grows past the bar while focused.
+private struct SplicedBarRestOutline: ViewModifier {
+    /// Method dropdown open - keep the URL half's segment.
+    let methodMenuExpanded: Bool
+    /// URL field focused - keep the method picker's segment.
+    let urlFieldFocused: Bool
+
+    private var outline: some View {
+        RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+            .strokeBorder(AppColor.borderStrong, lineWidth: AppLine.field)
+    }
+
+    func body(content: Content) -> some View {
+        content.overlay {
+            if methodMenuExpanded {
+                // Everything right of the divider: the container's right
+                // corners and the top/bottom edges over the URL half.
+                outline.mask {
+                    Rectangle().padding(.leading, AppSize.methodPickerWidth + AppLine.hairline)
+                }
+            } else if urlFieldFocused {
+                // Everything left of the divider: the container's left corners
+                // and the top/bottom edges over the picker.
+                outline.mask(alignment: .leading) {
+                    Rectangle().frame(width: AppSize.methodPickerWidth)
+                }
+            } else {
+                outline
+            }
+        }
+    }
+}
+
 // MARK: - Method picker
 
 private struct MethodMenuAnchorKey: PreferenceKey {
@@ -951,7 +1024,8 @@ private struct MethodPicker: View {
         .padding(.horizontal, AppSpacing.compact)
         .padding(.vertical, 3)
         // Rest is a faint wash; hover/focus lift one step brighter - same
-        // tiers as the URL bar. Border stays at the standard field width.
+        // tiers as the URL bar. Only the focus accent is drawn here; the rest
+        // outline comes from the container (see SplicedBarRestOutline).
         .background(
             isExpanded
                 ? AppColor.fieldFocusBackground
@@ -960,9 +1034,10 @@ private struct MethodPicker: View {
         )
         .overlay {
             shape.strokeBorder(
-                isExpanded ? AppColor.accent : AppColor.borderStrong,
-                lineWidth: isExpanded ? AppLine.focusedField : AppLine.field
+                AppColor.accent,
+                lineWidth: AppLine.focusedField
             )
+            .opacity(isExpanded ? 1 : 0)
         }
         .frame(width: AppSize.methodPickerWidth)
     }

@@ -94,7 +94,9 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
     /// single-line display surface whose popup owns the keystrokes must opt
     /// out: force-focusing an NSTextField mid-typing starts a fresh editing
     /// session whose select-all replaces the whole text with the next
-    /// keystroke.
+    /// keystroke. Single-line only: the wrapping URL branch has no fresh
+    /// session to guard against and always asserts a `focus` claim (the URL
+    /// bar relies on that for its programmatic focus moves).
     var autoFocusOnUpdate: Bool = true
     /// Called after this field's editing session ends, whatever took the
     /// focus elsewhere (the key/value table uses it to settle the ghost row
@@ -1407,9 +1409,8 @@ extension View {
                             : (isHovered ? AppColor.fieldHoverBackground : AppColor.fieldBackground)
                     )
             )
-            // Shared border language (see focusRingBorder): the URL bar and
-            // method picker keep bespoke overlays only because their spliced
-            // UnevenRoundedRectangle shape differs.
+            // Shared border language (see focusRingBorder): fields apply the
+            // standard outline through this modifier.
             .focusRingBorder(isFocused: isFocused)
     }
 }

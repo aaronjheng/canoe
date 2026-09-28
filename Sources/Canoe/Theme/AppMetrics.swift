@@ -27,6 +27,9 @@ enum AppRadius {
 enum AppLine {
     static let field: CGFloat = 1
     static let focusedField: CGFloat = 2
+    /// Divider strokes (the URL bar's method/URL separator) - separate from
+    /// `field` so retuning a field border never thickens a divider.
+    static let hairline: CGFloat = 1
 }
 
 enum AppOpacity {
@@ -82,8 +85,9 @@ enum AppSize {
     /// Standard height of standalone controls (primary/secondary buttons,
     /// filter fields) and popup panel rows (environment picker, tab drawer).
     static let controlHeight: CGFloat = 28
-    /// Vertical divider inside the tab strip (environment picker separator).
-    static let tabStripDividerHeight: CGFloat = 18
+    /// Vertical divider inside a picker row: the tab strip environment
+    /// picker separators and the URL bar's method/URL separator.
+    static let pickerDividerHeight: CGFloat = 18
     /// Compact 16px control box in tab pills (spinner, close button) and the
     /// sidebar tree icons.
     static let compactControl: CGFloat = 16

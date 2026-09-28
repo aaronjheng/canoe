@@ -210,7 +210,7 @@ struct TabBarView: View {
             // Postman keeps the environment selector and inspector toggles in
             // the tab row; the window's dedicated toolbar row was removed.
             Divider()
-                .frame(height: AppSize.tabStripDividerHeight)
+                .frame(height: AppSize.pickerDividerHeight)
             EnvironmentPicker(isShown: $isEnvPickerShown)
                 .anchorPreference(key: EnvPickerAnchorKey.self, value: .bounds) { $0 }
             ToolbarToggleButton(
@@ -617,7 +617,7 @@ struct EnvironmentPickerPanel: View {
                         keyboard = nil
                     }
                 Divider()
-                    .frame(height: AppSize.tabStripDividerHeight)
+                    .frame(height: AppSize.pickerDividerHeight)
                 Button("New Environment", systemImage: "plus") {
                     // Same creation flow as the sidebar/menu (opens the
                     // editor tab), plus activation: picking "+"

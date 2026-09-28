@@ -172,11 +172,11 @@ struct PopupPanelModifier: ViewModifier {
 }
 
 /// Border language for fields (see `focusRingBorder`): rest is the strong
-/// border at the standard field width, focused is accent at the same width.
-/// Hover/focus fills are handled by the caller so they can pick the right
-/// idle background. The URL bar and method picker keep bespoke overlays
-/// only because their spliced UnevenRoundedRectangle shape differs - same
-/// widths, same colors.
+/// border at the standard field width, focused is accent at the wider focus
+/// width. Hover/focus fills are handled by the caller so they can pick the
+/// right idle background. The URL bar's spliced rest outline is a bespoke
+/// variant of the same language (`SplicedBarRestOutline`) because its two
+/// halves draw their own accent rings.
 struct FocusRingBorderModifier: ViewModifier {
     let isFocused: Bool
 
@@ -236,7 +236,7 @@ extension View {
     }
 
     /// Border language for fields: rest is the strong border at the
-    /// standard field width, focused is accent at the same width.
+    /// standard field width, focused is accent at the wider focus width.
     func focusRingBorder(isFocused: Bool) -> some View {
         modifier(FocusRingBorderModifier(isFocused: isFocused))
     }
