@@ -4,6 +4,32 @@ import SwiftUI
 /// Semantic color tokens used across the app, aligned with the GitHub Primer
 /// visual language: a blue accent, Primer status/method colors, and scale-
 /// based fills that adapt between light and dark appearances.
+///
+/// Light/dark correspondence
+/// =========================
+/// Every surface token carries a light and a dark value, and the two sides
+/// mirror each other. Surface map: `primaryBackground` is the window chrome
+/// (top bar, sidebar, tab strip, side inspectors); `controlBackground` is the
+/// content layer (center panes, status bar, boxed fields, popup cards);
+/// `pillBackground`-style elements and the field lift tiers sit above the
+/// surface they belong to.
+///
+/// - Polarity mirrors: light content is white against the #F9F9F9 chrome;
+///   dark content is #212121 under the #262626 chrome. A surface steps away
+///   from the content on the side its appearance dictates - the table header
+///   is darker than white content in light and lighter than dark content in
+///   dark.
+/// - Compare steps in perceptual lightness (CIE L*), not RGB distance: the
+///   same RGB delta reads several times stronger at the dark end. Current
+///   bands (dark/light ΔL* ratio): the shared-alpha wash family ~1.1-1.2,
+///   the field lift steps and table header ~1.1-1.5. Keep new values inside
+///   that band or one appearance will feel foreign.
+/// - Reuse the rungs: chrome #F9F9F9 / #262626 (the table header shares it by
+///   design), content #FFFFFF / #212121, dark field lift #2E2E2E (hover) and
+///   #303030 (focus).
+/// - Primer brand/status/syntax colors are fixed light/dark pairs. Their
+///   per-appearance contrast differs by design - that is Primer's palette,
+///   not a tuning mistake; don't hand-tune them toward equal contrast.
 enum AppColor {
     // MARK: - Brand (Primer accent)
 
@@ -70,21 +96,23 @@ enum AppColor {
     /// wash (toward white in light mode, a charcoal step up in dark).
     static let fieldHoverBackground: Color = dynamic(
         light: RGB(red: 255, green: 255, blue: 255),
-        dark: RGB(red: 50, green: 50, blue: 50)
+        dark: RGB(red: 46, green: 46, blue: 46)
     )
     static let fieldHoverBorder: Color = Color.primary.opacity(0.24)
     /// Focus fill for inputs: the brightest raised surface - every focused
     /// field reads the same whether it started as a wash or a clear pill.
+    /// The dark values keep the lift steps in the same perceptual band as
+    /// light's (~3 L* points), with the accent border carrying the emphasis.
     static let fieldFocusBackground: Color = dynamic(
         light: RGB(red: 255, green: 255, blue: 255),
-        dark: RGB(red: 58, green: 58, blue: 58)
+        dark: RGB(red: 48, green: 48, blue: 48)
     )
-    /// Column-header fill for the variables tables: a fixed light gray in
-    /// light mode (#F9F9F9), a neutral charcoal step above the content
-    /// layer in dark mode.
+    /// Column-header fill for the variables tables: the chrome tone in both
+    /// appearances - #F9F9F9 in light, #262626 in dark - so the header reads
+    /// as the same subtle step above the content layer in either mode.
     static let tableHeaderBackground: Color = dynamic(
         light: RGB(red: 249, green: 249, blue: 249),
-        dark: RGB(red: 44, green: 44, blue: 44)
+        dark: RGB(red: 38, green: 38, blue: 38)
     )
     /// Primary window-chrome fill (#F9F9F9 in light mode): the fixed gray
     /// surface every framing panel shares - top bar, sidebar, tab strip,
