@@ -1,5 +1,9 @@
 import SwiftUI
 
+/// Group panel expand/collapse: one smooth, quick curve shared by both
+/// toggles so the bottom stack slides into place instead of jumping.
+private let groupToggleAnimation: Animation = .smooth(duration: 0.25)
+
 struct SidebarView: View {
     @Environment(AppStore.self) private var store
 
@@ -46,112 +50,139 @@ private struct ItemsView: View {
         !store.sidebarFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// The Collections panel's title row.
+    private var collectionsGroupHeader: some View {
+        GroupHeader(
+            title: "Collections",
+            isExpanded: store.isCollectionsSectionExpanded,
+            onToggle: {
+                withAnimation(groupToggleAnimation) { store.toggleCollectionsSection() }
+            },
+            actions: {
+                Menu("Add", systemImage: "plus") {
+                    Button("New Collection") { store.addCollection() }
+                    Button("New Request") { store.addRequest() }
+                }
+                .menuStyle(.borderlessButton)
+                .labelStyle(.iconOnly)
+                .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
+                .foregroundStyle(.secondary)
+                .help("Add collection or request")
+            }
+        )
+    }
+
+    /// The Collections tree. The reader lets the create flow reveal a fresh
+    /// node's row (the create paths pre-expand its ancestors) so the inline
+    /// rename starts while the row is on screen - otherwise a pending rename
+    /// could fire much later, when the row happens to mount.
+    private var collectionsTree: some View {
+        ScrollViewReader { proxy in
+            LazyVStack(spacing: 0) {
+                ForEach(store.filteredCollections) { collection in
+                    CollectionTree(collection: collection)
+                        .id(collection.id)
+                }
+            }
+            .onChange(of: store.pendingInlineRenameID) { _, id in
+                guard let id else { return }
+                proxy.scrollTo(id, anchor: .center)
+            }
+        }
+    }
+
+    /// The Environments panel's title row.
+    private var environmentsGroupHeader: some View {
+        GroupHeader(
+            title: "Environments",
+            isExpanded: store.isEnvironmentsSectionExpanded,
+            onToggle: {
+                withAnimation(groupToggleAnimation) { store.toggleEnvironmentsSection() }
+            },
+            actions: {
+                Button("Add Environment", systemImage: "plus") {
+                    store.addEnvironment()
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
+                .foregroundStyle(.secondary)
+                .help("Add environment")
+            }
+        )
+    }
+
+    /// The Environments panel's rows.
+    private var environmentsRows: some View {
+        ForEach(filteredEnvironments) { env in
+            EnvironmentRow(env: env)
+        }
+    }
+
     var body: some View {
         @Bindable var store = store
         VStack(spacing: 0) {
             // Boxed: the sidebar filter reads as a proper input field
             // (four-sided hairline border, raised fill). The box replaces
-            // the old top/bottom dividers as the section boundary.
+            // the old top/bottom dividers as the section boundary; the
+            // roomier bottom gap is the leading panel's top spacing.
             FilterField(text: $store.sidebarFilter, placeholder: "Filter", isBoxed: true)
-                .padding(.vertical, AppSpacing.xSmall)
+                .padding(.top, AppSpacing.xSmall)
+                .padding(.bottom, AppSpacing.small)
             // Manual tree rows instead of `List(selection:)`: the native
             // sidebar selection is a solid accent fill that swallows the
             // HTTP method colors, and its roomy rows don't match Postman's
             // density. Custom rows use the subtle selection fill (method
             // colors stay readable) and draw their own indent guides.
-            ScrollView {
-                ScrollViewReader { proxy in
-                    LazyVStack(spacing: 0) {
-                        GroupHeader(
-                            title: "Collections",
-                            // Matches the rows below, which render the filtered
-                            // list (identical to the total when no filter is set).
-                            count: store.filteredCollections.count,
-                            isExpanded: store.isCollectionsSectionExpanded,
-                            onToggle: { store.toggleCollectionsSection() },
-                            actions: {
-                                Menu("Add", systemImage: "plus") {
-                                    Button("New Collection") { store.addCollection() }
-                                    Button("New Request") { store.addRequest() }
-                                }
-                                .menuStyle(.borderlessButton)
-                                .labelStyle(.iconOnly)
-                                .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
-                                .foregroundStyle(.secondary)
-                                .help("Add collection or request")
-                            }
-                        )
-                        .padding(.top, AppSpacing.xSmall)
-                        .padding(.bottom, AppSpacing.xxSmall)
+            //
+            // Postman's panel rule: the panels keep a fixed order, with the
+            // flexible region after the working panel (Collections). While
+            // it's expanded that region holds the room, and the panels under
+            // it anchor to the bottom edge and grow upward; collapsing it
+            // drops the region, so every header packs at the top instead of
+            // leaving a dead gap over nothing.
+            GeometryReader { viewport in
+                ScrollView {
+                    VStack(spacing: 0) {
+                        collectionsGroupHeader
                         if store.isCollectionsSectionExpanded {
-                            ForEach(store.filteredCollections) { collection in
-                                CollectionTree(collection: collection)
-                                    .id(collection.id)
-                            }
+                            collectionsTree
+                            Spacer(minLength: 0)
                         }
-                        GroupHeader(
-                            title: "Environments",
-                            // Matches the rows below (see Collections above).
-                            count: filteredEnvironments.count,
-                            isExpanded: store.isEnvironmentsSectionExpanded,
-                            onToggle: { store.toggleEnvironmentsSection() },
-                            actions: {
-                                Button("Add Environment", systemImage: "plus") {
-                                    store.addEnvironment()
-                                }
-                                .labelStyle(.iconOnly)
-                                .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
-                                .foregroundStyle(.secondary)
-                                .help("Add environment")
-                            }
-                        )
-                        .padding(.top, AppSpacing.xSmall)
-                        .padding(.bottom, AppSpacing.xxSmall)
+                        GroupDivider()
+                        environmentsGroupHeader
                         if store.isEnvironmentsSectionExpanded {
-                            ForEach(filteredEnvironments) { env in
-                                EnvironmentRow(env: env)
-                            }
+                            environmentsRows
                         }
                     }
                     .padding(.horizontal, AppSpacing.xSmall)
                     .padding(.bottom, AppSpacing.small)
-                    .frame(maxWidth: .infinity)
-                    // VS Code create flow: reveal the fresh node's row (the
-                    // create paths pre-expand its ancestors) so the inline
-                    // rename starts while the row is on screen - otherwise a
-                    // pending rename could fire much later, when the row
-                    // happens to mount.
-                    .onChange(of: store.pendingInlineRenameID) { _, id in
-                        guard let id else { return }
-                        proxy.scrollTo(id, anchor: .center)
-                    }
+                    .frame(maxWidth: .infinity, minHeight: viewport.size.height, alignment: .top)
                 }
-            }
-            .overlay {
-                if store.visibleCollections.isEmpty && store.activeWorkspaceEnvironments.isEmpty {
-                    ContentUnavailableView(
-                        "Nothing Here",
-                        systemImage: "folder",
-                        description: Text("Press ⌘N to create a request.")
-                    )
-                } else if isFiltering && store.filteredCollections.isEmpty && filteredEnvironments.isEmpty {
-                    ContentUnavailableView(
-                        "No Results",
-                        systemImage: "magnifyingglass",
-                        description: Text("Nothing matches the current filter.")
-                    )
+                .overlay {
+                    if store.visibleCollections.isEmpty && store.activeWorkspaceEnvironments.isEmpty {
+                        ContentUnavailableView(
+                            "Nothing Here",
+                            systemImage: "folder",
+                            description: Text("Press ⌘N to create a request.")
+                        )
+                    } else if isFiltering && store.filteredCollections.isEmpty && filteredEnvironments.isEmpty {
+                        ContentUnavailableView(
+                            "No Results",
+                            systemImage: "magnifyingglass",
+                            description: Text("Nothing matches the current filter.")
+                        )
+                    }
                 }
             }
         }
     }
 }
 
-/// A collapsible `> COLLECTIONS (3)  +` group header. The whole row toggles
+/// A collapsible `> COLLECTIONS  +` group header. The whole row toggles
 /// the section (Postman-style) and lights up on hover like the tree rows
 /// below it; the trailing actions stay clickable inside the row.
 private struct GroupHeader<Actions: View>: View {
     let title: String
-    let count: Int
     let isExpanded: Bool
     let onToggle: () -> Void
     @ViewBuilder let actions: () -> Actions
@@ -172,13 +203,7 @@ private struct GroupHeader<Actions: View>: View {
                         // header content column but the spacing matches.
                         .frame(width: AppSize.treeChevronWidth)
                     Text(title.uppercased())
-                        .font(AppFont.microHeader)
-                        .foregroundStyle(.secondary)
-                        .padding(.leading, AppSpacing.xSmall)
-                    Text("\(count)")
-                        .font(AppFont.countBadge)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.sidebarGroupHeader)
                         .padding(.leading, AppSpacing.xSmall)
                 }
                 // The label keeps the header's old x position; the hover
@@ -200,6 +225,18 @@ private struct GroupHeader<Actions: View>: View {
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         .help(isExpanded ? "Collapse \(title)" : "Expand \(title)")
+    }
+}
+
+/// Hairline rule drawn between sidebar groups (Postman marks every section
+/// boundary this way). Inset from the leading edge so the rule starts just
+/// left of the group's chevron, and drawn tight against the group header
+/// below it - no padding of its own, so the boundary reads as one line.
+private struct GroupDivider: View {
+    var body: some View {
+        AppColor.hairline
+            .frame(height: AppLine.hairline)
+            .padding(.leading, AppSpacing.small)
     }
 }
 
@@ -314,11 +351,17 @@ private struct HistoryView: View {
                 // Same ScrollView + LazyVStack as the Items tab (not List):
                 // one row language for hover, padding, and selection.
                 ScrollView {
+                    let groups = historyDayGroups(store.history)
                     LazyVStack(spacing: 0) {
-                        ForEach(historyDayGroups(store.history)) { group in
+                        ForEach(groups) { group in
+                            // Day groups carry the same group rule as the
+                            // Collections/Environments boundary; the
+                            // toolbar's divider already closes the list top.
+                            if group.id != groups[0].id {
+                                GroupDivider()
+                            }
                             GroupHeader(
                                 title: group.title,
-                                count: group.entries.count,
                                 isExpanded: !collapsedDays.contains(group.id),
                                 onToggle: { toggleDay(group.id) },
                                 actions: {}
@@ -635,7 +678,7 @@ private struct CollectionTree: View {
             .padding(.trailing, AppSpacing.xSmall)
         }
         .padding(.leading, AppSize.treeExpanderColumn)
-        .padding(.vertical, AppSpacing.xSmall)
+        .frame(height: AppSize.collectionRowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
@@ -705,7 +748,7 @@ private struct CollectionTree: View {
                     }
                     // Tree level 1: one expander column in from the header.
                     .padding(.leading, AppSize.treeExpanderColumn)
-                    .padding(.vertical, AppSpacing.xSmall)
+                    .frame(height: AppSize.collectionRowHeight)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)

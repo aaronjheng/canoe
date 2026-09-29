@@ -45,6 +45,10 @@ enum AppFont {
     /// Uppercase micro-headers above grouped lists (sidebar sections, console
     /// groups). Small + semibold, often paired with `textCase(.uppercase)`.
     static let microHeader = Font.system(size: 12, weight: .semibold)
+    /// Sidebar group headers (`COLLECTIONS`, `Today`): one step under the
+    /// 12pt tree labels, so the uppercase titles recede behind the items
+    /// they group.
+    static let sidebarGroupHeader = Font.system(size: 10, weight: .semibold)
     /// Column headers in tables (Workspaces, key/value editors).
     static let columnHeader = Font.system(size: 12, weight: .medium)
     /// Empty-state and "no results" body copy.

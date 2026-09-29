@@ -120,4 +120,7 @@ enum AppSize {
     /// The chevron column plus its trailing gap - the fixed offset between a
     /// row's chevron and its content column (folder icon, method tag, name).
     static let treeExpanderColumn: CGFloat = treeChevronWidth + AppSpacing.xSmall
+    /// Fixed height of a collection row (the tree's root level), so the row
+    /// stays a dense 24pt band instead of growing with its content padding.
+    static let collectionRowHeight: CGFloat = 24
 }

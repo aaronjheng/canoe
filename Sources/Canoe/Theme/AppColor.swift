@@ -140,10 +140,21 @@ enum AppColor {
     /// third emphasis step).
     static let tertiaryText: Color = Color(nsColor: .tertiaryLabelColor)
 
-    /// Selected-row fill. Uses the app accent (not the system accentColor)
-    /// so selection stays deterministic across user accent choices and
-    /// never competes with the method colors inside the row.
-    static let selectionBackground: Color = accent.opacity(0.14)
+    /// Selected-row fill. A hueless neutral (not the app accent, not the
+    /// system accentColor) so selection never competes with the method colors
+    /// inside the row. Light #E6E6E6; the dark #333333 holds the same
+    /// perceptual step above the #262626 chrome.
+    static let selectionBackground: Color = dynamic(
+        light: RGB(red: 230, green: 230, blue: 230),
+        dark: RGB(red: 51, green: 51, blue: 51)
+    )
+
+    /// Selected-row fill under the pointer: one further L* step than
+    /// `selectionBackground`, so a selected row still deepens on hover.
+    static let selectionHoverBackground: Color = dynamic(
+        light: RGB(red: 223, green: 223, blue: 223),
+        dark: RGB(red: 56, green: 56, blue: 56)
+    )
 
     /// Border/hairline tokens for cards, tables, and popups. One scale so
     /// strokes stay consistent across appearances instead of scattering

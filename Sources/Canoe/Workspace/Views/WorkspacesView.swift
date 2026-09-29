@@ -121,11 +121,11 @@ struct WorkspacesView: View {
             )
     }
 
-    /// Checked beats hovered: a selected row keeps its accent wash under the
-    /// pointer, which only deepens it a step.
+    /// Checked beats hovered: a selected row keeps its selection fill under
+    /// the pointer, which only deepens it a step.
     private func rowBackground(_ workspace: Workspace) -> Color {
         if checked.contains(workspace.id) {
-            return hoveredID == workspace.id ? AppColor.accent.opacity(0.18) : AppColor.selectionBackground
+            return hoveredID == workspace.id ? AppColor.selectionHoverBackground : AppColor.selectionBackground
         }
         return hoveredID == workspace.id ? AppColor.subtleBackground : .clear
     }
