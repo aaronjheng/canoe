@@ -154,7 +154,9 @@ private struct ItemsView: View {
                             environmentsRows
                         }
                     }
-                    .padding(.horizontal, AppSpacing.xSmall)
+                    // Matches the boxed filter field's own inset, so the row
+                    // hover fills share the field's exact left/right edges.
+                    .padding(.horizontal, AppSpacing.small)
                     .padding(.bottom, AppSpacing.small)
                     .frame(maxWidth: .infinity, minHeight: viewport.size.height, alignment: .top)
                 }
@@ -195,21 +197,21 @@ private struct GroupHeader<Actions: View>: View {
             HStack(spacing: 0) {
                 HStack(spacing: 0) {
                     Image(systemName: "chevron.right")
-                        .font(AppFont.small.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.sidebarChevron)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                         // Same chevron rhythm as tree rows: a 16pt centered
                         // glyph + 4pt gap, so the title still lands on the
-                        // header content column but the spacing matches.
+                        // header content column but the spacing matches. The
+                        // glyph itself is sized with the title above it.
                         .frame(width: AppSize.treeChevronWidth)
                     Text(title.uppercased())
                         .font(AppFont.sidebarGroupHeader)
                         .padding(.leading, AppSpacing.xSmall)
                 }
-                // The label keeps the header's old x position; the hover
-                // fill extends further left so it lines up with the row
-                // hovers below.
-                .padding(.leading, AppSpacing.medium)
+                // 14pt from the panel edge (list gutter + compact inset),
+                // one step inside the tree rows' 28pt chevrons; the hover
+                // fill still spans the full gutter, matching the filter box.
+                .padding(.leading, AppSpacing.compact)
                 .padding(.vertical, AppSpacing.xSmall)
                 Spacer(minLength: 0)
                 actions()
@@ -236,7 +238,7 @@ private struct GroupDivider: View {
     var body: some View {
         AppColor.hairline
             .frame(height: AppLine.hairline)
-            .padding(.leading, AppSpacing.small)
+            .padding(.leading, AppSpacing.xxSmall)
     }
 }
 
@@ -373,7 +375,8 @@ private struct HistoryView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, AppSpacing.xSmall)
+                    // Same gutter as the Items tab's rows (one row language).
+                    .padding(.horizontal, AppSpacing.small)
                     .padding(.bottom, AppSpacing.small)
                     .frame(maxWidth: .infinity)
                 }
@@ -457,14 +460,15 @@ private struct IndentGuides: View {
 }
 
 /// Fixed-width disclosure chevron so labels align across rows. Its frame
-/// plus the row's xSmall gap make up `AppSize.treeExpanderColumn`.
+/// plus the row's xSmall gap make up `AppSize.treeExpanderColumn`; the glyph
+/// itself rides `AppFont.sidebarChevron`, so every twisty in the sidebar
+/// (group headers included) reads as one control.
 private struct ExpanderChevron: View {
     let isExpanded: Bool
 
     var body: some View {
         Image(systemName: "chevron.right")
-            .font(AppFont.small.weight(.semibold))
-            .foregroundStyle(.secondary)
+            .font(AppFont.sidebarChevron)
             .rotationEffect(.degrees(isExpanded ? 90 : 0))
             .frame(width: AppSize.treeChevronWidth)
     }

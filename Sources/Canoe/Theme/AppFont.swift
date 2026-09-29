@@ -45,10 +45,17 @@ enum AppFont {
     /// Uppercase micro-headers above grouped lists (sidebar sections, console
     /// groups). Small + semibold, often paired with `textCase(.uppercase)`.
     static let microHeader = Font.system(size: 12, weight: .semibold)
-    /// Sidebar group headers (`COLLECTIONS`, `Today`): one step under the
-    /// 12pt tree labels, so the uppercase titles recede behind the items
-    /// they group.
-    static let sidebarGroupHeader = Font.system(size: 10, weight: .semibold)
+    /// Sidebar group headers (`COLLECTIONS`, `Today`) with their disclosure
+    /// chevrons: one step under the 12pt tree labels, so the uppercase
+    /// titles recede behind the items they group.
+    static let sidebarGroupHeader = Font.system(size: sidebarHierarchySize, weight: .semibold)
+    /// Disclosure chevrons in the sidebar tree (group headers, collection and
+    /// folder rows), locked to the group titles' step so every twisty reads
+    /// as one control.
+    static let sidebarChevron = Font.system(size: sidebarHierarchySize, weight: .semibold)
+    /// The sidebar's hierarchy step (10pt): the group titles and every twisty
+    /// derive from it, so the two can never drift apart.
+    private static let sidebarHierarchySize: CGFloat = 10
     /// Column headers in tables (Workspaces, key/value editors).
     static let columnHeader = Font.system(size: 12, weight: .medium)
     /// Empty-state and "no results" body copy.
