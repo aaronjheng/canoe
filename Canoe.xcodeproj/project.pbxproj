@@ -32,6 +32,119 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>A70F1001A1B1000000000001</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>AppLicense.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>A70F1001A1B1000000000002</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>AboutView.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>A70F1001A1B1000000000003</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>LicenseView.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>A70F1001A1B1000000000004</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>text</string>
+			<key>path</key>
+			<string>LICENSE</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>A70F1002A1B1000000000001</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>A70F1001A1B1000000000001</string>
+		</dict>
+		<key>A70F1002A1B1000000000002</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>A70F1001A1B1000000000002</string>
+		</dict>
+		<key>A70F1002A1B1000000000003</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>A70F1001A1B1000000000003</string>
+		</dict>
+		<key>A70F1002A1B1000000000004</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>A70F1001A1B1000000000004</string>
+		</dict>
+		<key>A70F1003A1B1000000000001</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>children</key>
+			<array>
+				<string>A70F1003A1B1000000000002</string>
+				<string>A70F1003A1B1000000000003</string>
+			</array>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+			<key>path</key>
+			<string>About</string>
+		</dict>
+		<key>A70F1003A1B1000000000002</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>children</key>
+			<array>
+				<string>A70F1001A1B1000000000001</string>
+			</array>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+			<key>path</key>
+			<string>Models</string>
+		</dict>
+		<key>A70F1003A1B1000000000003</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>children</key>
+			<array>
+				<string>A70F1001A1B1000000000002</string>
+				<string>A70F1001A1B1000000000003</string>
+			</array>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+			<key>path</key>
+			<string>Views</string>
+		</dict>
 		<key>EC31A07460A5811F51326D6E</key>
 		<dict>
 			<key>isa</key>
@@ -49,6 +162,7 @@
 			<string>PBXGroup</string>
 			<key>children</key>
 			<array>
+				<string>A70F1003A1B1000000000001</string>
 				<string>2A767C42CD45596B2753DBCF</string>
 				<string>D2B1493FB2A0B1D7B4E3F83B</string>
 				<string>A8AC410F27BA79869B801A32</string>
@@ -1978,6 +2092,9 @@
 				<string>BF43456319181355C597494A</string>
 				<string>2B98C94833A9A3BE12C84BA2</string>
 				<string>C72DBE6468808D3835D96DDE</string>
+				<string>A70F1002A1B1000000000001</string>
+				<string>A70F1002A1B1000000000002</string>
+				<string>A70F1002A1B1000000000003</string>
 		</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>
@@ -2006,6 +2123,7 @@
 			<key>files</key>
 			<array>
 				<string>699470688C645E35DD1A61EA</string>
+				<string>A70F1002A1B1000000000004</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>
@@ -2042,6 +2160,7 @@
 			<string>PBXGroup</string>
 			<key>children</key>
 			<array>
+				<string>A70F1001A1B1000000000004</string>
 				<string>D3022367E3F16883080B2FC4</string>
 				<string>DB1220D8A260A6C1FF20221A</string>
 				<string>9B98052B6512A45E5528204E</string>

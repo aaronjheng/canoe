@@ -2,12 +2,22 @@ import AppKit
 import Observation
 import SwiftUI
 
+/// Menu-bar panels whose content is pure SwiftUI. Each kind owns at most one
+/// window, so opening it again brings the existing window forward.
+private enum UtilityPanel: Hashable {
+    case about
+    case license
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let appStore = AppStore()
     private var window: NSWindow?
     private var settingsWindow: NSWindow?
     private var settingsToolbarController: SettingsToolbarController?
+    /// Small app-level panels (About, License) opened from the menu bar, kept
+    /// alive only while open - see `windowWillClose`.
+    private var utilityWindows: [UtilityPanel: NSWindow] = [:]
     private var variablesMenuItem: NSMenuItem?
     private var fullScreenMenuItem: NSMenuItem?
     private var appearanceMenuItems: [NSMenuItem] = []
@@ -17,6 +27,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var newCollectionMenuItem: NSMenuItem?
     private var newEnvironmentMenuItem: NSMenuItem?
     private var saveMenuItem: NSMenuItem?
+
+    /// Currently selected appearance, for windows created or reopened after a
+    /// menu-driven theme change.
+    private var currentAppearance: AppAppearance {
+        AppAppearance(rawValue: SettingsStore.shared.settings.appearance) ?? .system
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppKitFocusRing.install()
@@ -211,11 +227,86 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
     }
 
+    @objc func openAbout() {
+        openUtilityWindow(
+            .about,
+            title: "About Canoe",
+            contentSize: NSSize(
+                width: AppSize.aboutPanelWidth,
+                height: AppSize.aboutPanelHeight
+            ),
+            resizable: false
+        ) {
+            AboutView { [weak self] in self?.openLicense() }
+        }
+    }
+
+    private func openLicense() {
+        openUtilityWindow(
+            .license,
+            title: "Canoe License",
+            contentSize: NSSize(
+                width: AppSize.licensePanelWidth,
+                height: AppSize.licensePanelHeight
+            ),
+            resizable: true
+        ) {
+            LicenseView()
+        }
+    }
+
+    /// Small panels whose content is pure SwiftUI (About, License): one window
+    /// per `UtilityPanel`, brought forward when already open and disposed on
+    /// close by `windowWillClose` so no hidden zombie survives.
+    private func openUtilityWindow<Content: View>(
+        _ panel: UtilityPanel,
+        title: String,
+        contentSize: NSSize,
+        resizable: Bool,
+        @ViewBuilder content: () -> Content
+    ) {
+        if let window = utilityWindows[panel] {
+            // Re-apply the current appearance: the window may have been
+            // created before a menu-driven theme change while it was closed.
+            currentAppearance.applyToWindow(window)
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+            return
+        }
+        var styleMask: NSWindow.StyleMask = [.titled, .closable, .fullSizeContentView]
+        if resizable {
+            styleMask.insert([.miniaturizable, .resizable])
+        }
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: contentSize),
+            styleMask: styleMask,
+            backing: .buffered,
+            defer: false
+        )
+        window.title = title
+        window.backgroundColor = AppColor.controlBackgroundNS
+        // Match the other windows: content-layer fill behind a transparent
+        // titlebar instead of the system material.
+        window.titlebarAppearsTransparent = true
+        window.contentView = NSHostingView(rootView: content())
+        window.tabbingMode = .disallowed
+        // ARC owns the window (see windowWillClose).
+        window.isReleasedWhenClosed = false
+        window.minSize = contentSize
+        window.center()
+        currentAppearance.applyToWindow(window)
+        window.delegate = self
+        utilityWindows[panel] = window
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate()
+    }
+
     // MARK: - NSWindowDelegate
 
     /// Releases the Settings window (and its split/toolbar controllers) on
     /// close instead of holding a hidden zombie: reopening builds a fresh
-    /// window instead of reusing stale navigation state.
+    /// window instead of reusing stale navigation state. The About and License
+    /// panels are disposed the same way.
     ///
     /// The release is deferred past the close call: `windowWillClose` runs
     /// inside `-[NSWindow close]`, so dropping ARC's last reference there
@@ -225,14 +316,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// `isReleasedWhenClosed = false` ARC owns the window outright, so the
     /// refs are safe to drop once close returns.
     func windowWillClose(_ notification: Notification) {
-        guard let window = notification.object as? NSWindow, window == settingsWindow else { return }
+        guard let window = notification.object as? NSWindow else { return }
+        let panel = utilityWindows.first { $0.value === window }?.key
+        guard window === settingsWindow || panel != nil else { return }
         DispatchQueue.main.async { [weak self, weak window] in
+            guard let self, let window, !window.isVisible else { return }
             // Identity: a reopen could have replaced the state already.
-            // Visible: reopened before this ran - it is live again, so its
-            // own close will schedule a fresh disposal.
-            guard let self, let window, self.settingsWindow === window, !window.isVisible else { return }
-            self.settingsWindow = nil
-            self.settingsToolbarController = nil
+            if self.settingsWindow === window {
+                self.settingsWindow = nil
+                self.settingsToolbarController = nil
+            }
+            if let panel, self.utilityWindows[panel] === window {
+                self.utilityWindows[panel] = nil
+            }
         }
     }
 
@@ -350,10 +446,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let appMenuItem = NSMenuItem()
         mainMenu.addItem(appMenuItem)
         let appMenu = NSMenu()
-        appMenu.addItem(
-            withTitle: "About Canoe",
-            action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
-            keyEquivalent: "")
+        let aboutItem = NSMenuItem(title: "About Canoe", action: #selector(openAbout), keyEquivalent: "")
+        aboutItem.target = self
+        appMenu.addItem(aboutItem)
         appMenu.addItem(.separator())
         let settingsItem = NSMenuItem(
             title: "Settings…",

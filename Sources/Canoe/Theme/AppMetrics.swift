@@ -45,6 +45,17 @@ enum AppOpacity {
 }
 
 enum AppSize {
+    /// Fixed size of the About panel (mark + version + License button).
+    static let aboutPanelWidth: CGFloat = 320
+    static let aboutPanelHeight: CGFloat = 380
+    static let aboutIconSide: CGFloat = 96
+    /// Minimum size of the License window; it stays resizable from there.
+    static let licensePanelWidth: CGFloat = 460
+    static let licensePanelHeight: CGFloat = 420
+    /// Height of the transparent full-size titlebar the About and License
+    /// windows draw their content under. Both reserve it at the top so the
+    /// window title never overlaps the content.
+    static let titlebarClearance: CGFloat = 28
     /// Shared bar height (breadcrumb rows, panel headers, response status
     /// bar) - kept compact to maximize content space.
     static let toolbarHeight: CGFloat = 32
