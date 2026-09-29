@@ -91,9 +91,56 @@ struct WorkspacesView: View {
         store.vault.environments.filter { $0.workspaceID == workspace.id }.count
     }
 
-    private func lastActivityText(for workspace: Workspace) -> String {
-        guard let latest = store.lastActivity(in: workspace.id) else { return "No activity yet" }
+    private func lastActivityText(_ latest: Date?) -> String {
+        guard let latest else { return "No activity yet" }
         return Self.relativeFormatter.localizedString(for: latest, relativeTo: Date())
+    }
+
+    // MARK: - Row chrome
+
+    /// Per-workspace icon tints drawn from the existing Primer palette, so
+    /// the list picks up color without a new token set. Assigned from the
+    /// UUID string - `hashValue` reshuffles every launch - so a workspace
+    /// keeps its tile between sessions.
+    private static let iconTints = [AppColor.accent, AppColor.done, AppColor.success, AppColor.warning]
+
+    private static func iconTint(for workspace: Workspace) -> Color {
+        let seed = workspace.id.uuidString.unicodeScalars.reduce(0) { $0 + Int($1.value) }
+        return iconTints[seed % iconTints.count]
+    }
+
+    private func workspaceIcon(_ workspace: Workspace) -> some View {
+        let tint = Self.iconTint(for: workspace)
+        return Image(systemName: "square.stack.3d.up.fill")
+            .font(AppFont.iconRow)
+            .foregroundStyle(tint)
+            .padding(AppSpacing.xSmall)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                    .fill(tint.opacity(AppOpacity.badgeBackground))
+            )
+    }
+
+    /// Checked beats hovered: a selected row keeps its accent wash under the
+    /// pointer, which only deepens it a step.
+    private func rowBackground(_ workspace: Workspace) -> Color {
+        if checked.contains(workspace.id) {
+            return hoveredID == workspace.id ? AppColor.accent.opacity(0.18) : AppColor.selectionBackground
+        }
+        return hoveredID == workspace.id ? AppColor.subtleBackground : .clear
+    }
+
+    private func isRowHovered(_ workspace: Workspace) -> Bool {
+        hoveredID == workspace.id
+    }
+
+    /// One numeric cell: real counts in secondary, zero counts dropped a
+    /// step so empty workspaces stop competing with populated ones.
+    private func countCell(_ value: Int, width: CGFloat) -> some View {
+        Text("\(value)")
+            .monospacedDigit()
+            .foregroundStyle(value > 0 ? Color.secondary : AppColor.tertiaryText)
+            .frame(width: width, alignment: .trailing)
     }
 
     /// Checkbox shared by the header master toggle and the row toggles.
@@ -137,19 +184,19 @@ struct WorkspacesView: View {
                             .fill(AppColor.borderStrong)
                             .frame(height: AppLine.field)
                     }
-                Divider()
+                hairlineDivider
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(visibleWorkspaces) { workspace in
                             workspaceRow(workspace)
                             if workspace.id != visibleWorkspaces.last?.id {
-                                Divider()
+                                hairlineDivider
                             }
                         }
                     }
                 }
             }
-            Divider()
+            hairlineDivider
             WorkspaceListStatusBarView(workspaceCount: workspaces.count)
         }
         .background(AppColor.controlBackground)
@@ -192,6 +239,15 @@ struct WorkspacesView: View {
         static let actions: CGFloat = 70
     }
 
+    /// Row separators drawn on the hairline token instead of the stock
+    /// `Divider`, so the table's lines sit on the same border scale as the
+    /// rest of the app (softer than the system separator).
+    private var hairlineDivider: some View {
+        Rectangle()
+            .fill(AppColor.hairline)
+            .frame(height: AppLine.hairline)
+    }
+
     private var tableHeader: some View {
         // Master toggle over the visible rows (Postman-style tri-state):
         // all visible checked -> unchecks them, otherwise checks them all.
@@ -219,7 +275,10 @@ struct WorkspacesView: View {
             .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
             .accessibilityLabel("Select all workspaces")
             .help("Select/deselect all workspaces")
-            .frame(width: ColumnWidth.check, alignment: .center)
+            // Leading, not centered: the box hangs on the page gutter (x=12)
+            // so it lines up with the title, the search border, and the
+            // status bar; the 36pt column still puts names at x=48.
+            .frame(width: ColumnWidth.check, alignment: .leading)
             .padding(.leading, AppSpacing.medium)
             Button {
                 toggleSort(.name)
@@ -234,7 +293,7 @@ struct WorkspacesView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .foregroundStyle(sortMode == .name ? Color.primary : Color.secondary)
+            .foregroundStyle(sortMode == .name ? AppColor.accent : Color.secondary)
             .help("Sort by workspace name")
             Text("Collections")
                 .frame(width: ColumnWidth.count, alignment: .trailing)
@@ -255,7 +314,7 @@ struct WorkspacesView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .foregroundStyle(sortMode == .activity ? Color.primary : Color.secondary)
+            .foregroundStyle(sortMode == .activity ? AppColor.accent : Color.secondary)
             .help("Sort by last activity")
             // Spacer, not Color.clear: a sizeless view takes whatever height
             // it is offered (blowing the header up); Spacer never inflates.
@@ -266,13 +325,15 @@ struct WorkspacesView: View {
         .containerRelativeFrame(.horizontal, alignment: .leading)
         .font(AppFont.columnHeader)
         .foregroundStyle(.secondary)
-        .padding(.vertical, AppSpacing.xSmall)
+        .padding(.vertical, AppSpacing.small)
         .background(AppColor.tableHeaderBackground)
         .clipped()
     }
 
     private func workspaceRow(_ workspace: Workspace) -> some View {
-        HStack(spacing: 0) {
+        let isHovered = isRowHovered(workspace)
+        let latestActivity = store.lastActivity(in: workspace.id)
+        return HStack(spacing: 0) {
             Button {
                 if checked.contains(workspace.id) {
                     checked.remove(workspace.id)
@@ -285,15 +346,14 @@ struct WorkspacesView: View {
             .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
             .accessibilityLabel("Select \(workspace.name)")
             .help(checked.contains(workspace.id) ? "Deselect workspace" : "Select workspace")
-            .frame(width: ColumnWidth.check, alignment: .center)
+            .frame(width: ColumnWidth.check, alignment: .leading)
             .padding(.leading, AppSpacing.medium)
-            HStack(spacing: AppSpacing.xSmall) {
-                Image(systemName: "square.stack.3d.up.fill")
-                    .foregroundStyle(.secondary)
+            HStack(spacing: AppSpacing.compact) {
+                workspaceIcon(workspace)
                 Text(workspace.name)
                     .lineLimit(1)
             }
-            .font(AppFont.small)
+            .font(AppFont.rowTitle)
             .foregroundStyle(.primary)
             .frame(minWidth: ColumnWidth.nameMin, maxWidth: .infinity, alignment: .leading)
             .contextMenu {
@@ -303,20 +363,11 @@ struct WorkspacesView: View {
                     deleteTargets = [workspace.id]
                 }
             }
-            Text("\(collectionCount(for: workspace))")
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .frame(width: ColumnWidth.count, alignment: .trailing)
-            Text("\(requestCount(for: workspace))")
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .frame(width: ColumnWidth.count, alignment: .trailing)
-            Text("\(environmentCount(for: workspace))")
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .frame(width: ColumnWidth.environments, alignment: .trailing)
-            Text(lastActivityText(for: workspace))
-                .foregroundStyle(.secondary)
+            countCell(collectionCount(for: workspace), width: ColumnWidth.count)
+            countCell(requestCount(for: workspace), width: ColumnWidth.count)
+            countCell(environmentCount(for: workspace), width: ColumnWidth.environments)
+            Text(lastActivityText(latestActivity))
+                .foregroundStyle(latestActivity != nil ? Color.secondary : AppColor.tertiaryText)
                 .lineLimit(1)
                 .frame(width: ColumnWidth.activity, alignment: .trailing)
             HStack(spacing: AppSpacing.xSmall) {
@@ -324,6 +375,7 @@ struct WorkspacesView: View {
                     store.openWorkspace(workspace.id)
                 } label: {
                     Image(systemName: "arrow.right.circle")
+                        .foregroundStyle(isHovered ? AppColor.accent : Color.secondary)
                 }
                 .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
                 .help("Open workspace")
@@ -331,16 +383,21 @@ struct WorkspacesView: View {
                     deleteTargets = [workspace.id]
                 } label: {
                     Image(systemName: "trash")
+                        .foregroundStyle(isHovered ? AppColor.error : Color.secondary)
                 }
                 .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
                 .help("Delete workspace")
             }
-            .foregroundStyle(.secondary)
+            // Row actions rest off-stage and fade in under the pointer, so
+            // the table reads as data first - they are only ever clickable
+            // while the row is hovered, hence visible.
+            .opacity(isHovered ? 1 : 0)
+            .animation(.easeOut(duration: 0.12), value: isHovered)
             .frame(width: ColumnWidth.actions, alignment: .trailing)
             .padding(.trailing, AppSpacing.medium)
         }
-        .padding(.vertical, AppSpacing.medium)
-        .background(hoveredID == workspace.id ? AppColor.subtleBackground : Color.clear)
+        .padding(.vertical, AppSpacing.comfortable)
+        .background(rowBackground(workspace))
         // Tapping anywhere else on the row toggles its checkbox. Taps on the
         // buttons above never reach here - controls consume their own taps.
         .contentShape(Rectangle())
@@ -373,10 +430,12 @@ struct WorkspacesView: View {
     }
 
     private var header: some View {
+        // Title and controls group at 8; the 16 below sets the chrome apart
+        // from the table band, so the header reads as one unit over data.
         VStack(spacing: AppSpacing.small) {
             HStack {
                 Text("Workspaces")
-                    .font(AppFont.panelTitle)
+                    .font(.title2.weight(.semibold))
                 Spacer(minLength: 0)
             }
             HStack(spacing: AppSpacing.small) {
@@ -384,6 +443,9 @@ struct WorkspacesView: View {
                     text: $filter,
                     placeholder: "Search Workspaces",
                     isBoxed: true,
+                    // Flush: the boxed inset would push the border 8pt right
+                    // of the page gutter the title and checkboxes sit on.
+                    boxedInset: 0,
                     minHeight: AppSize.controlHeight
                 )
                 .frame(maxWidth: .infinity)
@@ -404,6 +466,7 @@ struct WorkspacesView: View {
             }
         }
         .padding(.horizontal, AppSpacing.medium)
-        .padding(.vertical, AppSpacing.small)
+        .padding(.top, AppSpacing.large)
+        .padding(.bottom, AppSpacing.large)
     }
 }

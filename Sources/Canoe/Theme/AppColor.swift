@@ -135,6 +135,11 @@ enum AppColor {
     /// - see the hover-language note at the top of `Components/Buttons.swift`.
     static let subtleBackground: Color = Color.secondary.opacity(0.10)
 
+    /// Quietest text tier: zero counts and placeholder meta that should
+    /// recede behind `.secondary` without vanishing (the label tier's
+    /// third emphasis step).
+    static let tertiaryText: Color = Color(nsColor: .tertiaryLabelColor)
+
     /// Selected-row fill. Uses the app accent (not the system accentColor)
     /// so selection stays deterministic across user accent choices and
     /// never competes with the method colors inside the row.

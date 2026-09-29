@@ -15,6 +15,10 @@ struct FilterField: View {
     /// floating inside the parent's padding (the workspace sidebar's
     /// filter). The default stays borderless for the other call sites.
     var isBoxed = false
+    /// Inner padding between the boxed border and the field's own bounds.
+    /// The default keeps the box floating inside a padded container; a call
+    /// site that wants the border flush on its page gutter passes 0.
+    var boxedInset: CGFloat = AppSpacing.small
     var minHeight: CGFloat?
 
     @FocusState private var isFocused: Bool
@@ -61,7 +65,7 @@ struct FilterField: View {
                     .animation(.easeOut(duration: 0.12), value: borderColor)
             }
         }
-        .padding(.horizontal, isBoxed ? AppSpacing.small : 0)
+        .padding(.horizontal, isBoxed ? boxedInset : 0)
         .onHover { isHovered = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovered)
         .animation(.easeOut(duration: 0.12), value: isFocused)

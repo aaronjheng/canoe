@@ -48,7 +48,7 @@ struct WorkspaceListStatusBarView: View {
     let workspaceCount: Int
 
     var body: some View {
-        HStack(spacing: AppSpacing.small) {
+        HStack(spacing: AppSpacing.compact) {
             Text("Workspaces")
                 .font(AppFont.small)
                 .foregroundStyle(.secondary)

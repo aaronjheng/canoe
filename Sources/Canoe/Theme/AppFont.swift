@@ -29,6 +29,9 @@ enum AppFont {
     /// Sidebar tree row label (collections, folders, requests). Postman keeps
     /// one uniform size across every tree level.
     static let sidebarRow = Font.system(size: 12)
+    /// Primary label in management-list rows (the workspace name): one step
+    /// above `small` so titles lead the 12pt meta columns beside them.
+    static let rowTitle = Font.system(size: 13, weight: .medium)
 
     // MARK: - Semantic text roles (same scale, one source)
 
