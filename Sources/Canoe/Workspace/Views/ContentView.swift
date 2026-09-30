@@ -31,7 +31,12 @@ struct ContentView: View {
         @Bindable var store = store
         VStack(spacing: 0) {
             if store.vault.isReady {
+                // zIndex: the workspace switcher's hover card hangs below
+                // the bar, over the panes underneath - later siblings draw
+                // last, so without this the card is painted over the moment
+                // it leaves the bar's own bounds.
                 TopBarView()
+                    .zIndex(1)
                 Divider()
             }
             Group {
