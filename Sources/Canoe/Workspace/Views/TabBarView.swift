@@ -1021,7 +1021,10 @@ private struct TabItemIcon: View {
                 .font(AppFont.small)
                 .foregroundStyle(AppColor.accent)
         case .collection:
-            Image(systemName: "folder.fill")
+            // `list.bullet.rectangle.fill`, not a folder glyph: collections
+            // and folders sit in one tree, and the outline/fill pair they used
+            // to share read as the same thing.
+            Image(systemName: "list.bullet.rectangle.fill")
                 .font(AppFont.small)
                 .foregroundStyle(AppColor.accent)
         case .workspace:

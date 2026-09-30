@@ -94,7 +94,9 @@ struct CollectionDetailView: View {
     private var editorContent: some View {
         VStack(spacing: 0) {
             HStack(spacing: AppSpacing.small) {
-                Image(systemName: "folder.fill")
+                // The collection's tab icon, so a collection never reads as
+                // one of its own folders (`folder`).
+                Image(systemName: "list.bullet.rectangle.fill")
                     .foregroundStyle(AppColor.accent)
                 Text(draft.name)
                     .font(AppFont.panelTitle)

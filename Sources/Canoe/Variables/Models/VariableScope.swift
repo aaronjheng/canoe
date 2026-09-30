@@ -19,7 +19,7 @@ struct VariableScope: Identifiable, Hashable, Sendable {
         var systemImage: String {
             switch self {
             case .workspace: "square.stack.3d.up.fill"
-            case .collection: "folder.fill"
+            case .collection: "list.bullet.rectangle.fill"
             case .environment: "globe"
             }
         }
