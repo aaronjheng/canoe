@@ -2,7 +2,7 @@ import AppKit
 import ObjectiveC
 import SwiftUI
 
-// Panel chrome: save chip, toolbar/popup/focus modifiers.
+// Panel chrome: save chip, toolbar/popup/focus modifiers, hover tracking.
 // MARK: - Panel toolbar
 
 // The system focus ring draws one frame at the shared field editor's
@@ -110,6 +110,74 @@ enum AppKitFocusRing {
             imp_implementationWithBlock(fieldEditorHook),
             types
         )
+    }
+}
+
+// MARK: - Hover tracking
+
+/// Reports pointer enter/exit for a SwiftUI area through a real `NSTrackingArea`.
+///
+/// SwiftUI's own `.onHover` is hit-test based, so an AppKit view inside the
+/// tracked area - the `NSMenuButton` behind every `Menu` that uses
+/// `.menuStyle(.borderlessButton)`, an `NSTextField`, the field editor - takes
+/// the hover away from the view that contains it. A row that reveals its
+/// actions on hover then hides the very control the pointer is on, the control
+/// vanishes from under the pointer, the row counts as hovered again, and the
+/// two chase each other into a flicker. A tracking area is purely geometric,
+/// so nothing inside can take the pointer away from it.
+///
+/// The sensor stays out of hit testing: it must never swallow a click meant for
+/// whatever SwiftUI drew above it.
+struct HoverTracker: NSViewRepresentable {
+    let onHover: (Bool) -> Void
+
+    func makeNSView(context: Context) -> TrackingView {
+        let view = TrackingView()
+        view.onHover = onHover
+        return view
+    }
+
+    func updateNSView(_ nsView: TrackingView, context: Context) {
+        nsView.onHover = onHover
+    }
+
+    final class TrackingView: NSView {
+        var onHover: ((Bool) -> Void)?
+
+        /// Hover only: clicks belong to the SwiftUI content this sits behind.
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            for area in trackingAreas {
+                removeTrackingArea(area)
+            }
+            addTrackingArea(
+                NSTrackingArea(
+                    rect: .zero,
+                    options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+                    owner: self,
+                    userInfo: nil
+                )
+            )
+        }
+
+        override func mouseEntered(with event: NSEvent) {
+            onHover?(true)
+        }
+
+        override func mouseExited(with event: NSEvent) {
+            onHover?(false)
+        }
+    }
+}
+
+extension View {
+    /// Hover enter/exit for a view that has to keep tracking while AppKit views
+    /// (menus, text fields) sit inside it - the cases where `.onHover` hands the
+    /// pointer to the nested view and reports an exit. See `HoverTracker`.
+    func tracksHover(_ onHover: @escaping (Bool) -> Void) -> some View {
+        background { HoverTracker(onHover: onHover) }
     }
 }
 

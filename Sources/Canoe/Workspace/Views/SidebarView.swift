@@ -611,6 +611,46 @@ private struct InlineActionButton: View {
     }
 }
 
+/// Hover-revealed overflow menu for a sidebar row: one glyph wide, holding
+/// the same items the row's right-click menu does. Rows whose action list
+/// outgrew a few hover icons use this instead of a bank of them.
+///
+/// The pill and its size are applied OUTSIDE the menu: a
+/// `.menuStyle(.borderlessButton)` label lays itself out and drops the padding
+/// and backgrounds declared inside it (the top bar's workspace pill learned
+/// this the same way), so a fill drawn in the label never renders. The wash is
+/// a step stronger than a plain icon button's, too - it sits on the row's own
+/// hover tint, where the usual 5% disappears completely - and it is measured
+/// by `tracksHover` rather than `.onHover`, which the menu's AppKit button
+/// swallows.
+private struct RowActionsMenu<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+    @State private var isHovering = false
+
+    var body: some View {
+        Menu {
+            content()
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(AppFont.iconRow)
+                .foregroundStyle(.secondary)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .padding(AppSpacing.xxSmall)
+        .frame(minWidth: AppSize.compactControl, minHeight: AppSize.compactControl)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                .fill(isHovering ? AppColor.border : .clear)
+        )
+        .clickCursor()
+        .tracksHover { isHovering = $0 }
+        .help("More Actions")
+    }
+}
+
 /// Opaque backdrop for a row's floating action buttons: the row tints are
 /// translucent (secondary 10% / accent 14%), so the buttons need an opaque
 /// sidebar-colored base under the tint or the truncated label shows through.
@@ -1009,8 +1049,16 @@ private struct RequestRow: View {
     @State private var isHovering = false
     @State private var isRenaming = false
     @State private var showDeleteConfirm = false
+    /// A menu popup tracks the mouse in its own session, and the pointer sits
+    /// in the popup window while it does - see the row's body.
+    @State private var isMenuTracking = false
 
     private var isSelected: Bool { store.selectedTab == .request(request.id) }
+
+    /// Hover chrome for the row and for its actions. The actions have to
+    /// outlive the pointer leaving the row for their own open menu, or the
+    /// menu would be torn down from under the pointer.
+    private var showsActions: Bool { isHovering || isMenuTracking }
 
     /// Inline rename via the hover/context action.
     private var isRenamingNode: Bool { isRenaming }
@@ -1045,23 +1093,37 @@ private struct RequestRow: View {
         }
         // Track hover even while renaming so the row's hover fill doesn't
         // stay lit after the branch switch back to the button row.
-        .onHover { isHovering = $0 }
+        .tracksHover { isHovering = $0 }
         .contentShape(Rectangle())
     }
 
+    /// The row's actions in one place: the hover overflow menu and the
+    /// right-click menu both render these, so the two never drift apart.
+    @ViewBuilder
+    private var rowActions: some View {
+        Button("Rename") {
+            isRenaming = true
+        }
+        Button("Duplicate") {
+            store.duplicateRequest(request.id)
+        }
+        Divider()
+        Button("Delete", role: .destructive) {
+            showDeleteConfirm = true
+        }
+    }
+
+    /// One hover-revealed overflow menu instead of a bank of icon buttons:
+    /// the row keeps its width, and every action - including the ones that
+    /// only lived in the context menu - now has a visible entry point.
     private var hoverActions: some View {
         Group {
-            if isHovering {
-                HStack(spacing: AppSpacing.xxSmall) {
-                    InlineActionButton(systemImage: "pencil", help: "Rename") { isRenaming = true }
-                    InlineActionButton(systemImage: "trash", help: "Delete Request") {
-                        showDeleteConfirm = true
-                    }
-                }
-                .padding(.trailing, AppSpacing.xSmall)
-                .background(
-                    RowActionBackground(tint: isSelected ? AppColor.selectionBackground : AppColor.subtleBackground)
-                )
+            if showsActions {
+                RowActionsMenu { rowActions }
+                    .padding(.trailing, AppSpacing.xSmall)
+                    .background(
+                        RowActionBackground(tint: isSelected ? AppColor.selectionBackground : AppColor.subtleBackground)
+                    )
             }
         }
     }
@@ -1094,7 +1156,7 @@ private struct RequestRow: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                            .fill(isSelected ? AppColor.selectionBackground : isHovering ? AppColor.subtleBackground : .clear)
+                            .fill(isSelected ? AppColor.selectionBackground : showsActions ? AppColor.subtleBackground : .clear)
                     )
                     .overlay(alignment: .leading) {
                         IndentGuides(depth: depth)
@@ -1102,7 +1164,7 @@ private struct RequestRow: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .onHover { isHovering = $0 }
+                .tracksHover { isHovering = $0 }
                 .clickCursor()
                 // Double-click pins the preview tab. The Button above still
                 // fires immediately on each click (no double-click hold
@@ -1111,18 +1173,7 @@ private struct RequestRow: View {
                 .simultaneousGesture(
                     TapGesture(count: 2).onEnded { store.pinRequest(request.id) }
                 )
-                .contextMenu {
-                    Button("Rename") {
-                        isRenaming = true
-                    }
-                    Button("Duplicate") {
-                        store.duplicateRequest(request.id)
-                    }
-                    Divider()
-                    Button("Delete", role: .destructive) {
-                        showDeleteConfirm = true
-                    }
-                }
+                .contextMenu { rowActions }
                 .overlay(alignment: .trailing) { hoverActions }
                 .help(request.name)
                 .confirmationDialog(
@@ -1136,6 +1187,16 @@ private struct RequestRow: View {
                     Button("Cancel", role: .cancel) {}
                 }
             }
+        }
+        // The row's actions are a menu now: keep them mounted while their popup
+        // tracks the mouse - the pointer has left the row for the popup window
+        // by then - and only for the row that opened it.
+        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
+            guard isHovering else { return }
+            isMenuTracking = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)) { _ in
+            isMenuTracking = false
         }
     }
 }
