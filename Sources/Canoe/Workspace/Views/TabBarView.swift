@@ -824,9 +824,15 @@ private struct TabPill: View {
                     // text underneath. An opaque primaryBackground base
                     // under the tint reproduces the pill's resolved color
                     // while blocking the label completely.
+                    // The hover fill has to be a step ABOVE both pill fills
+                    // (`pillFill` is the selected 8% or the hovered 5%), not
+                    // another 5% wash: that matched the unselected pill exactly
+                    // (no feedback at all) and sat *under* the selected one, so
+                    // the × read as a hole punched in the pill - and in dark
+                    // mode neither step was visible.
                     .background {
                         RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                            .fill(isHoveringClose ? AppColor.tabHoverBackground : pillFill)
+                            .fill(isHoveringClose ? AppColor.border : pillFill)
                             .background(
                                 AppColor.primaryBackground,
                                 in: RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
