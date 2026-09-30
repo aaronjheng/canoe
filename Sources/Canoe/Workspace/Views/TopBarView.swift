@@ -190,6 +190,7 @@ private struct WorkspaceSwitcher: View {
         .padding(.horizontal, AppSpacing.xSmall)
         .frame(height: AppSize.topBarControlHeight)
         .contentShape(Rectangle())
+        .clickCursor()
         .background(
             RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
                 // Lit while the card is up, not only while the pill itself is

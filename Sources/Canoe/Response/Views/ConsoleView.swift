@@ -157,6 +157,7 @@ private struct ConsoleEntryRow: View {
                 .background(AppColor.subtleBackground.opacity(isHovering ? 1 : 0))
                 .onTapGesture { onToggle() }
                 .onHover { isHovering = $0 }
+                .clickCursor()
                 // LazyVStack recycling does not guarantee an onHover(false)
                 // when a hovered row scrolls away - clear it so the fill
                 // never reappears stuck on without the pointer.

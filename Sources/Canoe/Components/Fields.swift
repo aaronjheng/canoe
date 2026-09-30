@@ -187,6 +187,7 @@ struct UnderlineTab: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
+        .clickCursor()
     }
 }
 

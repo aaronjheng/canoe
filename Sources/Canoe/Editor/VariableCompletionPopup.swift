@@ -73,6 +73,7 @@ struct VariableSuggestionList: View {
         .contentShape(Rectangle())
         .onHover { hovering in onHover(hovering, index) }
         .onTapGesture { onPick(index) }
+        .clickCursor()
         .id(suggestion.id)
     }
 

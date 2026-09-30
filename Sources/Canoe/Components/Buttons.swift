@@ -8,9 +8,29 @@ import SwiftUI
 //   panel rows): `AppColor.subtleBackground` (secondary 10%).
 // - Icon chrome (toolbar glyphs, icon buttons, tab toggles):
 //   `AppColor.tabHoverBackground` (primary 5%).
-// Press deepens to `AppColor.border`; disabled controls get no hover fill.
+// Press deepens to `AppColor.border`; disabled controls get no hover fill and
+// no pointing hand (`clickCursor`) either.
 // Text fields use the standard field border on focus (accent) and lift to
 // a brighter fill (`fieldHoverBackground` / `fieldFocusBackground`).
+// MARK: - Click cursor
+
+extension View {
+    /// Pointing hand for the app's own click chrome (tree rows, tab pills,
+    /// icon buttons, panel rows, the workspace pill). AppKit never put a hand
+    /// on a button and SwiftUI follows it, but every one of those targets is
+    /// drawn by hand rather than being a system control, so the affordance
+    /// has to be asked for. `.link` is the system pointing-hand style, applied
+    /// through the pointer-style machinery (a real tracking area) rather than
+    /// `NSCursor.push`/`pop`, which strands a stuck hand cursor whenever a
+    /// hovered view is removed before its exit event arrives.
+    ///
+    /// Disabled controls ask for `.default` back on purpose: they must not
+    /// promise a click, the same rule their hover fill follows.
+    func clickCursor(isEnabled: Bool = true) -> some View {
+        pointerStyle(isEnabled ? .link : .default)
+    }
+}
+
 // MARK: - Button styles
 
 /// The primary call-to-action button (Primer `accent.fg` blue): Send, Create,
@@ -33,6 +53,7 @@ struct SendButtonStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .opacity(isEnabled ? 1 : AppOpacity.disabled)
             .onHover { isHovering = $0 }
+            .clickCursor(isEnabled: isEnabled)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
             .animation(.easeOut(duration: 0.12), value: isHovering)
     }
@@ -75,6 +96,7 @@ struct SecondaryButtonStyle: ButtonStyle {
             .contentShape(Rectangle())
             .opacity(isEnabled ? 1 : AppOpacity.disabled)
             .onHover { isHovering = $0 }
+            .clickCursor(isEnabled: isEnabled)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
             .animation(.easeOut(duration: 0.12), value: isHovering)
     }
@@ -100,6 +122,7 @@ struct ToolbarButtonStyle: ButtonStyle {
             )
             .contentShape(Rectangle())
             .onHover { isHovering = $0 }
+            .clickCursor(isEnabled: isEnabled)
             .animation(.easeOut(duration: 0.12), value: isHovering)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
@@ -136,6 +159,7 @@ struct IconButtonStyle: ButtonStyle {
             )
             .contentShape(Rectangle())
             .onHover { isHovering = $0 }
+            .clickCursor(isEnabled: isEnabled)
             .animation(.easeOut(duration: 0.12), value: isHovering)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
@@ -170,6 +194,7 @@ struct ToolbarToggleButton: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
+        .clickCursor(isEnabled: isEnabled)
         .help(help)
     }
 }
@@ -252,6 +277,7 @@ struct LinkButtonStyle: ButtonStyle {
             )
             .contentShape(Rectangle())
             .onHover { isHovering = $0 }
+            .clickCursor(isEnabled: isEnabled)
             .animation(.easeOut(duration: 0.12), value: isHovering)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }

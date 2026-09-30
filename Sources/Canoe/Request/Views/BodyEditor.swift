@@ -225,6 +225,7 @@ private struct BodyTypeRadio: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
+        .clickCursor()
         .animation(.easeOut(duration: 0.12), value: isHovering)
         .accessibilityLabel("Send body as \(type.label)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])

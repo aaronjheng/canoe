@@ -138,6 +138,7 @@ struct SaveChipButton: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
+        .clickCursor(isEnabled: isDirty)
         .disabled(!isDirty)
         .help(help)
     }

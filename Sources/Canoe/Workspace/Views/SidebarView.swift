@@ -226,6 +226,7 @@ private struct GroupHeader<Actions: View>: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
+        .clickCursor()
         .help(isExpanded ? "Collapse \(title)" : "Expand \(title)")
     }
 }
@@ -279,6 +280,7 @@ private struct EnvironmentRow: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
+        .clickCursor()
         // Double-click pins the preview tab (same instant-click reasoning
         // as the request rows).
         .simultaneousGesture(
@@ -744,6 +746,7 @@ private struct CollectionTree: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .clickCursor()
                         .help(isExpanded ? "Collapse collection" : "Expand collection")
                         sidebarRowLabel(collection.name, filter: store.sidebarFilter)
                             .font(AppFont.sidebarRow)
@@ -762,6 +765,7 @@ private struct CollectionTree: View {
                 }
                 .buttonStyle(.plain)
                 .onHover { isHoveringHeader = $0 }
+                .clickCursor()
                 .help("Open \(collection.name)")
                 // Double-click pins the preview tab (same instant-click
                 // reasoning as the request rows).
@@ -944,6 +948,7 @@ private struct FolderTree: View {
                 }
                 .buttonStyle(.plain)
                 .onHover { isHoveringHeader = $0 }
+                .clickCursor()
                 .help(isExpanded ? "Collapse folder" : "Expand folder")
                 .contextMenu {
                     Button("Add Request", systemImage: "plus") {
@@ -1098,6 +1103,7 @@ private struct RequestRow: View {
                 }
                 .buttonStyle(.plain)
                 .onHover { isHovering = $0 }
+                .clickCursor()
                 // Double-click pins the preview tab. The Button above still
                 // fires immediately on each click (no double-click hold
                 // delay): the two single clicks preview-then-reselect, and
@@ -1171,6 +1177,7 @@ private struct HistoryRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .clickCursor(isEnabled: requestExists)
             .disabled(!requestExists)
 
             if isHovering {

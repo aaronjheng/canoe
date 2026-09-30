@@ -422,6 +422,7 @@ private struct SelectEnvironmentMenu: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
+        .clickCursor()
         .help("Switch the active environment")
     }
 }

@@ -511,6 +511,7 @@ struct EnvironmentPicker: View {
         )
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
+        .clickCursor()
         .onTapGesture { isShown.toggle() }
         .animation(.easeOut(duration: 0.12), value: isHovering)
         .animation(.easeOut(duration: 0.12), value: isShown)
@@ -679,6 +680,7 @@ struct EnvironmentPickerPanel: View {
                             if hovering { keyboard = nil }
                         }
                         .onTapGesture { pick(row) }
+                        .clickCursor()
                     }
                 }
                 .padding(.horizontal, AppSpacing.xSmall)
@@ -733,6 +735,7 @@ private struct TabPill: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .clickCursor()
         // No .focusable(): a focused pill draws the system focus ring, which
         // reads as a selection border. Tab switching is pointer-driven.
         .help(tabHelp)
@@ -833,6 +836,7 @@ private struct TabPill: View {
             }
             .buttonStyle(.plain)
             .onHover { isHoveringClose = $0 }
+            .clickCursor()
             .help("Close Tab (⌘W)")
             // Derived from the shared token so the right inset always equals
             // the tile's top/bottom margins ((24 - 18) / 2 = 3pt).
@@ -1140,6 +1144,7 @@ struct TabDrawer: View {
                                     if hovering { keyboard = nil }
                                 }
                                 .onTapGesture { pick(tab) }
+                                .clickCursor()
                                 .help(store.tabDisplayName(tab))
                                 .id(tab)
                             }

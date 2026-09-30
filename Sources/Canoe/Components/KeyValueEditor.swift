@@ -319,6 +319,7 @@ struct KeyValueEditor<T: KVItem>: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .clickCursor()
             .padding(.horizontal, AppSpacing.small)
             .help(keySortHelp)
         } else {

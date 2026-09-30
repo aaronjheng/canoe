@@ -293,6 +293,7 @@ struct WorkspacesView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .clickCursor()
             .foregroundStyle(sortMode == .name ? AppColor.accent : Color.secondary)
             .help("Sort by workspace name")
             Text("Collections")
@@ -314,6 +315,7 @@ struct WorkspacesView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .clickCursor()
             .foregroundStyle(sortMode == .activity ? AppColor.accent : Color.secondary)
             .help("Sort by last activity")
             // Spacer, not Color.clear: a sizeless view takes whatever height
@@ -402,6 +404,9 @@ struct WorkspacesView: View {
         // buttons above never reach here - controls consume their own taps.
         .contentShape(Rectangle())
         .onHover { hovering in hoveredID = hovering ? workspace.id : nil }
+        // The row toggles its checkbox on click and opens on double-click:
+        // both are clicks, so the row is part of the hand-cursor chrome.
+        .clickCursor()
         // Double-click opens the workspace; it takes priority over the
         // single-click checkbox toggle below. Taps on the row buttons never
         // reach here - controls consume their own taps.

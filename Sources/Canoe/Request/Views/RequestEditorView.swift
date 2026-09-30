@@ -885,6 +885,7 @@ private struct MethodPicker: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
+        .clickCursor()
         .help("HTTP method")
         .padding(.horizontal, AppSpacing.compact)
         .padding(.vertical, 3)
@@ -1017,6 +1018,7 @@ struct MethodMenuPanel: View {
                             // the keyboard position.
                             if hovering { keyboardMethod = nil }
                         }
+                        .clickCursor()
                     }
                 }
             }
