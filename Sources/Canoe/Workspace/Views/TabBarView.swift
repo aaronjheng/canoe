@@ -788,6 +788,12 @@ private struct TabPill: View {
             } else {
                 "Collection"
             }
+        case .folder(let id):
+            if let folder = store.folder(withID: id) {
+                "\(folder.name) - folder settings"
+            } else {
+                "Folder"
+            }
         case .workspace(let id):
             if let workspace = store.vault.workspaces.first(where: { $0.id == id }) {
                 "\(workspace.name) - workspace overview"
@@ -904,6 +910,14 @@ private struct TabPill: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .help("\(collection.name) - collection settings")
             }
+        case .folder(let id):
+            if let folder = store.folder(withID: id) {
+                Text(folder.name)
+                    .font(AppFont.small)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .help("\(folder.name) - folder settings")
+            }
         case .workspace(let id):
             if let workspace = store.vault.workspaces.first(where: { $0.id == id }) {
                 Text(workspace.name)
@@ -950,6 +964,8 @@ private func isTabDirty(_ tab: OpenTab, store: AppStore) -> Bool {
         return store.hasPendingEnvironmentChanges(for: id)
     case .collection(let id):
         return store.hasPendingCollectionChanges(for: id)
+    case .folder(let id):
+        return store.hasPendingFolderChanges(for: id)
     case .workspaceVariables(let id):
         return store.hasPendingWorkspaceVariables(for: id)
     default:
@@ -1025,6 +1041,10 @@ private struct TabItemIcon: View {
             // and folders sit in one tree, and the outline/fill pair they used
             // to share read as the same thing.
             Image(systemName: "list.bullet.rectangle.fill")
+                .font(AppFont.small)
+                .foregroundStyle(AppColor.accent)
+        case .folder:
+            Image(systemName: "folder")
                 .font(AppFont.small)
                 .foregroundStyle(AppColor.accent)
         case .workspace:

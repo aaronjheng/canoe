@@ -7,7 +7,6 @@ import SwiftUI
 struct AuthEditor: View {
     @Binding var request: Request
     @Environment(AppStore.self) private var store
-    @State private var folderEditTarget: FolderEditTarget?
 
     /// Merged variable scope for `{{placeholder}}` highlighting.
     private var resolvedVariables: [String: String] {
@@ -25,15 +24,13 @@ struct AuthEditor: View {
         store.authorizationSource(for: request)
     }
 
-    /// "Edit in Parent": the folder's sheet, or the collection editor tab.
+    /// "Edit in Parent": the parent folder's page, or the collection's.
     private func editInParent() {
         guard let source = inheritanceSource else { return }
-        if source.kind == .folder {
-            guard let collection = store.collectionForRequest(request),
-                let folder = collection.folders.first(where: { $0.id == source.ownerID })
-            else { return }
-            folderEditTarget = FolderEditTarget(collection: collection, folder: folder)
-        } else {
+        switch source.kind {
+        case .folder:
+            store.openTab(.folder(source.ownerID))
+        case .collection:
             store.openTab(.collection(source.ownerID))
         }
     }
@@ -49,18 +46,7 @@ struct AuthEditor: View {
             inheritedSource: inheritanceSource,
             onEditInParent: editInParent
         )
-        .sheet(item: $folderEditTarget) { target in
-            FolderEditSheet(collection: target.collection, folder: target.folder)
-        }
     }
-}
-
-/// Sheet-navigation wrapper: presents a folder's editor from a request.
-struct FolderEditTarget: Identifiable {
-    let collection: Collection
-    let folder: Folder
-
-    var id: UUID { folder.id }
 }
 
 /// The shared authorization editing surface, used by the request editor (own

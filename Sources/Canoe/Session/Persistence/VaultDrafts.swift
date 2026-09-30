@@ -9,10 +9,11 @@ struct VaultDrafts: Codable {
     var workspaceVariables: [String: [Variable]] = [:]
     var collectionVariables: [String: [Variable]] = [:]
     var collectionAuthorizations: [String: Authorization] = [:]
+    var folderAuthorizations: [String: Authorization] = [:]
 
     var isEmpty: Bool {
         requests.isEmpty && environments.isEmpty
             && workspaceVariables.isEmpty && collectionVariables.isEmpty
-            && collectionAuthorizations.isEmpty
+            && collectionAuthorizations.isEmpty && folderAuthorizations.isEmpty
     }
 }

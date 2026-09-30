@@ -10,6 +10,31 @@ extension AppStore {
         vault.collections.first { $0.requests.contains { $0.id == request.id } }
     }
 
+    /// The folder with `id`, wherever it is nested (folders live inside
+    /// collection files, so there is no flat folder list to index).
+    func folder(withID id: UUID) -> Folder? {
+        for collection in vault.collections {
+            if let folder = collection.folders.first(where: { $0.id == id }) { return folder }
+        }
+        return nil
+    }
+
+    /// The collection whose file holds `folderID`.
+    func collectionForFolder(_ folderID: UUID) -> Collection? {
+        vault.collections.first { $0.folders.contains { $0.id == folderID } }
+    }
+
+    /// Where a folder sits in the vault (collection index, folder index) for
+    /// in-place edits, or nil when no collection file holds it. Folders have
+    /// no file of their own, so every folder write goes through these two.
+    func folderIndexes(_ folderID: UUID) -> (collection: Int, folder: Int)? {
+        guard let ci = vault.collections.firstIndex(where: { $0.folders.contains { $0.id == folderID } }) else {
+            return nil
+        }
+        guard let fi = vault.collections[ci].folders.firstIndex(where: { $0.id == folderID }) else { return nil }
+        return (ci, fi)
+    }
+
     /// Where an inheriting request's Authorization comes from: the nearest
     /// ancestor along Request → Folder → Collection whose settings are not
     /// themselves set to inherit. nil when the request does not inherit.
@@ -50,16 +75,70 @@ extension AppStore {
         return source.authorization
     }
 
-    /// Applies a folder's Authorization edit and persists the collection
-    /// file immediately (folder settings are edited in a sheet; same
-    /// persistence model as rename/delete).
+    /// Where an inheriting folder's Authorization comes from: the nearest
+    /// ancestor folder whose settings are not themselves set to inherit, or
+    /// the owning collection at the top of the chain. One level up from
+    /// `authorizationSource(for:)`'s walk, so a nested folder's page names the
+    /// parent it actually inherits from instead of always the collection.
+    func authorizationSource(forFolder folderID: UUID, in collection: Collection) -> AuthorizationSource? {
+        var current = collection.folders.first(where: { $0.id == folderID })?.parentFolderID
+        var visited: Set<UUID> = []
+        while let id = current, let folder = collection.folders.first(where: { $0.id == id }) {
+            guard visited.insert(id).inserted else { break }
+            if folder.authorization.type != .inherit {
+                return AuthorizationSource(
+                    ownerID: folder.id, ownerName: folder.name, kind: .folder,
+                    authorization: folder.authorization)
+            }
+            current = folder.parentFolderID
+        }
+        return AuthorizationSource(
+            ownerID: collection.id, ownerName: collection.name, kind: .collection,
+            authorization: collection.authorization)
+    }
+
+    /// Applies a folder's Authorization edit to the in-memory vault and marks
+    /// it dirty - the same draft model as the collection's own settings:
+    /// nothing is written until Save (⌘S / Save button), and the edit is
+    /// mirrored to drafts.json so it survives relaunches.
     func updateFolderAuthorization(_ folderID: UUID, in collectionID: UUID, authorization: Authorization) {
-        guard let ci = vault.collections.firstIndex(where: { $0.id == collectionID }) else { return }
-        guard let fi = vault.collections[ci].folders.firstIndex(where: { $0.id == folderID }) else { return }
-        guard vault.collections[ci].folders[fi].authorization != authorization else { return }
-        vault.collections[ci].folders[fi].authorization = authorization
-        let updated = vault.collections[ci]
-        Task { await vault.writeCollection(persistable(updated)) }
+        guard let at = folderIndexes(folderID) else { return }
+        guard vault.collections[at.collection].id == collectionID else { return }
+        guard vault.collections[at.collection].folders[at.folder].authorization != authorization else { return }
+        if persistedFolderAuthorizationBaselines[folderID] == nil {
+            persistedFolderAuthorizationBaselines[folderID] = vault.collections[at.collection].folders[at.folder].authorization
+        }
+        vault.collections[at.collection].folders[at.folder].authorization = authorization
+        pendingFolderAuthorizations[folderID] = authorization
+        // An edit is an edit: it pins a live preview like any other.
+        if previewTab == .folder(folderID) { previewTab = nil }
+        scheduleDraftPersistence()
+    }
+
+    /// Whether the folder's Authorization has unsaved modifications.
+    func hasPendingFolderChanges(for folderID: UUID) -> Bool {
+        guard let pending = pendingFolderAuthorizations[folderID] else { return false }
+        guard let baseline = persistedFolderAuthorizationBaselines[folderID] else { return true }
+        return pending != baseline
+    }
+
+    /// Writes a folder's unsaved Authorization edit into its collection file.
+    func persistFolderAuthorization(_ folderID: UUID, _ authorization: Authorization) async {
+        guard let at = folderIndexes(folderID) else {
+            // The folder vanished (deleted while a save was in flight).
+            persistedFolderAuthorizationBaselines[folderID] = nil
+            return
+        }
+        let baseline =
+            persistedFolderAuthorizationBaselines[folderID]
+            ?? vault.collections[at.collection].folders[at.folder].authorization
+        if authorization == baseline {
+            persistedFolderAuthorizationBaselines[folderID] = authorization
+            return
+        }
+        vault.collections[at.collection].folders[at.folder].authorization = authorization
+        await vault.writeCollection(persistable(vault.collections[at.collection]))
+        persistedFolderAuthorizationBaselines[folderID] = authorization
     }
 
     // MARK: - Collections
@@ -100,6 +179,14 @@ extension AppStore {
         persistedCollectionVariableBaselines[id] = nil
         pendingCollectionAuthorizations[id] = nil
         persistedCollectionAuthorizationBaselines[id] = nil
+        for folderID in vault.collections.filter({ $0.id == id }).flatMap(\.folders).map(\.id) {
+            pendingFolderAuthorizations[folderID] = nil
+            persistedFolderAuthorizationBaselines[folderID] = nil
+            // A folder page is a tab like any other, and its entity is going
+            // away with the collection - close it instead of leaving an empty
+            // tab behind until the next dangling-tab sweep.
+            closeTab(.folder(folderID))
+        }
         for tab in openTabs where tab.requestID.map(doomed.contains) == true {
             closeTab(tab)
         }
@@ -176,6 +263,13 @@ extension AppStore {
                 collection.authorization = baseline
             }
         }
+        for folderIndex in collection.folders.indices {
+            let folderID = collection.folders[folderIndex].id
+            guard pendingFolderAuthorizations[folderID] != nil else { continue }
+            if let baseline = persistedFolderAuthorizationBaselines[folderID] {
+                collection.folders[folderIndex].authorization = baseline
+            }
+        }
         return collection
     }
 
@@ -249,6 +343,11 @@ extension AppStore {
             }
         }
         collection.folders.removeAll { toDelete.contains($0.id) }
+        for folderID in toDelete {
+            pendingFolderAuthorizations[folderID] = nil
+            persistedFolderAuthorizationBaselines[folderID] = nil
+            closeTab(.folder(folderID))
+        }
         // Requests inside deleted folders are moved to the collection root.
         for requestIndex in collection.requests.indices {
             guard let folder = collection.requests[requestIndex].folderID, toDelete.contains(folder) else { continue }

@@ -7,6 +7,7 @@ import Foundation
 /// - `.environment`: the environment's variables editor.
 /// - `.collection`: the collection's variables editor (not a collection
 ///   overview - case name kept for stored-tab compatibility).
+/// - `.folder`: a folder's page (Overview + Authorization).
 /// - `.workspace`: the workspace Overview (stats), opened only from the
 ///   workspaces management list.
 /// - `.workspaceVariables`: the workspace's variables editor.
@@ -17,6 +18,7 @@ enum OpenTab: Hashable, Identifiable, Sendable, Codable {
     case request(UUID)
     case environment(UUID)
     case collection(UUID)
+    case folder(UUID)
     case workspace(UUID)
     case workspaceVariables(UUID)
 
@@ -32,6 +34,10 @@ enum OpenTab: Hashable, Identifiable, Sendable, Codable {
 
     var collectionID: UUID? {
         if case .collection(let id) = self { id } else { nil }
+    }
+
+    var folderID: UUID? {
+        if case .folder(let id) = self { id } else { nil }
     }
 
     var workspaceID: UUID? {

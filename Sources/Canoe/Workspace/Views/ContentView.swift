@@ -319,6 +319,9 @@ struct ContentView: View {
         } else if let collection = store.selectedCollectionTab {
             CollectionDetailView(collection: collection)
                 .id(collection.id)
+        } else if let folder = store.selectedFolderTab {
+            FolderDetailView(folder: folder)
+                .id(folder.id)
         } else if let workspace = store.selectedWorkspaceTab {
             WorkspaceOverviewView(workspace: workspace)
                 .id(workspace.id)

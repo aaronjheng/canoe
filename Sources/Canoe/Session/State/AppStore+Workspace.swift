@@ -33,6 +33,13 @@ extension AppStore {
         persistedWorkspaceVariableBaselines[id] = nil
         for collection in vault.collections where collection.workspaceID == id {
             closeTab(.collection(collection.id))
+            // Folder pages ride along with their collection (a folder has no
+            // file of its own, so its drafts go with the same cascade).
+            for folder in collection.folders {
+                closeTab(.folder(folder.id))
+                pendingFolderAuthorizations[folder.id] = nil
+                persistedFolderAuthorizationBaselines[folder.id] = nil
+            }
             for request in collection.requests {
                 closeTab(.request(request.id))
                 pendingRequestSnapshots[request.id] = nil

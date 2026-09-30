@@ -6,6 +6,46 @@ enum RightInspectorPanel: Hashable {
     case codeSnippet
 }
 
+/// One segment of the path leading to a request: the collection first, then
+/// every folder between it and the request. The request editor's path bar
+/// renders these as buttons, so a crumb carries the page it opens rather than
+/// just a name.
+struct BreadcrumbCrumb: Identifiable, Hashable, Sendable {
+    /// What clicking the crumb opens.
+    enum Target: Hashable, Sendable {
+        case collection(UUID)
+        case folder(UUID)
+    }
+
+    let name: String
+    let target: Target
+
+    var id: UUID {
+        switch target {
+        case .collection(let id), .folder(let id): id
+        }
+    }
+
+    /// Whether the crumb can be renamed in place (collections rename from the
+    /// sidebar; folders own a page title).
+    var isFolder: Bool {
+        if case .folder = target { true } else { false }
+    }
+
+    /// Tooltip: what a click does, and the second gesture where one exists.
+    /// Renaming is a right-click action on purpose - a double-click on the
+    /// crumb would fire the click that opens the page first, unmounting the
+    /// editor before a rename could start.
+    var help: String {
+        switch target {
+        case .collection:
+            "Open \(name)"
+        case .folder:
+            "Open folder \(name) - right-click to rename"
+        }
+    }
+}
+
 /// AppStore navigation: sidebar expansion, inspector panels, open tabs,
 /// tree helpers, and sidebar filtering.
 @MainActor
@@ -71,6 +111,7 @@ extension AppStore {
         let requestIDs = Set(vault.collections.flatMap(\.requests).map(\.id))
         let envIDs = Set(vault.environments.map(\.id))
         let collectionIDs = Set(vault.collections.map(\.id))
+        let folderIDs = Set(vault.collections.flatMap(\.folders).map(\.id))
         let workspaceIDs = Set(vault.workspaces.map(\.id))
         return openTabs.filter { tab in
             if let id = tab.requestID {
@@ -79,6 +120,8 @@ extension AppStore {
                 envIDs.contains(id)
             } else if let id = tab.collectionID {
                 collectionIDs.contains(id)
+            } else if let id = tab.folderID {
+                folderIDs.contains(id)
             } else if let id = tab.workspaceID {
                 workspaceIDs.contains(id)
             } else if let id = tab.workspaceVariablesID {
@@ -284,6 +327,8 @@ extension AppStore {
             return hasPendingEnvironmentChanges(for: id)
         case .collection(let id):
             return hasPendingCollectionChanges(for: id)
+        case .folder(let id):
+            return hasPendingFolderChanges(for: id)
         case .workspaceVariables(let id):
             return hasPendingWorkspaceVariables(for: id)
         case .workspace:
@@ -300,6 +345,8 @@ extension AppStore {
             vault.environments.first { $0.id == id }?.name ?? "Environment"
         case .collection(let id):
             vault.collections.first { $0.id == id }?.name ?? "Collection"
+        case .folder(let id):
+            folder(withID: id)?.name ?? "Folder"
         case .workspace(let id):
             vault.workspaces.first { $0.id == id }?.name ?? "Workspace"
         case .workspaceVariables(let id):
@@ -432,6 +479,16 @@ extension AppStore {
                 persistedCollectionAuthorizationBaselines[id] = nil
                 dropped = true
             }
+        case .folder(let id):
+            if pendingFolderAuthorizations[id] != nil {
+                let at = folderIndexes(id)
+                if let at, let baseline = persistedFolderAuthorizationBaselines[id] {
+                    vault.collections[at.collection].folders[at.folder].authorization = baseline
+                }
+                pendingFolderAuthorizations[id] = nil
+                persistedFolderAuthorizationBaselines[id] = nil
+                dropped = true
+            }
         case .workspaceVariables(let id):
             if pendingWorkspaceVariables[id] != nil {
                 if let baseline = persistedWorkspaceVariableBaselines[id] {
@@ -495,6 +552,7 @@ extension AppStore {
         let requestIDs = Set(vault.collections.flatMap(\.requests).map(\.id))
         let envIDs = Set(vault.environments.map(\.id))
         let collectionIDs = Set(vault.collections.map(\.id))
+        let folderIDs = Set(vault.collections.flatMap(\.folders).map(\.id))
         let workspaceIDs = Set(vault.workspaces.map(\.id))
         openTabs.removeAll { tab in
             if let id = tab.requestID {
@@ -503,6 +561,8 @@ extension AppStore {
                 !envIDs.contains(id)
             } else if let id = tab.collectionID {
                 !collectionIDs.contains(id)
+            } else if let id = tab.folderID {
+                !folderIDs.contains(id)
             } else if let id = tab.workspaceID {
                 !workspaceIDs.contains(id)
             } else if let id = tab.workspaceVariablesID {
@@ -532,12 +592,11 @@ extension AppStore {
             .sorted { ($0.orderIndex, $0.id.uuidString) < ($1.orderIndex, $1.id.uuidString) }
     }
 
-    /// The breadcrumb path leading to `request`, outermost first and starting
-    /// with the owning collection's name - e.g.
-    /// `["My Collection", "Auth", "Login Flow"]` for a request nested two
-    /// folders deep. Cycle-safe: a corrupted `parentFolderID` chain cannot
-    /// hang the UI.
-    func breadcrumbPath(for request: Request) -> [String] {
+    /// The path leading to `request`, outermost first and starting with the
+    /// owning collection - e.g. `My Collection / Auth / Login Flow` for a
+    /// request nested two folders deep. Cycle-safe: a corrupted
+    /// `parentFolderID` chain cannot hang the UI.
+    func breadcrumbCrumbs(for request: Request) -> [BreadcrumbCrumb] {
         guard
             let collection = vault.collections.first(where: {
                 $0.requests.contains { $0.id == request.id }
@@ -546,15 +605,15 @@ extension AppStore {
 
         // Walk up from the request's folder to the collection root, then
         // flip the chain so the path reads outermost-first like a file path.
-        var chain: [String] = []
+        var chain: [BreadcrumbCrumb] = []
         var visited = Set<UUID>()
         var current = request.folderID
         while let folderID = current, visited.insert(folderID).inserted {
             guard let folder = collection.folders.first(where: { $0.id == folderID }) else { break }
-            chain.append(folder.name)
+            chain.append(BreadcrumbCrumb(name: folder.name, target: .folder(folder.id)))
             current = folder.parentFolderID
         }
-        return [collection.name] + chain.reversed()
+        return [BreadcrumbCrumb(name: collection.name, target: .collection(collection.id))] + chain.reversed()
     }
 
     /// Requests directly inside a folder (or the collection root when nil).

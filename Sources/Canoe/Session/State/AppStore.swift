@@ -150,6 +150,11 @@ final class AppStore {
     var pendingCollectionVariables: [UUID: [Variable]] = [:]
     /// Unsaved collection Authorization edits - same draft model.
     var pendingCollectionAuthorizations: [UUID: Authorization] = [:]
+    /// Unsaved folder Authorization edits - same draft model, keyed by folder
+    /// id. A folder has no file of its own: its settings live in the owning
+    /// collection's file, so both the save and the mirror resolve the
+    /// collection through the folder id.
+    var pendingFolderAuthorizations: [UUID: Authorization] = [:]
     /// Last persisted content per request id. The dirty check compares
     /// against this (NOT the in-memory copy, which updateRequest has already
     /// mutated - that comparison always matched, so edits never reached disk).
@@ -162,6 +167,8 @@ final class AppStore {
     @ObservationIgnored var persistedCollectionVariableBaselines: [UUID: [Variable]] = [:]
     /// Last persisted Authorization per collection id.
     @ObservationIgnored var persistedCollectionAuthorizationBaselines: [UUID: Authorization] = [:]
+    /// Last persisted Authorization per folder id.
+    @ObservationIgnored var persistedFolderAuthorizationBaselines: [UUID: Authorization] = [:]
     let historyLimit = 100
     static let responseHistoryLimit = 20
     /// Console (network log) entries, newest last; session-scoped and capped.
@@ -233,6 +240,14 @@ final class AppStore {
     var selectedCollectionTab: Collection? {
         guard case .collection(let id) = selectedTab else { return nil }
         return vault.collections.first { $0.id == id }
+    }
+
+    /// The folder shown in the selected tab (nil unless a folder tab is
+    /// active). Folders are nested inside collection files, so this resolves
+    /// through the vault rather than a flat list.
+    var selectedFolderTab: Folder? {
+        guard case .folder(let id) = selectedTab else { return nil }
+        return folder(withID: id)
     }
 
     /// The workspace shown in the selected tab (nil unless the workspace

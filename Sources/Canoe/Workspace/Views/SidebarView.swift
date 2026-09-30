@@ -929,7 +929,6 @@ private struct FolderTree: View {
     @State private var isHoveringHeader = false
     @State private var isRenaming = false
     @State private var showDeleteConfirm = false
-    @State private var showEditSheet = false
     /// A menu popup tracks the mouse in its own session, and the pointer sits
     /// in the popup window while it does - see the row's body.
     @State private var isMenuTracking = false
@@ -941,6 +940,11 @@ private struct FolderTree: View {
     /// outlive the pointer leaving the row for their own open menu, or the
     /// menu would be torn down from under the pointer.
     private var showsActions: Bool { isHoveringHeader || isMenuTracking }
+
+    /// Whether this folder's page is the selected tab - the same selection
+    /// mark the collection row carries, so the sidebar shows which folder the
+    /// open page belongs to.
+    private var isSelected: Bool { store.selectedTab == .folder(folder.id) }
 
     private var isFiltering: Bool {
         !store.sidebarFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1016,7 +1020,7 @@ private struct FolderTree: View {
         }
         Divider()
         Button("Edit", systemImage: "folder.badge.gearshape") {
-            showEditSheet = true
+            store.openTab(.folder(folder.id))
         }
         Button("Rename") {
             isRenaming = true
@@ -1049,8 +1053,12 @@ private struct FolderTree: View {
             if isRenamingNode {
                 renameRow
             } else {
+                // Postman-style: the row opens the folder's page (Overview /
+                // Authorization); only the chevron toggles the tree. A tap on
+                // the chevron reaches the inner button alone, anywhere else
+                // opens the page.
                 Button {
-                    store.toggleSidebarNode(folder.id)
+                    store.preview(.folder(folder.id))
                 } label: {
                     HStack(spacing: 0) {
                         // The chevron sits one tree step per level right of the
@@ -1059,7 +1067,18 @@ private struct FolderTree: View {
                         Color.clear
                             .frame(width: AppSize.treeExpanderColumn + AppSize.treeIndent * CGFloat(depth))
                         HStack(spacing: AppSpacing.xSmall) {
-                            ExpanderChevron(isExpanded: isExpanded)
+                            Button {
+                                store.toggleSidebarNode(folder.id)
+                            } label: {
+                                ExpanderChevron(isExpanded: isExpanded)
+                                    // Same hit height as the collection row's
+                                    // chevron: it is the only expander left.
+                                    .padding(.vertical, AppSpacing.xSmall)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .clickCursor()
+                            .help(isExpanded ? "Collapse folder" : "Expand folder")
                             Image(systemName: "folder")
                                 .font(AppFont.iconLarge)  // VS Code uses 16px tree icons
                                 .foregroundStyle(.secondary)
@@ -1074,7 +1093,7 @@ private struct FolderTree: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                            .fill(showsActions ? AppColor.subtleBackground : .clear)
+                            .fill(isSelected ? AppColor.selectionBackground : showsActions ? AppColor.subtleBackground : .clear)
                     )
                     .overlay(alignment: .leading) {
                         IndentGuides(depth: depth)
@@ -1084,7 +1103,12 @@ private struct FolderTree: View {
                 .buttonStyle(.plain)
                 .tracksHover { isHoveringHeader = $0 }
                 .clickCursor()
-                .help(isExpanded ? "Collapse folder" : "Expand folder")
+                .help("Open \(folder.name)")
+                // Double-click pins the preview tab (same instant-click
+                // reasoning as the request rows).
+                .simultaneousGesture(
+                    TapGesture(count: 2).onEnded { store.pin(.folder(folder.id)) }
+                )
                 .contextMenu {
                     Button("Add Request", systemImage: "plus") {
                         addRequest()
@@ -1103,9 +1127,6 @@ private struct FolderTree: View {
                         .id(request.id)
                 }
             }
-        }
-        .sheet(isPresented: $showEditSheet) {
-            FolderEditSheet(collection: collection, folder: folder)
         }
         .confirmationDialog(
             "Delete folder \"\(folder.name)\"",

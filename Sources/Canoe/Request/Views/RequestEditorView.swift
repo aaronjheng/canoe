@@ -207,6 +207,15 @@ struct RequestEditorView: View {
     /// Local left-mouse-down monitor that ends name editing when a click
     /// lands outside the field. Installed while the editor is on screen.
     @State private var nameDismissMonitor: Any?
+    /// A path-bar crumb mid-rename (double-click): its id, and the name being
+    /// typed. Renaming is structural, so it commits on Return or when the
+    /// field loses focus.
+    @State private var renamingCrumbID: UUID?
+    /// The crumb under the pointer, for its hover chrome. Crumbs are live
+    /// links, so the pointer has to see them light up.
+    @State private var hoveredCrumbID: UUID?
+    @State private var crumbNameDraft = ""
+    @FocusState private var isCrumbFieldFocused: Bool
 
     /// The raw text currently shown in the URL bar.
     @State private var urlText = ""
@@ -424,11 +433,12 @@ struct RequestEditorView: View {
 
     // MARK: - Name bar
 
-    /// The breadcrumb leading to this request, outermost first and starting
+    /// The path leading to this request, outermost first and starting
     /// with the collection name - `Collection › Folder › Subfolder` - rendered
-    /// before the editable request name like a file path.
-    private var breadcrumbPath: [String] {
-        store.breadcrumbPath(for: draft)
+    /// before the editable request name like a file path. Each crumb is a
+    /// button onto its own page.
+    private var pathCrumbs: [BreadcrumbCrumb] {
+        store.breadcrumbCrumbs(for: draft)
     }
 
     /// Whether the request has unsaved modifications (Save button + tab "*").
@@ -441,17 +451,8 @@ struct RequestEditorView: View {
             // Postman-style protocol badge leading the row ("HTTP" today;
             // more protocol types may come later).
             RequestTypeBadge(type: draft.requestType)
-            if !breadcrumbPath.isEmpty {
-                // One path text (not per-segment views) keeps the row stable
-                // when folders are renamed or the window narrows: it truncates
-                // from the head like a file path while the layout-priority
-                // request name below stays fully visible.
-                Text(breadcrumbPath.joined(separator: " › "))
-                    .font(AppFont.small)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.head)
-                    .help(breadcrumbPath.joined(separator: " › "))
+            if !pathCrumbs.isEmpty {
+                pathBar
                 Image(systemName: "chevron.right")
                     .font(AppFont.small.weight(.semibold))
                     .foregroundStyle(.tertiary)
@@ -471,6 +472,154 @@ struct RequestEditorView: View {
         // (VSplitView panes, taller windows) inflate into blank bands above
         // and below the bar. Pin it like the other toolbar rows.
         .frame(height: AppSize.toolbarHeight + AppSpacing.xSmall)
+    }
+
+    /// The path as a run of crumb buttons, widest variant first: the first
+    /// that fits wins, and the last one (the crumb nearest the request) is
+    /// what stays when even that does not. Dropping crumbs from the head
+    /// keeps the tail-first behavior the old head-truncated text had.
+    ///
+    /// `fixedSize()` is what makes the choice real: without it every variant
+    /// is a compressible stack of truncating labels, so the widest one
+    /// "fits" at any width and the narrower variants never come up.
+    private var pathBar: some View {
+        // While a crumb is being renamed, only the full path is offered: a
+        // narrower variant would drop that crumb and leave the rename state
+        // set with no field to type into.
+        let variantCount = renamingCrumbID == nil ? pathCrumbs.count : 1
+        return ViewThatFits(in: .horizontal) {
+            ForEach(0..<variantCount, id: \.self) { dropped in
+                pathCrumbsRow(Array(pathCrumbs.dropFirst(dropped)))
+                    // Every variant but the last is measured at its ideal
+                    // width, so ViewThatFits really compares widths. The last
+                    // one is the fallback and stays compressible: a long
+                    // nearest crumb truncates instead of pushing the request
+                    // name and the Save chip out of the row.
+                    .fixedSize(horizontal: dropped < variantCount - 1, vertical: true)
+            }
+        }
+        // Shrinkable before anything else: the request name is the row's
+        // subject, the path is context. A crumb truncates long before the
+        // name gives up a character.
+        .layoutPriority(0.5)
+    }
+
+    private func pathCrumbsRow(_ crumbs: [BreadcrumbCrumb]) -> some View {
+        HStack(spacing: AppSpacing.xxSmall) {
+            ForEach(Array(crumbs.enumerated()), id: \.element.id) { index, crumb in
+                if index > 0 {
+                    Image(systemName: "chevron.right")
+                        .font(AppFont.small.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                crumbView(crumb)
+            }
+        }
+        .help(crumbs.map(\.name).joined(separator: " › "))
+    }
+
+    @ViewBuilder
+    private func crumbView(_ crumb: BreadcrumbCrumb) -> some View {
+        if crumb.id == renamingCrumbID {
+            crumbRenameField(crumb)
+        } else {
+            Button {
+                openCrumb(crumb)
+            } label: {
+                let isHovered = hoveredCrumbID == crumb.id
+                Text(crumb.name)
+                    .font(AppFont.small)
+                    .foregroundStyle(isHovered ? .primary : .secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    // Padding is constant, never hover-conditional: the pill
+                    // has to appear without the crumb shifting under the
+                    // pointer (or the path re-measuring its variants).
+                    .padding(.horizontal, AppSpacing.xSmall)
+                    .padding(.vertical, AppSpacing.xxSmall)
+                    .background(
+                        RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                            .fill(isHovered ? AppColor.subtleBackground : .clear)
+                    )
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .clickCursor()
+            // Geometric tracking, not `.onHover`: the AppKit button behind a
+            // SwiftUI button can take the pointer away from the crumb and
+            // leave the highlight stuck or missing.
+            .tracksHover { isHovering in
+                if isHovering {
+                    hoveredCrumbID = crumb.id
+                } else if hoveredCrumbID == crumb.id {
+                    hoveredCrumbID = nil
+                }
+            }
+            .help(crumb.help)
+            // Rename lives on the context menu, not a second click gesture:
+            // a double-click fires the button's action first, which opens the
+            // page and unmounts the editor - the rename would never happen.
+            .contextMenu {
+                if crumb.isFolder {
+                    Button("Rename Folder") { beginCrumbRename(crumb) }
+                }
+            }
+        }
+    }
+
+    /// The crumb being renamed, as an inline field sized to its text.
+    private func crumbRenameField(_ crumb: BreadcrumbCrumb) -> some View {
+        TextField("Folder Name", text: $crumbNameDraft)
+            .font(AppFont.small)
+            .textFieldStyle(.plain)
+            .focusEffectDisabled()
+            .borderlessFieldChrome(isFocused: isCrumbFieldFocused)
+            .focused($isCrumbFieldFocused)
+            .frame(minWidth: 80, maxWidth: 200)
+            .onSubmit { commitCrumbRename(crumb) }
+            .onExitCommand { renamingCrumbID = nil }
+            .onChange(of: isCrumbFieldFocused) { _, focused in
+                // Clicking away commits, like the sidebar's inline rename.
+                if !focused { commitCrumbRename(crumb) }
+            }
+            .onDisappear {
+                // Unmounted while editing (tab switch, detail change): commit
+                // too, unless Esc already cleared the state.
+                if crumb.id == renamingCrumbID { commitCrumbRename(crumb) }
+            }
+            .task { isCrumbFieldFocused = true }
+    }
+
+    private func openCrumb(_ crumb: BreadcrumbCrumb) {
+        switch crumb.target {
+        case .collection(let id):
+            store.openTab(.collection(id))
+        case .folder(let id):
+            store.openTab(.folder(id))
+        }
+    }
+
+    private func beginCrumbRename(_ crumb: BreadcrumbCrumb) {
+        guard crumb.isFolder else { return }
+        crumbNameDraft = crumb.name
+        renamingCrumbID = crumb.id
+    }
+
+    /// A structural rename: it lands immediately, like the sidebar's inline
+    /// rename, so it does not wait for the request's own Save.
+    private func commitCrumbRename(_ crumb: BreadcrumbCrumb) {
+        guard crumb.id == renamingCrumbID else { return }
+        renamingCrumbID = nil
+        let trimmed = crumbNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, case .folder(let folderID) = crumb.target,
+            let collection = store.collectionForFolder(folderID)
+        else {
+            // An empty name is not a rename: put the crumb's own name back
+            // rather than dropping the edit on the floor.
+            crumbNameDraft = crumb.name
+            return
+        }
+        store.renameFolder(folderID, in: collection.id, to: trimmed)
     }
 
     /// Postman-style inline request name: quiet heading at rest, light pill

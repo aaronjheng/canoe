@@ -163,6 +163,7 @@ extension AppStore {
         applyWorkspaceVariableDrafts(drafts.workspaceVariables)
         applyCollectionVariableDrafts(drafts.collectionVariables)
         applyCollectionAuthorizationDrafts(drafts.collectionAuthorizations)
+        applyFolderAuthorizationDrafts(drafts.folderAuthorizations)
         // Restores the per-device request history mirrored by the last
         // session (machine-local, like the drafts above).
         history = await vault.loadHistory(limit: historyLimit)
@@ -375,6 +376,15 @@ extension AppStore {
             persistedCollectionAuthorizationBaselines[id] = vault.collections[idx].authorization
             vault.collections[idx].authorization = authorization
         }
+        for (id, authorization) in pendingFolderAuthorizations {
+            guard let at = folderIndexes(id) else {
+                pendingFolderAuthorizations[id] = nil
+                persistedFolderAuthorizationBaselines[id] = nil
+                continue
+            }
+            persistedFolderAuthorizationBaselines[id] = vault.collections[at.collection].folders[at.folder].authorization
+            vault.collections[at.collection].folders[at.folder].authorization = authorization
+        }
         scheduleDraftPersistence()
     }
 
@@ -473,6 +483,22 @@ extension AppStore {
         scheduleDraftPersistence()
     }
 
+    /// Re-applies folder Authorization drafts - same restore as requests.
+    func applyFolderAuthorizationDrafts(_ drafts: [String: Authorization]) {
+        guard !drafts.isEmpty else { return }
+        var restored: [UUID: Authorization] = [:]
+        for (key, authorization) in drafts {
+            guard let id = UUID(uuidString: key), let at = folderIndexes(id) else { continue }
+            if persistedFolderAuthorizationBaselines[id] == nil {
+                persistedFolderAuthorizationBaselines[id] = vault.collections[at.collection].folders[at.folder].authorization
+            }
+            vault.collections[at.collection].folders[at.folder].authorization = authorization
+            restored[id] = authorization
+        }
+        pendingFolderAuthorizations = restored
+        scheduleDraftPersistence()
+    }
+
     /// The draft mirror's current content, keyed for drafts.json.
     var currentDrafts: VaultDrafts {
         VaultDrafts(
@@ -485,7 +511,9 @@ extension AppStore {
             collectionVariables: Dictionary(
                 pendingCollectionVariables.map { ($0.key.uuidString, $0.value) }, uniquingKeysWith: { first, _ in first }),
             collectionAuthorizations: Dictionary(
-                pendingCollectionAuthorizations.map { ($0.key.uuidString, $0.value) }, uniquingKeysWith: { first, _ in first })
+                pendingCollectionAuthorizations.map { ($0.key.uuidString, $0.value) }, uniquingKeysWith: { first, _ in first }),
+            folderAuthorizations: Dictionary(
+                pendingFolderAuthorizations.map { ($0.key.uuidString, $0.value) }, uniquingKeysWith: { first, _ in first })
         )
     }
 
@@ -553,15 +581,17 @@ extension AppStore {
         let pendingWorkspaceVariables = self.pendingWorkspaceVariables
         let pendingCollectionVariables = self.pendingCollectionVariables
         let pendingCollectionAuthorizations = self.pendingCollectionAuthorizations
+        let pendingFolderAuthorizations = self.pendingFolderAuthorizations
         pendingRequestSnapshots.removeAll()
         pendingEnvironmentSnapshots.removeAll()
         self.pendingWorkspaceVariables.removeAll()
         self.pendingCollectionVariables.removeAll()
         self.pendingCollectionAuthorizations.removeAll()
+        self.pendingFolderAuthorizations.removeAll()
         guard
             !pendingRequests.isEmpty || !pendingEnvironments.isEmpty
                 || !pendingWorkspaceVariables.isEmpty || !pendingCollectionVariables.isEmpty
-                || !pendingCollectionAuthorizations.isEmpty
+                || !pendingCollectionAuthorizations.isEmpty || !pendingFolderAuthorizations.isEmpty
         else {
             completion?()
             return
@@ -592,6 +622,9 @@ extension AppStore {
             }
             for (id, authorization) in pendingCollectionAuthorizations.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
                 await self.persistCollectionAuthorization(id, authorization)
+            }
+            for (id, authorization) in pendingFolderAuthorizations.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
+                await self.persistFolderAuthorization(id, authorization)
             }
             await self.vault.saveDrafts(VaultDrafts())
             completion?()
