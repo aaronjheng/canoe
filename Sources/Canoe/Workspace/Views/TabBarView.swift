@@ -521,8 +521,8 @@ struct EnvironmentPicker: View {
     }
 }
 
-/// The dropdown panel: search + create shortcut on top, then the checkmarked
-/// "No environment" row and one row per workspace environment. Hosted by
+/// The dropdown panel: search on top, then the checkmarked "No environment"
+/// row and one row per workspace environment, then a create row. Hosted by
 /// ContentView's window-level overlay (see `EnvPickerAnchorKey`).
 struct EnvironmentPickerPanel: View {
     /// Fixed panel width, mirrored by the overlay anchoring math.
@@ -534,6 +534,7 @@ struct EnvironmentPickerPanel: View {
     @FocusState private var searchFocused: Bool
     @State private var hovered: PanelRow?
     @State private var keyboard: PanelRow?
+    @State private var isHoveringCreate = false
 
     /// Selectable rows: the "No environment" pseudo-row first, then the
     /// workspace environments in sidebar order. The case is deliberately
@@ -596,46 +597,30 @@ struct EnvironmentPickerPanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: AppSpacing.small) {
-                TextField("Search", text: $search)
-                    .borderlessFieldChrome(isFocused: searchFocused)
-                    .font(AppFont.small)
-                    .focused($searchFocused)
-                    .onSubmit {
-                        guard let row = keyboard ?? visibleRows.first else { return }
-                        pick(row)
-                    }
-                    .onExitCommand(perform: onDismiss)
-                    .onKeyPress(.upArrow) {
-                        moveKeyboard(by: -1)
-                        return .handled
-                    }
-                    .onKeyPress(.downArrow) {
-                        moveKeyboard(by: 1)
-                        return .handled
-                    }
-                    .onChange(of: search) { _, _ in
-                        keyboard = nil
-                    }
-                Divider()
-                    .frame(height: AppSize.pickerDividerHeight)
-                Button("New Environment", systemImage: "plus") {
-                    // Same creation flow as the sidebar/menu (opens the
-                    // editor tab), plus activation: picking "+"
-                    // means working in the new environment.
-                    if let env = store.addEnvironment() {
-                        store.setActiveEnvironment(env.id)
-                    }
-                    onDismiss()
+            // The search field takes the whole width: the create shortcut used
+            // to sit beside it, but it lives at the foot of the menu now.
+            TextField("Search", text: $search)
+                .borderlessFieldChrome(isFocused: searchFocused)
+                .font(AppFont.small)
+                .focused($searchFocused)
+                .onSubmit {
+                    guard let row = keyboard ?? visibleRows.first else { return }
+                    pick(row)
                 }
-                .labelStyle(.iconOnly)
-                .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
-                .foregroundStyle(.secondary)
-                .disabled(store.activeWorkspace == nil)
-                .help("New Environment")
-            }
-            .padding(.horizontal, AppSpacing.small)
-            .frame(minHeight: AppSize.controlHeight)
+                .onExitCommand(perform: onDismiss)
+                .onKeyPress(.upArrow) {
+                    moveKeyboard(by: -1)
+                    return .handled
+                }
+                .onKeyPress(.downArrow) {
+                    moveKeyboard(by: 1)
+                    return .handled
+                }
+                .onChange(of: search) { _, _ in
+                    keyboard = nil
+                }
+                .padding(.horizontal, AppSpacing.small)
+                .frame(minHeight: AppSize.controlHeight)
 
             Divider()
 
@@ -686,6 +671,49 @@ struct EnvironmentPickerPanel: View {
                 .padding(.horizontal, AppSpacing.xSmall)
                 .padding(.vertical, AppSpacing.xSmall)
             }
+
+            // Creation is a row of the menu, not a bare "+" next to the
+            // search field: the menu then says what the button creates, and
+            // the action sits with the list it extends.
+            Divider()
+            Button {
+                // Same creation flow as the sidebar/menu (opens the editor
+                // tab), plus activation: creating from the picker means
+                // working in the new environment.
+                if let env = store.addEnvironment() {
+                    store.setActiveEnvironment(env.id)
+                }
+                onDismiss()
+            } label: {
+                HStack(spacing: AppSpacing.small) {
+                    Image(systemName: "plus")
+                        .font(AppFont.small.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        // The checkmark gutter, so the create label lines up
+                        // with the environment names above it.
+                        .frame(width: AppSize.compactControl)
+                    Text("Create new environment")
+                        .font(AppFont.small)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, AppSpacing.small)
+                .frame(maxWidth: .infinity, minHeight: AppSize.controlHeight, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                        .fill(isHoveringCreate ? AppColor.subtleBackground : .clear)
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { isHoveringCreate = $0 }
+            .clickCursor()
+            .disabled(store.activeWorkspace == nil)
+            .help("New Environment")
+            .padding(.horizontal, AppSpacing.xSmall)
+            .padding(.vertical, AppSpacing.xSmall)
         }
         .frame(width: Self.width)
         // Panel height = content height, never the proposal: the overlay
