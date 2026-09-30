@@ -192,7 +192,14 @@ private struct WorkspaceSwitcher: View {
         .contentShape(Rectangle())
         .background(
             RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                .fill(isHoveringPill ? AppColor.subtleBackground : .clear)
+                // Lit while the card is up, not only while the pill itself is
+                // hovered: the fill marks which workspace the card belongs to,
+                // and dropping it the moment the pointer stepped onto the card
+                // left the card hanging off nothing. Riding on `showsCard`
+                // instead of the card's own hover - the card outlives a
+                // crossing of the gap by its hide grace - also keeps the fill
+                // from blinking as the pointer moves between the two.
+                .fill(showsCard || isHoveringPill ? AppColor.subtleBackground : .clear)
         )
         .onHover { isHoveringPill = $0 }
         .help("Switch workspace")
