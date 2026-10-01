@@ -275,8 +275,9 @@ struct TabBarView: View {
             // ⌘1-9: jump to the Nth tab. The shortcuts live on hidden
             // buttons in the background (not the HStack): an HStack still
             // gaps zero-size children, so nine of them in a row ate ~36pt
-            // of trailing blank. They exist exactly while tabs are open
-            // (empty strip - no shortcuts to fight with).
+            // of trailing blank. They no-op on an empty strip (the bar
+            // itself stays visible with no tabs open), where there is
+            // nothing to jump to.
             ForEach(1...9, id: \.self) { position in
                 Button("Select Tab \(position)") {
                     store.selectTab(atPosition: position)

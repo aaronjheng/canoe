@@ -266,13 +266,15 @@ struct ContentView: View {
 
     private var detailPane: some View {
         VStack(spacing: 0) {
-            if !store.openTabs.isEmpty {
-                TabBarView(
-                    isDrawerShown: $isTabDrawerShown,
-                    isEnvPickerShown: $isEnvPickerShown
-                )
-                Divider()
-            }
+            // The strip is chrome, not content: it stays put with an empty
+            // tab set, so the "+" (and the environment picker plus the
+            // inspector toggles living in the same row) keep their place
+            // instead of the whole row appearing only once a tab is open.
+            TabBarView(
+                isDrawerShown: $isTabDrawerShown,
+                isEnvPickerShown: $isEnvPickerShown
+            )
+            Divider()
             detailContent
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
