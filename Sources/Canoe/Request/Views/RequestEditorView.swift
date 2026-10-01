@@ -455,7 +455,7 @@ struct RequestEditorView: View {
                 pathBar
                 Image(systemName: "chevron.right")
                     .font(AppFont.small.weight(.semibold))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(AppColor.tertiaryText)
             }
             // The HTTP method joins the editable name, mirroring the sidebar
             // rows (`GET New Request`); it is changed from the URL bar.
@@ -464,14 +464,7 @@ struct RequestEditorView: View {
             Spacer(minLength: AppSpacing.medium)
             saveButton
         }
-        .padding(.horizontal, AppSpacing.medium)
-        // A touch of extra air between the tab strip and this row: the top
-        // padding rides inside the pinned height, so nothing below shifts.
-        .padding(.top, AppSpacing.xSmall)
-        // Fixed-height row: padding-driven heights let extra vertical space
-        // (VSplitView panes, taller windows) inflate into blank bands above
-        // and below the bar. Pin it like the other toolbar rows.
-        .frame(height: AppSize.toolbarHeight + AppSpacing.xSmall)
+        .panelToolbar(horizontalPadding: AppSpacing.medium, pinned: true)
     }
 
     /// The path as a run of crumb buttons, widest variant first: the first
@@ -510,7 +503,7 @@ struct RequestEditorView: View {
                 if index > 0 {
                     Image(systemName: "chevron.right")
                         .font(AppFont.small.weight(.semibold))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(AppColor.tertiaryText)
                 }
                 crumbView(crumb)
             }
@@ -651,8 +644,9 @@ struct RequestEditorView: View {
         TextField("Request Name", text: $draft.name)
             .font(AppFont.detailTitle)
             .textFieldStyle(.plain)
+            .focusEffectDisabled()
             .focused($isNameFieldFocused)
-            .padding(.horizontal, AppSpacing.small - AppSpacing.xxSmall)
+            .padding(.horizontal, AppSpacing.compact)
             .padding(.vertical, AppSpacing.xSmall)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
@@ -905,7 +899,6 @@ struct RequestEditorView: View {
                 suggestions: requestSuggestions,
                 keyPlaceholder: "Key",
                 valuePlaceholder: "Value",
-                headerBackground: nil,
                 allowsReorder: true
             )
             // Fresh table state per request: the editor holds ghost-row and
@@ -927,7 +920,6 @@ struct RequestEditorView: View {
                 suggestions: requestSuggestions,
                 keyPlaceholder: "Key",
                 valuePlaceholder: "Value",
-                headerBackground: nil,
                 allowsReorder: true
             )
             .id(draft.id)
@@ -1029,7 +1021,7 @@ private struct MethodPicker: View {
             }
             .padding(.leading, AppSpacing.xSmall)
             .padding(.trailing, AppSpacing.xSmall)
-            .frame(height: 24)
+            .frame(height: AppSize.tableRowHeight)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1103,7 +1095,7 @@ struct MethodMenuPanel: View {
             HStack(spacing: AppSpacing.xSmall) {
                 Image(systemName: "magnifyingglass")
                     .font(AppFont.small)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(AppColor.tertiaryText)
                 TextField("Filter methods", text: $filter)
                     .textFieldStyle(.plain)
                     .focusEffectDisabled()

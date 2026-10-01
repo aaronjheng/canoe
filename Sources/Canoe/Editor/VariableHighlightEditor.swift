@@ -241,7 +241,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
             if !isSingleLine, text.isEmpty, let placeholder {
                 Text(placeholder)
                     .font(font.swiftUIFont)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(AppColor.tertiaryText)
                     .padding(.leading, placeholderLeadingPadding)
                     .padding(.top, AppSpacing.xSmall)
                     .allowsHitTesting(false)
@@ -292,7 +292,7 @@ private enum VariablePlaceholderStyling {
         // keep a dynamic foreground on every run instead of defaulting to black.
         var base: [NSAttributedString.Key: Any] = [
             .font: font.nsFont,
-            .foregroundColor: NSColor.labelColor,
+            .foregroundColor: AppColor.textPrimaryNS,
         ]
         if let lineBreakMode {
             base[.paragraphStyle] = paragraphStyle(lineBreakMode: lineBreakMode)
@@ -692,7 +692,7 @@ private struct WrappingURLField<FocusValue: Hashable>: NSViewRepresentable {
         textView.isEditable = true
         textView.isSelectable = true
         textView.drawsBackground = false
-        textView.textColor = .labelColor
+        textView.textColor = AppColor.textPrimaryNS
         textView.insertionPointColor = NSColor(AppColor.accent)
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
@@ -723,7 +723,7 @@ private struct WrappingURLField<FocusValue: Hashable>: NSViewRepresentable {
         textView.textContainerInset = NSSize(width: 0, height: 0)
         textView.typingAttributes = [
             .font: font.nsFont,
-            .foregroundColor: NSColor.labelColor,
+            .foregroundColor: AppColor.textPrimaryNS,
             // Fresh typing (e.g. after select-all + delete) inherits this
             // paragraph, so retyped URLs keep character wrapping.
             .paragraphStyle: VariablePlaceholderStyling.paragraphStyle(lineBreakMode: .byCharWrapping),
@@ -1118,7 +1118,7 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
         textView.isEditable = true
         textView.isSelectable = true
         textView.drawsBackground = false
-        textView.textColor = .labelColor
+        textView.textColor = AppColor.textPrimaryNS
         textView.insertionPointColor = NSColor(AppColor.accent)
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
@@ -1135,7 +1135,7 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.containerSize = NSSize(width: CGFloat(0), height: CGFloat.greatestFiniteMagnitude)
-        textView.typingAttributes = [.font: font.nsFont, .foregroundColor: NSColor.labelColor]
+        textView.typingAttributes = [.font: font.nsFont, .foregroundColor: AppColor.textPrimaryNS]
         textView.textStorage?.setAttributedString(
             VariablePlaceholderStyling.attributed(text, font: font, variables: variables, syntax: syntax)
         )
@@ -1399,7 +1399,7 @@ extension View {
         self
             .textFieldStyle(.plain)
             .focusEffectDisabled()
-            .padding(.horizontal, AppSpacing.small - AppSpacing.xxSmall)
+            .padding(.horizontal, AppSpacing.compact)
             .padding(.vertical, verticalPadding)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)

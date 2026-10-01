@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Group panel expand/collapse: one smooth, quick curve shared by both
 /// toggles so the bottom stack slides into place instead of jumping.
-private let groupToggleAnimation: Animation = .smooth(duration: 0.25)
+private let groupToggleAnimation: Animation = AppMotion.group
 
 struct SidebarView: View {
     @Environment(AppStore.self) private var store
@@ -159,18 +159,23 @@ private struct ItemsView: View {
                     .frame(maxWidth: .infinity, minHeight: viewport.size.height, alignment: .top)
                 }
                 .overlay {
+                    // Same centered placement as the History tab's empty
+                    // state - an unframed overlay view would sit at the
+                    // top of the panel while its sibling centers.
                     if store.visibleCollections.isEmpty && store.activeWorkspaceEnvironments.isEmpty {
                         ContentUnavailableView(
                             "Nothing Here",
                             systemImage: "folder",
                             description: Text("Press ⌘N to create a request.")
                         )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if isFiltering && store.filteredCollections.isEmpty && filteredEnvironments.isEmpty {
                         ContentUnavailableView(
                             "No Results",
                             systemImage: "magnifyingglass",
                             description: Text("Nothing matches the current filter.")
                         )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
             }
@@ -301,16 +306,20 @@ private struct EnvironmentRow: View {
             .padding(.leading, 2 * AppSize.treeExpanderColumn)
             .padding(.trailing, AppSpacing.xSmall)
             .padding(.vertical, AppSpacing.xSmall)
+            // Same band as the tree rows it sits beside.
+            .frame(height: AppSize.treeRowHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                    .fill(isSelected ? AppColor.selectionBackground : showsActions ? AppColor.subtleBackground : .clear)
+                    .fill(AppColor.rowFill(isSelected: isSelected, isHovering: showsActions))
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .tracksHover { isHovering = $0 }
         .clickCursor()
+        .animation(AppMotion.quick, value: isSelected)
+        .animation(AppMotion.quick, value: showsActions)
         // Double-click pins the preview tab (same instant-click reasoning
         // as the request rows).
         .simultaneousGesture(
@@ -490,7 +499,7 @@ private struct IndentGuides: View {
                             : AppSize.treeIndent - 1
                     )
                 AppColor.treeGuide
-                    .frame(width: 1)
+                    .frame(width: AppLine.hairline)
                     .frame(maxHeight: .infinity)
             }
         }
@@ -767,7 +776,7 @@ private struct CollectionTree: View {
             .padding(.trailing, AppSpacing.xSmall)
         }
         .padding(.leading, AppSize.treeExpanderColumn)
-        .frame(height: AppSize.collectionRowHeight)
+        .frame(height: AppSize.treeRowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
@@ -862,17 +871,21 @@ private struct CollectionTree: View {
                     }
                     // Tree level 1: one expander column in from the header.
                     .padding(.leading, AppSize.treeExpanderColumn)
-                    .frame(height: AppSize.collectionRowHeight)
+                    // Every tree level shares one band height (see
+                    // `AppSize.treeRowHeight`).
+                    .frame(height: AppSize.treeRowHeight)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                            .fill(isSelected ? AppColor.selectionBackground : showsActions ? AppColor.subtleBackground : .clear)
+                            .fill(AppColor.rowFill(isSelected: isSelected, isHovering: showsActions))
                     )
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .tracksHover { isHoveringHeader = $0 }
                 .clickCursor()
+                .animation(AppMotion.quick, value: isSelected)
+                .animation(AppMotion.quick, value: showsActions)
                 .help("Open \(collection.name)")
                 // Double-click pins the preview tab (same instant-click
                 // reasoning as the request rows).
@@ -989,7 +1002,7 @@ private struct FolderTree: View {
             .padding(.trailing, AppSpacing.xSmall)
         }
         .padding(.leading, AppSize.treeExpanderColumn)
-        .padding(.vertical, AppSpacing.xSmall)
+        .frame(height: AppSize.treeRowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
@@ -1092,10 +1105,13 @@ private struct FolderTree: View {
                         .padding(.trailing, AppSpacing.xSmall)
                         .padding(.vertical, AppSpacing.xSmall)
                     }
+                    // Every tree level shares one band height (see
+                    // `AppSize.treeRowHeight`).
+                    .frame(height: AppSize.treeRowHeight)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                            .fill(isSelected ? AppColor.selectionBackground : showsActions ? AppColor.subtleBackground : .clear)
+                            .fill(AppColor.rowFill(isSelected: isSelected, isHovering: showsActions))
                     )
                     .overlay(alignment: .leading) {
                         IndentGuides(depth: depth)
@@ -1105,6 +1121,8 @@ private struct FolderTree: View {
                 .buttonStyle(.plain)
                 .tracksHover { isHoveringHeader = $0 }
                 .clickCursor()
+                .animation(AppMotion.quick, value: isSelected)
+                .animation(AppMotion.quick, value: showsActions)
                 .help("Open \(folder.name)")
                 // Double-click pins the preview tab (same instant-click
                 // reasoning as the request rows).
@@ -1196,6 +1214,7 @@ private struct RequestRow: View {
             }
             .padding(.vertical, AppSpacing.xSmall)
         }
+        .frame(height: AppSize.treeRowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
@@ -1266,10 +1285,12 @@ private struct RequestRow: View {
                         .padding(.trailing, AppSpacing.xSmall)
                         .padding(.vertical, AppSpacing.xSmall)
                     }
+                    // Same band as every other tree level.
+                    .frame(height: AppSize.treeRowHeight)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                            .fill(isSelected ? AppColor.selectionBackground : showsActions ? AppColor.subtleBackground : .clear)
+                            .fill(AppColor.rowFill(isSelected: isSelected, isHovering: showsActions))
                     )
                     .overlay(alignment: .leading) {
                         IndentGuides(depth: depth)
@@ -1279,6 +1300,8 @@ private struct RequestRow: View {
                 .buttonStyle(.plain)
                 .tracksHover { isHovering = $0 }
                 .clickCursor()
+                .animation(AppMotion.quick, value: isSelected)
+                .animation(AppMotion.quick, value: showsActions)
                 // Double-click pins the preview tab. The Button above still
                 // fires immediately on each click (no double-click hold
                 // delay): the two single clicks preview-then-reselect, and
@@ -1335,11 +1358,15 @@ private struct HistoryRow: View {
                     // Fixed-width method column so URLs start on a shared
                     // edge (fits DELETE; wider tags just push their URL
                     // over). Leading indent lands the column on the
-                    // GroupHeader content column (chevron + gap), so
-                    // entries sit deeper than the day title, Postman-style.
+                    // GroupHeader content column - the header's own gutter,
+                    // chevron box, and title gap - so entries sit deeper
+                    // than the day title, Postman-style.
                     MethodTag(method: entry.method)
-                        .frame(minWidth: 38, alignment: .leading)
-                        .padding(.leading, AppSpacing.medium + AppSize.treeChevronWidth)
+                        .frame(minWidth: AppSize.historyMethodColumnWidth, alignment: .leading)
+                        .padding(
+                            .leading,
+                            AppSpacing.compact + AppSize.treeChevronWidth + AppSpacing.xSmall
+                        )
                     Text(entry.urlString)
                         .font(AppFont.sidebarRow)
                         .lineLimit(1)
@@ -1368,10 +1395,13 @@ private struct HistoryRow: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // A dead entry (its request was deleted) gets no hover fill either:
+        // the same rule every disabled control in the app follows.
         .background(
             RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                .fill(isHovering ? AppColor.subtleBackground : .clear)
+                .fill(isHovering && requestExists ? AppColor.subtleBackground : .clear)
         )
+        .animation(AppMotion.quick, value: isHovering)
         .foregroundStyle(requestExists ? .primary : .tertiary)
         .opacity(requestExists ? 1 : AppOpacity.disabled)
         .onHover { isHovering = $0 }

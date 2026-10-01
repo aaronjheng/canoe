@@ -10,6 +10,10 @@ final class AppStore {
     let vault = VaultStore()
 
     var presentNewWorkspace = false
+    /// The File menu's "Clear History" stages this instead of wiping
+    /// directly: history has no undo, so the menu command confirms exactly
+    /// like the sidebar's Clear button does.
+    var presentClearHistoryConfirm = false
     /// Cleared whenever the tree re-lays out (filter change) so a scheduled
     /// inline rename can't fire long after its create flow ended.
     var sidebarFilter: String = "" {

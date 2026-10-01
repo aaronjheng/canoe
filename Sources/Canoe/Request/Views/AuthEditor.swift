@@ -84,7 +84,7 @@ struct AuthorizationForm: View {
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             typeColumn
-                .frame(width: 250, alignment: .topLeading)
+                .frame(width: AppSize.authTypeColumnWidth, alignment: .topLeading)
                 .padding(AppSpacing.medium)
             Divider()
             formColumn
@@ -142,6 +142,7 @@ struct AuthorizationForm: View {
                             text: $username,
                             variables: variables,
                             suggestions: suggestions,
+                            font: .systemSubheadline,
                             placeholder: "Username",
                             onFocusChange: { isUsernameFocused = $0 },
                             onHoverChanged: { isUsernameHovered = $0 }
@@ -153,7 +154,7 @@ struct AuthorizationForm: View {
                     }
                     fieldRow("Password") {
                         SecureField("Password", text: $password)
-                            .font(AppFont.monoSubheadline)
+                            .font(AppFont.small)
                             .variableFieldBordered(
                                 isFocused: isPasswordFocused,
                                 isHovered: isPasswordHovered
@@ -167,6 +168,7 @@ struct AuthorizationForm: View {
                             text: $token,
                             variables: variables,
                             suggestions: suggestions,
+                            font: .systemSubheadline,
                             placeholder: "Token",
                             onFocusChange: { isTokenFocused = $0 },
                             onHoverChanged: { isTokenHovered = $0 }
@@ -182,7 +184,7 @@ struct AuthorizationForm: View {
         }
         // Postman caps the form width instead of stretching fields across a
         // wide window.
-        .frame(maxWidth: 520, alignment: .leading)
+        .frame(maxWidth: AppSize.formFieldMaxWidth, alignment: .leading)
     }
 
     // MARK: - Inherited echo (Postman-style read-only parent view)
@@ -221,6 +223,7 @@ struct AuthorizationForm: View {
                             VariableHighlightEditor(
                                 text: .constant(source.authorization.username),
                                 variables: variables,
+                                font: .systemSubheadline,
                                 placeholder: "Username",
                                 isEditable: false
                             )
@@ -239,6 +242,7 @@ struct AuthorizationForm: View {
                             VariableHighlightEditor(
                                 text: .constant(source.authorization.token),
                                 variables: variables,
+                                font: .systemSubheadline,
                                 placeholder: "Token",
                                 isEditable: false
                             )
@@ -263,7 +267,7 @@ struct AuthorizationForm: View {
         HStack(spacing: AppSpacing.medium) {
             Text(label)
                 .font(AppFont.small)
-                .frame(width: 90, alignment: .leading)
+                .frame(width: AppSize.authLabelColumnWidth, alignment: .leading)
             field()
         }
     }
@@ -275,14 +279,16 @@ struct AuthorizationForm: View {
             Text(label)
                 .font(AppFont.small)
                 .foregroundStyle(.secondary)
-                .frame(width: 90, alignment: .leading)
+                .frame(width: AppSize.authLabelColumnWidth, alignment: .leading)
             field()
         }
     }
 
     private func echoField(@ViewBuilder field: () -> some View) -> some View {
         field()
-            .font(AppFont.monoSubheadline)
+            // Proportional, like every other value field in the app (the
+            // Authorization tab used to be the one monospaced form).
+            .font(AppFont.small)
             .foregroundStyle(.secondary)
             .padding(.horizontal, AppSpacing.small)
             .frame(maxWidth: .infinity, minHeight: AppSize.controlHeight, alignment: .leading)
@@ -292,7 +298,7 @@ struct AuthorizationForm: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                    .strokeBorder(AppColor.borderStrong, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    .strokeBorder(AppColor.borderStrong, style: StrokeStyle(lineWidth: AppLine.field, dash: [4, 3]))
             )
             .allowsHitTesting(false)
     }

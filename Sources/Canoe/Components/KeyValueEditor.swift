@@ -256,7 +256,7 @@ struct KeyValueEditor<T: KVItem>: View {
         .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                .strokeBorder(AppColor.border, lineWidth: 1)
+                .strokeBorder(AppColor.border, lineWidth: AppLine.field)
         )
     }
 
@@ -528,7 +528,7 @@ struct KeyValueEditor<T: KVItem>: View {
     private var verticalRule: some View {
         Rectangle()
             .fill(AppColor.hairline)
-            .frame(width: 1)
+            .frame(width: AppLine.hairline)
     }
 }
 
@@ -710,7 +710,7 @@ private struct KVRow: View {
             if !isGhostRow {
                 Rectangle()
                     .fill(AppColor.hairline)
-                    .frame(height: 1)
+                    .frame(height: AppLine.hairline)
             }
         }
         .opacity(isDragging ? 0.5 : 1)
@@ -718,7 +718,7 @@ private struct KVRow: View {
             if allowsReorder && isDropTargeted {
                 Rectangle()
                     .fill(AppColor.accent)
-                    .frame(height: 2)
+                    .frame(height: AppLine.focusedField)
             }
         }
         .contextMenu {
@@ -733,7 +733,7 @@ private struct KVRow: View {
             if isGhostRow, allowsReorder, dropTarget?.wrappedValue == true {
                 Rectangle()
                     .fill(AppColor.accent)
-                    .frame(height: 2)
+                    .frame(height: AppLine.focusedField)
             }
         }
         .onDrop(of: [.text], isTargeted: dropTarget ?? .constant(false)) { _ in
@@ -868,7 +868,6 @@ private struct KVRow: View {
                 isSecret.wrappedValue.toggle()
             } label: {
                 Image(systemName: isSecret.wrappedValue ? "eye.slash" : "eye")
-                    .font(AppFont.iconRow)
                     .foregroundStyle(.secondary)
                     .contentShape(Rectangle())
             }
@@ -905,7 +904,7 @@ private struct KVRow: View {
     private var verticalRule: some View {
         Rectangle()
             .fill(AppColor.hairline)
-            .frame(width: 1)
+            .frame(width: AppLine.hairline)
     }
 }
 
@@ -932,7 +931,7 @@ private struct ReadOnlyKVRow: View {
         .background(alignment: .bottom) {
             Rectangle()
                 .fill(AppColor.hairline)
-                .frame(height: 1)
+                .frame(height: AppLine.hairline)
         }
     }
 
@@ -976,6 +975,6 @@ private struct ReadOnlyKVRow: View {
     private var verticalRule: some View {
         Rectangle()
             .fill(AppColor.hairline)
-            .frame(width: 1)
+            .frame(width: AppLine.hairline)
     }
 }

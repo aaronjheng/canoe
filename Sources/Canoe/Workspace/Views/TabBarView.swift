@@ -101,7 +101,7 @@ struct TabBarView: View {
                                             .compactMap { stripGeometry.pillFrames[$0]?.midX }
                                             .filter { $0 < value.location.x }
                                             .count
-                                        withAnimation(.smooth(duration: 0.2)) {
+                                        withAnimation(AppMotion.travel) {
                                             store.moveTab(tab, to: slot)
                                         }
                                     }
@@ -178,7 +178,7 @@ struct TabBarView: View {
                     // also covers relaunches with restored tabs.
                     .onChange(of: store.selectedTab, initial: true) { _, selected in
                         guard let selected else { return }
-                        withAnimation(.easeOut(duration: 0.2)) {
+                        withAnimation(AppMotion.travel) {
                             proxy.scrollTo(selected, anchor: nil)
                         }
                     }
@@ -416,7 +416,7 @@ struct TabBarView: View {
         settlingTab = tab
         let bar = stripGeometry.barFrame
         if let frame = stripGeometry.pillFrames[tab] {
-            withAnimation(.easeOut(duration: 0.12)) {
+            withAnimation(AppMotion.quick) {
                 ghostCenter = CGPoint(x: frame.midX - bar.minX, y: frame.midY - bar.minY)
             }
         }
@@ -514,8 +514,8 @@ struct EnvironmentPicker: View {
         .onHover { isHovering = $0 }
         .clickCursor()
         .onTapGesture { isShown.toggle() }
-        .animation(.easeOut(duration: 0.12), value: isHovering)
-        .animation(.easeOut(duration: 0.12), value: isShown)
+        .animation(AppMotion.quick, value: isHovering)
+        .animation(AppMotion.quick, value: isShown)
         .accessibilityLabel(store.activeEnvironment.map { "Active environment: \($0.name)" } ?? "No environment selected")
         .accessibilityAddTraits(.isButton)
         .help(store.activeEnvironment.map { "Active environment: \($0.name)" } ?? "No environment selected")
@@ -565,6 +565,10 @@ struct EnvironmentPickerPanel: View {
         guard store.activeWorkspaceEnvironments.contains(where: { $0.id == id }) else { return nil }
         return .environment(id)
     }
+
+    /// Environments are workspace-scoped, so the create row is dead without
+    /// an active workspace.
+    private var canCreate: Bool { store.activeWorkspace != nil }
 
     private func name(for row: PanelRow) -> String {
         switch row {
@@ -702,16 +706,18 @@ struct EnvironmentPickerPanel: View {
                 }
                 .padding(.horizontal, AppSpacing.small)
                 .frame(maxWidth: .infinity, minHeight: AppSize.controlHeight, alignment: .leading)
+                // No hover fill and no hand while disabled (see the hover
+                // language at the top of Buttons.swift).
                 .background(
                     RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                        .fill(isHoveringCreate ? AppColor.subtleBackground : .clear)
+                        .fill(isHoveringCreate && canCreate ? AppColor.subtleBackground : .clear)
                 )
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .onHover { isHoveringCreate = $0 }
-            .clickCursor()
-            .disabled(store.activeWorkspace == nil)
+            .clickCursor(isEnabled: canCreate)
+            .disabled(!canCreate)
             .help("New Environment")
             .padding(.horizontal, AppSpacing.xSmall)
             .padding(.vertical, AppSpacing.xSmall)
@@ -790,6 +796,11 @@ private struct TabPill: View {
             trailingAccessory
         }
         .onHover { onHover($0) }
+        // Same quick fade the environment picker beside it uses - a pill
+        // that cuts to its fill while its neighbor eases reads as two
+        // different controls.
+        .animation(AppMotion.quick, value: isSelected)
+        .animation(AppMotion.quick, value: isHovered)
         .contextMenu {
             Button("Close Tab") { store.requestCloseTab(tab) }
             Button("Close Other Tabs") { store.requestCloseOtherTabs(except: tab) }

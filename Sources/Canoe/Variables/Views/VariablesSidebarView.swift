@@ -355,9 +355,9 @@ private struct ScopeSection: View {
                     guard let ownerID = scope.ownerID else { return }
                     store.updateVariable(updated, kind: scope.kind, ownerID: ownerID)
                 },
-                onCommit: {
+                onCommit: { variableID in
                     guard let ownerID = scope.ownerID else { return }
-                    store.persistVariableEdits(kind: scope.kind, ownerID: ownerID)
+                    store.persistVariableEdit(variableID, kind: scope.kind, ownerID: ownerID)
                 },
                 revealedSecrets: $revealedSecrets
             )
@@ -459,9 +459,10 @@ private struct VariableRow: View {
     /// keystroke, so the resolution preview stays live). Nil for read-only
     /// rows.
     var onUpdate: ((Variable) -> Void)?
-    /// Fires when the field commits (Enter or focus loss): the owning
-    /// scope's variables are persisted to disk right away.
-    var onCommit: (() -> Void)?
+    /// Fires when the field commits (Enter or focus loss): that one row is
+    /// persisted to disk right away, leaving any editor draft in a tab
+    /// untouched.
+    var onCommit: ((UUID) -> Void)?
     @Binding var revealedSecrets: Set<UUID>
     @State private var isHovering = false
     /// Per-field chrome states: the hover tier and the focused accent ring
@@ -536,7 +537,7 @@ private struct VariableRow: View {
                 if isEditable, let onUpdate {
                     Button {
                         onUpdate(updating(isEnabled: !variable.isEnabled))
-                        onCommit?()
+                        onCommit?(variable.id)
                     } label: {
                         Image(systemName: variable.isEnabled ? "checkmark.square" : "square")
                     }
@@ -625,12 +626,12 @@ private struct VariableRow: View {
                 isValueFocused = focused
                 // Leaving the field is a commit too: whatever is in memory
                 // lands on disk, matching Enter.
-                if !focused { onCommit?() }
+                if !focused { onCommit?(variable.id) }
             },
             onCommit: { commitAndExitEditing() },
             onHoverChanged: { isValueHovered = $0 }
         )
-        .padding(.horizontal, AppSpacing.small - AppSpacing.xxSmall)
+        .padding(.horizontal, AppSpacing.compact)
         .padding(.vertical, AppSpacing.xSmall)
         // Rest is clear on the gray sidebar: hover/focus lift to a brighter
         // fill (not the darker `subtleBackground` wash).
@@ -662,7 +663,7 @@ private struct VariableRow: View {
     /// the row falls back to quiet text. The resign fires the blur commit,
     /// which is a no-op once saved.
     private func commitAndExitEditing() {
-        onCommit?()
+        onCommit?(variable.id)
         DispatchQueue.main.async {
             NSApp.keyWindow?.makeFirstResponder(nil)
         }

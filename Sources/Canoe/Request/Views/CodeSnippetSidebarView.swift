@@ -66,7 +66,6 @@ struct CodeSnippetSidebarView: View {
             copySnippet()
         } label: {
             Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                .font(AppFont.small)
                 .foregroundStyle(copied ? AppColor.success : .secondary)
         }
         .buttonStyle(IconButtonStyle())
@@ -116,7 +115,7 @@ struct CodeSnippetSidebarView: View {
                         Text("\(index + 1)")
                             .font(AppFont.monoSnippet)
                             .monospacedDigit()
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(AppColor.tertiaryText)
                             .frame(minWidth: 18, alignment: .trailing)
                         Text(
                             SnippetHighlighter.attributedLine(

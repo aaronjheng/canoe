@@ -25,8 +25,7 @@ struct EnvironmentDetailView: View {
                 Spacer(minLength: AppSpacing.medium)
                 saveButton
             }
-            .padding(.horizontal, AppSpacing.medium)
-            .padding(.vertical, AppSpacing.small)
+            .panelToolbar(horizontalPadding: AppSpacing.medium)
 
             KeyValueEditor(
                 items: $draft.variables,

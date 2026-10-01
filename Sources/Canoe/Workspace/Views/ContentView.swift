@@ -65,6 +65,18 @@ struct ContentView: View {
         .sheet(isPresented: $store.presentNewWorkspace) {
             NewWorkspaceView()
         }
+        // File ▸ Clear History: same confirmation the sidebar's Clear button
+        // stages. The menu command has no view of its own, so the dialog is
+        // hosted here - outside the layout branches below, so it survives
+        // the switch to the welcome / workspaces-manager screens too.
+        .confirmationDialog(
+            "Clear all history",
+            isPresented: $store.presentClearHistoryConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Clear History", role: .destructive) { store.clearHistory() }
+            Button("Cancel", role: .cancel) {}
+        }
         // The window runs full-size-content (the top bar replaces the system
         // title bar), so the hosting view reports the titlebar as a top safe
         // area inset - ignore it or the bar sinks 32pt below the traffic
@@ -88,7 +100,11 @@ struct ContentView: View {
     private var envPickerOverlay: some View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
-                if isEnvPickerShown {
+                // The anchor guard keeps a stale "open" flag from leaving an
+                // invisible backdrop swallowing clicks after the picker button
+                // has unmounted and cleared the preference (switching to the
+                // workspaces manager tears the tab row down).
+                if isEnvPickerShown, envPickerAnchor != nil {
                     Color.clear
                         .contentShape(Rectangle())
                         .onTapGesture { isEnvPickerShown = false }
@@ -118,7 +134,8 @@ struct ContentView: View {
     private var tabDrawerOverlay: some View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
-                if isTabDrawerShown {
+                // Anchor guard, same reason as the environment dropdown above.
+                if isTabDrawerShown, tabDrawerAnchor != nil {
                     Color.clear
                         .contentShape(Rectangle())
                         .onTapGesture { isTabDrawerShown = false }

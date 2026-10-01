@@ -18,8 +18,7 @@ struct WorkspaceOverviewView: View {
                     .truncationMode(.tail)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, AppSpacing.medium)
-            .padding(.vertical, AppSpacing.small)
+            .panelToolbar(horizontalPadding: AppSpacing.medium)
 
             ScrollView {
                 overviewStats

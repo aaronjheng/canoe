@@ -146,7 +146,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc func clearHistory() {
         guard !isSettingsWindowKey else { return }
-        appStore.clearHistory()
+        // Confirms in the window (ContentView), same dialog the sidebar's
+        // Clear button stages - history has no undo to fall back on.
+        appStore.presentClearHistoryConfirm = true
     }
 
     @objc func saveRequest() {

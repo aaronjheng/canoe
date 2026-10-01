@@ -62,13 +62,13 @@ struct FilterField: View {
                 RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
                     // Standard field width for rest and hover/focus alike.
                     .strokeBorder(borderColor, lineWidth: isFocused ? AppLine.focusedField : AppLine.field)
-                    .animation(.easeOut(duration: 0.12), value: borderColor)
+                    .animation(AppMotion.quick, value: borderColor)
             }
         }
         .padding(.horizontal, isBoxed ? boxedInset : 0)
         .onHover { isHovered = $0 }
-        .animation(.easeOut(duration: 0.12), value: isHovered)
-        .animation(.easeOut(duration: 0.12), value: isFocused)
+        .animation(AppMotion.quick, value: isHovered)
+        .animation(AppMotion.quick, value: isFocused)
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .global)
         } action: { frame in
@@ -181,7 +181,7 @@ struct UnderlineTab: View {
                             ? AppColor.accent
                             : (isHovering ? AppColor.borderStrong : .clear)
                     )
-                    .frame(height: 2)
+                    .frame(height: AppLine.focusedField)
             }
             .contentShape(Rectangle())
         }
@@ -240,7 +240,7 @@ struct InlineNameField: View {
             .textFieldStyle(.plain)
             .focusEffectDisabled()
             .focused($isFocused)
-            .padding(.horizontal, AppSpacing.small - AppSpacing.xxSmall)
+            .padding(.horizontal, AppSpacing.compact)
             .padding(.vertical, AppSpacing.xSmall)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)

@@ -185,7 +185,7 @@ enum SyntaxHighlight {
         default:
             if node.childCount == 0 {
                 // Unnamed leaves: brackets, colons, commas, ERROR fragments.
-                paintJSONLeaf(node, color: .secondaryLabelColor, length: length, cursor: &cursor, runs: &runs)
+                paintJSONLeaf(node, color: NSColor(AppColor.syntaxPlain), length: length, cursor: &cursor, runs: &runs)
             } else {
                 for index in 0..<node.childCount {
                     guard let child = node.child(at: index) else { continue }
@@ -267,7 +267,7 @@ enum SyntaxHighlight {
         case "PITarget":
             paintXMLLeaf(node, color: NSColor(AppColor.syntaxKeyword), length: length, cursor: &cursor, runs: &runs)
         case "Comment":
-            paintXMLLeaf(node, color: .tertiaryLabelColor, length: length, cursor: &cursor, runs: &runs)
+            paintXMLLeaf(node, color: NSColor(AppColor.syntaxPlain), length: length, cursor: &cursor, runs: &runs)
         case "CData":
             paintXMLLeaf(node, color: NSColor(AppColor.syntaxString), length: length, cursor: &cursor, runs: &runs)
         case "CharData":
@@ -278,7 +278,7 @@ enum SyntaxHighlight {
                 if node.isNamed {
                     break
                 }
-                paintXMLLeaf(node, color: .secondaryLabelColor, length: length, cursor: &cursor, runs: &runs)
+                paintXMLLeaf(node, color: NSColor(AppColor.syntaxPlain), length: length, cursor: &cursor, runs: &runs)
             } else {
                 for index in 0..<node.childCount {
                     guard let child = node.child(at: index) else { continue }

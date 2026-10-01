@@ -212,13 +212,23 @@ struct SaveChipButton: View {
     }
 }
 
+/// Chrome for a detail pane's title row: the horizontal gutter plus the
+/// shared toolbar height, so every editor header (request name bar,
+/// collection/folder/environment/workspace pages) is one band. `pinned`
+/// fixes the height instead of taking it as a floor - the request editor
+/// needs that, since its VSplitView pane otherwise feeds the extra vertical
+/// space into this row as blank bands.
 struct PanelToolbarModifier: ViewModifier {
     var horizontalPadding: CGFloat = AppSpacing.large
+    var pinned: Bool = false
 
     func body(content: Content) -> some View {
         content
             .padding(.horizontal, horizontalPadding)
-            .frame(minHeight: AppSize.toolbarHeight)
+            .frame(
+                minHeight: pinned ? nil : AppSize.toolbarHeight,
+                maxHeight: pinned ? AppSize.toolbarHeight : nil
+            )
     }
 }
 
@@ -235,7 +245,7 @@ struct PopupPanelModifier: ViewModifier {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                    .strokeBorder(AppColor.border, lineWidth: 1)
+                    .strokeBorder(AppColor.border, lineWidth: AppLine.field)
             )
     }
 }
@@ -270,7 +280,7 @@ struct BorderlessFieldChromeModifier: ViewModifier {
         content
             .textFieldStyle(.plain)
             .focusEffectDisabled()
-            .padding(.horizontal, AppSpacing.small - AppSpacing.xxSmall)
+            .padding(.horizontal, AppSpacing.compact)
             .padding(.vertical, AppSpacing.xSmall)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
@@ -290,14 +300,18 @@ struct BorderlessFieldChromeModifier: ViewModifier {
                 }
             }
             .onHover { isHovered = $0 }
-            .animation(.easeOut(duration: 0.12), value: isHovered)
-            .animation(.easeOut(duration: 0.12), value: isFocused)
+            .animation(AppMotion.quick, value: isHovered)
+            .animation(AppMotion.quick, value: isFocused)
     }
 }
 
 extension View {
-    func panelToolbar(horizontalPadding: CGFloat = AppSpacing.large) -> some View {
-        modifier(PanelToolbarModifier(horizontalPadding: horizontalPadding))
+    /// Detail-pane title row: the shared gutter plus the shared toolbar
+    /// height, pinned so the VSplitView pane cannot inflate it into blank
+    /// bands. `pinned: true` for the request name bar, whose row sits
+    /// between the tab strip and the editor.
+    func panelToolbar(horizontalPadding: CGFloat = AppSpacing.large, pinned: Bool = false) -> some View {
+        modifier(PanelToolbarModifier(horizontalPadding: horizontalPadding, pinned: pinned))
     }
 
     func popupPanel() -> some View {

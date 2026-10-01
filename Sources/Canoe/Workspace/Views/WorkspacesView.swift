@@ -394,7 +394,7 @@ struct WorkspacesView: View {
             // the table reads as data first - they are only ever clickable
             // while the row is hovered, hence visible.
             .opacity(isHovered ? 1 : 0)
-            .animation(.easeOut(duration: 0.12), value: isHovered)
+            .animation(AppMotion.quick, value: isHovered)
             .frame(width: ColumnWidth.actions, alignment: .trailing)
             .padding(.trailing, AppSpacing.medium)
         }
@@ -408,18 +408,25 @@ struct WorkspacesView: View {
         // both are clicks, so the row is part of the hand-cursor chrome.
         .clickCursor()
         // Double-click opens the workspace; it takes priority over the
-        // single-click checkbox toggle below. Taps on the row buttons never
-        // reach here - controls consume their own taps.
-        .onTapGesture(count: 2) {
-            store.openWorkspace(workspace.id)
-        }
-        .onTapGesture {
-            if checked.contains(workspace.id) {
-                checked.remove(workspace.id)
-            } else {
-                checked.insert(workspace.id)
-            }
-        }
+        // single-click checkbox toggle below, which must NOT also fire on the
+        // way (two independent `onTapGesture`s run both - opening a workspace
+        // silently armed the batch delete). `exclusively` lets the count-2
+        // gesture win when it succeeds and hands the tap to the count-1 one
+        // otherwise. Taps on the row buttons never reach here - controls
+        // consume their own taps.
+        .gesture(
+            TapGesture(count: 2)
+                .onEnded { store.openWorkspace(workspace.id) }
+                .exclusively(
+                    before: TapGesture().onEnded {
+                        if checked.contains(workspace.id) {
+                            checked.remove(workspace.id)
+                        } else {
+                            checked.insert(workspace.id)
+                        }
+                    }
+                )
+        )
     }
 
     private var deleteConfirmLabel: String {

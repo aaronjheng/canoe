@@ -27,7 +27,7 @@ struct ErrorBanner: View {
             }
         }
         .padding(.horizontal, AppSpacing.small)
-        .padding(.vertical, AppSpacing.small - AppSpacing.xxSmall)
+        .padding(.vertical, AppSpacing.compact)
         .background(AppColor.error.opacity(AppOpacity.errorBackground))
         .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
     }

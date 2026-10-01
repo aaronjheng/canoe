@@ -12,6 +12,9 @@ struct ConsoleView: View {
     /// autoscroll when this holds, so sending never yanks the user away from
     /// history they are reading.
     @State private var isAtBottom = true
+    /// Clear wipes the whole log (see the button), so it asks first - the
+    /// session log has no undo.
+    @State private var showClearConfirm = false
 
     private var visibleEntries: [ConsoleEntry] {
         errorsOnly ? store.consoleEntries.filter(\.isError) : store.consoleEntries
@@ -32,6 +35,16 @@ struct ConsoleView: View {
             }
         }
         .background(AppColor.controlBackground)
+        .confirmationDialog(
+            "Clear the console log",
+            isPresented: $showClearConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Clear Console", role: .destructive) { store.clearConsole() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("All \(store.consoleEntries.count) entries from this session will be permanently deleted.")
+        }
     }
 
     // MARK: - Toolbar
@@ -57,11 +70,10 @@ struct ConsoleView: View {
             .labelsHidden()
             .fixedSize()
             Button("Clear", systemImage: "trash") {
-                store.clearConsole()
+                showClearConfirm = true
             }
             .labelStyle(.iconOnly)
             .buttonStyle(IconButtonStyle())
-            .font(AppFont.iconRow)
             .foregroundStyle(.secondary)
             // Clear wipes everything, not just the filtered view: with the
             // Errors filter on, an empty visible list must not enable the
@@ -69,20 +81,37 @@ struct ConsoleView: View {
             .disabled(visibleEntries.isEmpty)
             .help("Clear console")
         }
-        .padding(.horizontal, AppSpacing.medium)
-        .padding(.vertical, AppSpacing.xSmall)
+        .panelToolbar(horizontalPadding: AppSpacing.medium)
     }
 
     private var emptyState: some View {
-        VStack(spacing: AppSpacing.small) {
-            Text(errorsOnly ? "No errors in this session" : "No network activity yet")
-                .font(AppFont.emptyStateBody)
-                .foregroundStyle(.secondary)
+        // The system empty state, like every other panel's (the key chips
+        // ride in its action slot, so the shortcut is still spelled out).
+        ContentUnavailableView {
+            Label(
+                errorsOnly ? "No errors in this session" : "No network activity yet",
+                systemImage: "network")
+        } description: {
             Text("Every request you send is logged here with its actual URL, headers, and response.")
-                .font(AppFont.emptyStateBody)
-                .foregroundStyle(.secondary)
+        } actions: {
+            HStack(spacing: AppSpacing.xSmall) {
+                keyChip("⌘")
+                keyChip("↩")
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func keyChip(_ label: String) -> some View {
+        Text(label)
+            .font(AppFont.small.weight(.medium))
+            .monospaced()
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, AppSpacing.compact)
+            .padding(.vertical, AppSpacing.xxSmall)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                    .fill(AppColor.subtleBackground)
+            )
     }
 
     // MARK: - Entries
@@ -230,7 +259,7 @@ private struct ConsoleEntryDetail: View {
                 Text(entry.formattedTime)
                     .font(AppFont.small)
                     .monospacedDigit()
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(AppColor.tertiaryText)
                 Spacer(minLength: 0)
                 Button(
                     action: { showRaw.toggle() },

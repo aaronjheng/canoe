@@ -1,4 +1,4 @@
-import Foundation
+import SwiftUI
 
 /// Standard spacing, corner radius, and size constants.
 enum AppSpacing {
@@ -19,9 +19,6 @@ enum AppSpacing {
 enum AppRadius {
     static let small: CGFloat = 4
     static let medium: CGFloat = 6
-    static let large: CGFloat = 8
-    /// Pill/capsule shapes (badges, inherited markers).
-    static let pill: CGFloat = 999
 }
 
 enum AppLine {
@@ -120,7 +117,43 @@ enum AppSize {
     /// The chevron column plus its trailing gap - the fixed offset between a
     /// row's chevron and its content column (folder icon, method tag, name).
     static let treeExpanderColumn: CGFloat = treeChevronWidth + AppSpacing.xSmall
-    /// Fixed height of a collection row (the tree's root level), so the row
-    /// stays a dense 24pt band instead of growing with its content padding.
-    static let collectionRowHeight: CGFloat = 24
+    /// Fixed height of every tree row (collections, folders, requests) and
+    /// their inline rename fields. Pinned rather than padding-driven so the
+    /// levels of one tree share one band: a folder row with its 16pt icon
+    /// and a request row with its 12pt label would otherwise measure
+    /// differently and the interleaved list would read as uneven.
+    static let treeRowHeight: CGFloat = 24
+    /// Method column of a history row: wide enough for the longest tag
+    /// (DELETE) so the URLs in one day bucket share an edge.
+    static let historyMethodColumnWidth: CGFloat = 38
+    /// Width of the floating panels the response viewer opens over the body
+    /// (the header breakdown and its contents) - the same measure as the
+    /// right inspector, so both float cards read as one size.
+    static let responsePanelWidth: CGFloat = 300
+    /// Width of the Authorization form's type column (the radio list beside
+    /// the fields).
+    static let authTypeColumnWidth: CGFloat = 250
+    /// Label column of the Authorization form's field rows, so every field
+    /// starts on the same x.
+    static let authLabelColumnWidth: CGFloat = 90
+    /// Glyph box of a status chip (the response viewer's metric breakdowns).
+    static let statusChipGlyphBox: CGFloat = 20
+    /// Shared cap for a form's field column, so a wide window does not
+    /// stretch one editor's inputs across it.
+    static let formFieldMaxWidth: CGFloat = 520
+}
+
+/// Motion tokens: the app's three transition speeds, named. Hover/selection
+/// fills, panel opens, and tree slides used to spell their durations inline,
+/// which is how a row's wash ended up cutting to its color while the control
+/// next to it faded into it.
+enum AppMotion {
+    /// Hover / selection / press feedback - the quick one, and the default
+    /// for anything the pointer can move across.
+    static let quick = Animation.easeOut(duration: 0.12)
+    /// Larger moves that read as travel rather than feedback: the tab
+    /// strip's reorder slide and the drag ghost's settle.
+    static let travel = Animation.easeOut(duration: 0.2)
+    /// The sidebar's collapsible group headers and sections.
+    static let group = Animation.smooth(duration: 0.25)
 }

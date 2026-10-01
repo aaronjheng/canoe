@@ -39,7 +39,7 @@ struct VariableSuggestionList: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                .strokeBorder(AppColor.border, lineWidth: 1)
+                .strokeBorder(AppColor.border, lineWidth: AppLine.field)
         )
         .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
     }
@@ -80,7 +80,7 @@ struct VariableSuggestionList: View {
     private var footer: some View {
         Text("↑↓ Navigate   ↩ Insert   esc Dismiss")
             .font(AppFont.small)
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(AppColor.tertiaryText)
             .frame(maxWidth: .infinity, minHeight: Self.footerHeight, maxHeight: Self.footerHeight)
             .overlay(Divider(), alignment: .top)
     }

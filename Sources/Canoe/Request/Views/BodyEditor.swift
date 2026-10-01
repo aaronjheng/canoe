@@ -81,13 +81,12 @@ struct BodyEditor: View {
     private var content: some View {
         switch request.requestBodyType {
         case .none:
-            VStack {
-                Text("This request does not have a body.")
-                    .font(AppFont.emptyStateBody)
-                    .foregroundStyle(.secondary)
-                    .padding(AppSpacing.large)
-                Spacer(minLength: 0)
-            }
+            ContentUnavailableView(
+                "No Body",
+                systemImage: "doc",
+                description: Text("This request does not have a body.")
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .formData:
             KeyValueEditor(
                 items: $request.formFields,
@@ -96,7 +95,6 @@ struct BodyEditor: View {
                 suggestions: requestSuggestions,
                 keyPlaceholder: "Key",
                 valuePlaceholder: "Value",
-                headerBackground: nil,
                 kindKeyPath: \.fieldKind
             )
             .id(request.id)
@@ -107,8 +105,7 @@ struct BodyEditor: View {
                 variables: resolvedVariables,
                 suggestions: requestSuggestions,
                 keyPlaceholder: "Key",
-                valuePlaceholder: "Value",
-                headerBackground: nil
+                valuePlaceholder: "Value"
             )
             .id(request.id)
         case .raw:
@@ -132,8 +129,10 @@ struct BodyEditor: View {
                 syntax: rawSyntax
             )
             .background(AppColor.codeBackground)
-            .padding(.horizontal, AppSpacing.small)
-            .padding(.bottom, AppSpacing.small)
+            // Same gutter as the key/value body types (see KeyValueEditor):
+            // switching Body type must not shift the content's left edge.
+            .padding(.horizontal, AppSpacing.medium)
+            .padding(.bottom, AppSpacing.medium)
         }
     }
 }
@@ -226,7 +225,7 @@ private struct BodyTypeRadio: View {
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         .clickCursor()
-        .animation(.easeOut(duration: 0.12), value: isHovering)
+        .animation(AppMotion.quick, value: isHovering)
         .accessibilityLabel("Send body as \(type.label)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .help("Send body as \(type.label)")

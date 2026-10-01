@@ -98,8 +98,7 @@ struct FolderDetailView: View {
             Spacer(minLength: AppSpacing.medium)
             saveButton
         }
-        .padding(.horizontal, AppSpacing.medium)
-        .padding(.vertical, AppSpacing.small)
+        .panelToolbar(horizontalPadding: AppSpacing.medium)
     }
 
     private var breadcrumb: some View {
@@ -138,7 +137,7 @@ struct FolderDetailView: View {
     private var crumbSeparator: some View {
         Image(systemName: "chevron.right")
             .font(AppFont.small.weight(.semibold))
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(AppColor.tertiaryText)
     }
 
     /// The folder's own name: the last crumb and the page title. Quiet heading
@@ -158,7 +157,7 @@ struct FolderDetailView: View {
             .textFieldStyle(.plain)
             .focusEffectDisabled()
             .focused($isTitleFocused)
-            .padding(.horizontal, AppSpacing.small - AppSpacing.xxSmall)
+            .padding(.horizontal, AppSpacing.compact)
             .padding(.vertical, AppSpacing.xxSmall)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)

@@ -75,6 +75,18 @@ enum AppColor {
     /// `true` / `false` / `null`.
     static let syntaxKeyword = dynamic(light: RGB(red: 207, green: 34, blue: 46), dark: RGB(red: 255, green: 123, blue: 114))
 
+    /// Plain (untokenized) source in a highlighted body. The system's
+    /// secondary label tier, so unhighlighted text reads as exactly the
+    /// same text tier as the rest of the app - the AppKit editors and the
+    /// highlighter used to pick their own label colors per leaf.
+    static let syntaxPlain = Color(nsColor: .secondaryLabelColor)
+
+    /// Primary text color, as an AppKit color for the custom `NSTextView`
+    /// editors (the highlighter and the text view must agree). Token-
+    /// mediated so a retheme reaches the editors too; dynamic, so it
+    /// follows the appearance like every other color here.
+    static let textPrimaryNS: NSColor = .labelColor
+
     // MARK: - Backgrounds
 
     /// Code / response-body surfaces. Tracks `controlBackground`: both are
@@ -181,6 +193,12 @@ enum AppColor {
         color.opacity(AppOpacity.badgeBackground)
     }
 
+    /// Border for a destructive control: the error hue stepped well back,
+    /// so a "Delete" button reads as an alert edge rather than a filled
+    /// alert. Derived from the dynamic `error`, so it follows the
+    /// appearance like every other token here.
+    static let destructiveBorder: Color = error.opacity(0.55)
+
     // MARK: - Status code buckets
 
     static func statusColor(_ code: Int) -> Color {
@@ -209,6 +227,17 @@ enum AppColor {
                 alpha: 1
             )
         }
+    }
+
+    /// Fill for a selectable row in a hand-drawn list (the sidebar's
+    /// collection / folder / request / environment rows and the workspaces
+    /// list): selected wins, a selected row still lifts one step on hover,
+    /// an idle row gets the subtle hover wash, otherwise nothing.
+    static func rowFill(isSelected: Bool, isHovering: Bool) -> Color {
+        if isSelected {
+            return isHovering ? selectionHoverBackground : selectionBackground
+        }
+        return isHovering ? subtleBackground : .clear
     }
 
     private static func dynamic(light: RGB, dark: RGB) -> Color {

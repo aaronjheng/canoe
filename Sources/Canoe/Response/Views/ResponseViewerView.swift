@@ -102,11 +102,11 @@ struct ResponseViewerView: View {
     }
 
     private var emptyState: some View {
-        // Postman-style hint: muted copy plus the actual send shortcut.
-        VStack(spacing: AppSpacing.medium) {
-            Text("Send a request to get a response")
-                .font(AppFont.emptyStateBody)
-                .foregroundStyle(.secondary)
+        // The system empty state, like the console's and the inspectors':
+        // the send shortcut rides in its action slot.
+        ContentUnavailableView {
+            Label("Send a request to get a response", systemImage: "arrow.up.circle")
+        } actions: {
             HStack(spacing: AppSpacing.xSmall) {
                 keyChip("⌘")
                 keyChip("↩")
@@ -120,7 +120,7 @@ struct ResponseViewerView: View {
             .font(AppFont.small.weight(.medium))
             .monospaced()
             .foregroundStyle(.secondary)
-            .padding(.horizontal, AppSpacing.small - AppSpacing.xxSmall)
+            .padding(.horizontal, AppSpacing.compact)
             .padding(.vertical, AppSpacing.xxSmall)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
@@ -135,8 +135,10 @@ struct ResponseViewerView: View {
     /// menu, status capsule, metrics) has moved to the tab bar or away.
     private var statusBar: some View {
         HStack(spacing: AppSpacing.medium) {
+            // Same title token and band as the Console panel it is stacked
+            // with (and as the inspectors' headers).
             Text("Response")
-                .font(AppFont.detailTitle)
+                .font(AppFont.panelTitle)
             if store.isSending {
                 statusDot
                 ProgressView().controlSize(.small)
@@ -146,15 +148,14 @@ struct ResponseViewerView: View {
             }
             Spacer()
         }
-        .padding(.horizontal, AppSpacing.medium)
-        .frame(minHeight: AppSize.toolbarHeight)
+        .panelToolbar(horizontalPadding: AppSpacing.medium)
         .background(AppColor.controlBackground)
     }
 
     private var statusDot: some View {
         Text("\u{00B7}")
             .font(AppFont.small)
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(AppColor.tertiaryText)
     }
 
     /// One trailing metric in the tab bar ("261 ms"). `onHover` opts a
@@ -471,7 +472,7 @@ struct ResponseViewerView: View {
                     .padding(AppSpacing.medium)
             }
         }
-        .frame(width: 300, alignment: .leading)
+        .frame(width: AppSize.responsePanelWidth, alignment: .leading)
         .popupPanel()
     }
 
@@ -509,7 +510,7 @@ struct ResponseViewerView: View {
                     .padding(AppSpacing.medium)
             }
         }
-        .frame(width: 300, alignment: .leading)
+        .frame(width: AppSize.responsePanelWidth, alignment: .leading)
         .popupPanel()
     }
 
@@ -524,10 +525,12 @@ struct ResponseViewerView: View {
                 Image(systemName: icon)
                     .font(AppFont.small.weight(.bold))
                     .foregroundStyle(tint)
-                    .frame(width: 20, height: 20)
+                    .frame(width: AppSize.statusChipGlyphBox, height: AppSize.statusChipGlyphBox)
                     .background(
                         RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                            .fill(tint.opacity(0.15))
+                            // The shared badge wash, so a status chip here
+                            // matches every other tinted chip in the app.
+                            .fill(AppColor.badgeBackground(tint))
                     )
                 Text(title)
                     .font(AppFont.small.weight(.semibold))
@@ -540,7 +543,7 @@ struct ResponseViewerView: View {
                 HStack {
                     Text(label)
                         .foregroundStyle(.secondary)
-                        .padding(.leading, 28)  // clears the chip (20) + gap (8)
+                        .padding(.leading, AppSize.statusChipGlyphBox + AppSpacing.small)
                     Spacer(minLength: 0)
                     Text(value)
                         .monospacedDigit()
@@ -838,7 +841,7 @@ struct ResponseViewerView: View {
         HStack(spacing: AppSpacing.xSmall) {
             Image(systemName: "magnifyingglass")
                 .font(AppFont.small)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(AppColor.tertiaryText)
             TextField("Find", text: $findQuery)
                 .borderlessFieldChrome(isFocused: findFieldFocused)
                 .font(AppFont.small)
@@ -873,6 +876,7 @@ struct ResponseViewerView: View {
             .labelStyle(.iconOnly)
             .buttonStyle(IconButtonStyle())
             .disabled(matchCount == 0)
+            .accessibilityLabel("Previous Match")
             .help("Previous Match (⇧⌘G)")
             Button {
                 stepFind(1, matchCount: matchCount)
@@ -882,6 +886,7 @@ struct ResponseViewerView: View {
             .labelStyle(.iconOnly)
             .buttonStyle(IconButtonStyle())
             .disabled(matchCount == 0)
+            .accessibilityLabel("Next Match")
             .help("Next Match (⌘G)")
             Button {
                 closeFind()
@@ -890,10 +895,11 @@ struct ResponseViewerView: View {
             }
             .labelStyle(.iconOnly)
             .buttonStyle(IconButtonStyle())
+            .accessibilityLabel("Close Find")
             .help("Close Find (Esc)")
         }
         .padding(.horizontal, AppSpacing.small)
-        .padding(.vertical, AppSpacing.xSmall + 2)
+        .padding(.vertical, AppSpacing.compact)
         .popupPanel()
     }
 
@@ -1066,6 +1072,6 @@ private struct MetricHoverChip<Content: View>: View {
                 isHovering = hovering
                 onHover?(hovering)
             }
-            .animation(.easeOut(duration: 0.12), value: isHovering)
+            .animation(AppMotion.quick, value: isHovering)
     }
 }

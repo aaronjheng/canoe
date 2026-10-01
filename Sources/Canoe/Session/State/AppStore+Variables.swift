@@ -116,7 +116,7 @@ extension AppStore {
     /// resolution preview stays live while typing. Modification only - the
     /// inspector never adds or deletes rows, so a missing owner or row id
     /// is a no-op. The edit lands on disk when the field commits (blur or
-    /// Enter) - see `persistVariableEdits`.
+    /// Enter) - see `persistVariableEdit`.
     func updateVariable(
         _ variable: Variable, kind: VariableScope.Kind, ownerID: UUID
     ) {
@@ -139,22 +139,75 @@ extension AppStore {
         }
     }
 
-    /// Writes the owner's current variables into its vault file right away:
-    /// the inspector's inline edits commit on blur/Enter instead of waiting
-    /// for the full editors' explicit Save. No-op when nothing changed
-    /// since the last baseline (the persist helpers compare).
-    func persistVariableEdits(kind: VariableScope.Kind, ownerID: UUID) {
+    /// Commits ONE inspector row to its owner's vault file, right away: the
+    /// inspector has no Save button, so blur/Enter has to land the edit.
+    ///
+    /// Only that row is written, and the owner's editor baseline is left
+    /// untouched. The live array the inspector edits is shared with the full
+    /// variables editor, so persisting it wholesale (the old behaviour) also
+    /// wrote - and de-dirtied - whatever unsaved draft that editor had: one
+    /// keystroke here silently committed a different tab.
+    ///
+    /// What goes to disk is the editor's baseline (the content that is
+    /// actually saved) with this row swapped in. With no baseline - no
+    /// editor draft in flight - the live array is exactly the saved content
+    /// plus this edit, so it is written as is.
+    func persistVariableEdit(_ variableID: UUID, kind: VariableScope.Kind, ownerID: UUID) {
         switch kind {
         case .workspace:
-            guard let workspace = vault.workspaces.first(where: { $0.id == ownerID }) else { return }
-            Task { await persistWorkspaceVariables(ownerID, workspace.variables) }
+            guard let idx = vault.workspaces.firstIndex(where: { $0.id == ownerID }) else { return }
+            let baseline = persistedWorkspaceVariableBaselines[ownerID]
+            guard
+                let variables = persistedRow(
+                    variableID, live: vault.workspaces[idx].variables, baseline: baseline)
+            else { return }
+            // A copy, never the live slot: the editor's draft lives there.
+            var workspace = vault.workspaces[idx]
+            workspace.variables = variables
+            Task { await vault.saveWorkspace(workspace) }
         case .collection:
-            guard let collection = vault.collections.first(where: { $0.id == ownerID }) else { return }
-            Task { await persistCollectionVariables(ownerID, collection.variables) }
+            guard let idx = vault.collections.firstIndex(where: { $0.id == ownerID }) else { return }
+            let baseline = persistedCollectionVariableBaselines[ownerID]
+            guard
+                let variables = persistedRow(
+                    variableID, live: vault.collections[idx].variables, baseline: baseline)
+            else { return }
+            var collection = vault.collections[idx]
+            collection.variables = variables
+            // Same rule for the collection's other dirty-tracked field: an
+            // unsaved Authorization edit in a tab must not ride along on
+            // this row's write.
+            if let authorization = persistedCollectionAuthorizationBaselines[ownerID] {
+                collection.authorization = authorization
+            }
+            Task { await vault.saveCollection(collection) }
         case .environment:
-            guard let environment = vault.environments.first(where: { $0.id == ownerID }) else { return }
-            Task { await persistEnvironment(environment) }
+            guard let idx = vault.environments.firstIndex(where: { $0.id == ownerID }) else { return }
+            let baseline = persistedEnvironmentBaselines[ownerID]
+            guard
+                let variables = persistedRow(
+                    variableID, live: vault.environments[idx].variables, baseline: baseline?.variables)
+            else { return }
+            // Built from the baseline, not the live profile: an unsaved
+            // name edit in the environment tab must not ride along.
+            var environment = baseline ?? vault.environments[idx]
+            environment.variables = variables
+            Task { await vault.saveEnvironment(environment) }
         }
     }
 
+    /// The array to write for a single inspector row: the saved baseline with
+    /// that one row replaced by its edited copy. Nil = nothing to write (the
+    /// row is already saved, the owner or row is gone, or the row only
+    /// exists in an unsaved editor draft - saving it is that editor's job).
+    private func persistedRow(
+        _ variableID: UUID, live: [Variable], baseline: [Variable]?
+    ) -> [Variable]? {
+        guard let edited = live.first(where: { $0.id == variableID }) else { return nil }
+        guard let baseline else { return live }
+        guard let saved = baseline.first(where: { $0.id == variableID }), saved != edited else {
+            return nil
+        }
+        return baseline.map { $0.id == variableID ? edited : $0 }
+    }
 }

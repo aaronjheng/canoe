@@ -54,8 +54,8 @@ struct SendButtonStyle: ButtonStyle {
             .opacity(isEnabled ? 1 : AppOpacity.disabled)
             .onHover { isHovering = $0 }
             .clickCursor(isEnabled: isEnabled)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
-            .animation(.easeOut(duration: 0.12), value: isHovering)
+            .animation(AppMotion.quick, value: configuration.isPressed)
+            .animation(AppMotion.quick, value: isHovering)
     }
 }
 
@@ -89,16 +89,16 @@ struct SecondaryButtonStyle: ButtonStyle {
             .overlay(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                     .strokeBorder(
-                        isDestructive ? AppColor.error.opacity(0.55) : AppColor.borderStrong,
-                        lineWidth: 1
+                        isDestructive ? AppColor.destructiveBorder : AppColor.borderStrong,
+                        lineWidth: AppLine.field
                     )
             )
             .contentShape(Rectangle())
             .opacity(isEnabled ? 1 : AppOpacity.disabled)
             .onHover { isHovering = $0 }
             .clickCursor(isEnabled: isEnabled)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
-            .animation(.easeOut(duration: 0.12), value: isHovering)
+            .animation(AppMotion.quick, value: configuration.isPressed)
+            .animation(AppMotion.quick, value: isHovering)
     }
 }
 
@@ -111,7 +111,7 @@ struct ToolbarButtonStyle: ButtonStyle {
             .labelStyle(.iconOnly)
             .font(AppFont.iconChrome)
             .foregroundStyle(configuration.isPressed || (isEnabled && isHovering) ? .primary : .secondary)
-            .padding(AppSpacing.small - AppSpacing.xxSmall)
+            .padding(AppSpacing.compact)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
                     .fill(
@@ -123,8 +123,8 @@ struct ToolbarButtonStyle: ButtonStyle {
             .contentShape(Rectangle())
             .onHover { isHovering = $0 }
             .clickCursor(isEnabled: isEnabled)
-            .animation(.easeOut(duration: 0.12), value: isHovering)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .animation(AppMotion.quick, value: isHovering)
+            .animation(AppMotion.quick, value: configuration.isPressed)
     }
 }
 
@@ -139,14 +139,19 @@ struct ToolbarButtonStyle: ButtonStyle {
 /// labels that carry text opt out via `iconSquare: false`. Dense call
 /// sites (tree rows, table cells, filter fields) pass `inset: 0` so the
 /// pill never inflates the host row's height.
+///
+/// The glyph size is the style's, not the call site's: one icon density for
+/// every icon button, so a response toolbar, a panel close button, and a
+/// tree row's action share it.
 struct IconButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     var iconSquare = true
-    var inset: CGFloat = AppSpacing.compact - AppSpacing.xxSmall
+    var inset: CGFloat = AppSpacing.xSmall
     @State private var isHovering = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .font(AppFont.iconRow)
             .iconGlyphBox(active: iconSquare)
             .padding(inset)
             .background(
@@ -160,8 +165,8 @@ struct IconButtonStyle: ButtonStyle {
             .contentShape(Rectangle())
             .onHover { isHovering = $0 }
             .clickCursor(isEnabled: isEnabled)
-            .animation(.easeOut(duration: 0.12), value: isHovering)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .animation(AppMotion.quick, value: isHovering)
+            .animation(AppMotion.quick, value: configuration.isPressed)
     }
 }
 
@@ -278,8 +283,8 @@ struct LinkButtonStyle: ButtonStyle {
             .contentShape(Rectangle())
             .onHover { isHovering = $0 }
             .clickCursor(isEnabled: isEnabled)
-            .animation(.easeOut(duration: 0.12), value: isHovering)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .animation(AppMotion.quick, value: isHovering)
+            .animation(AppMotion.quick, value: configuration.isPressed)
     }
 }
 

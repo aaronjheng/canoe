@@ -74,6 +74,15 @@ struct CollectionDetailView: View {
                 else { return }
                 draft.authorization = newAuthorization
             }
+            // The header reads the vault's name, not the draft's: a sidebar
+            // rename (or an external reload) lands while this page is open,
+            // and the title used to keep showing the pre-rename name until
+            // the tab was reopened. The draft's name is not editable here,
+            // so there is nothing to lose.
+            .onChange(of: liveCollectionName) { _, newName in
+                guard let newName, newName != draft.name else { return }
+                draft.name = newName
+            }
     }
 
     /// The vault's current variables/Authorization for this collection id
@@ -85,6 +94,10 @@ struct CollectionDetailView: View {
 
     private var liveCollectionAuthorization: Authorization? {
         store.vault.collections.first(where: { $0.id == draft.id })?.authorization
+    }
+
+    private var liveCollectionName: String? {
+        store.vault.collections.first(where: { $0.id == draft.id })?.name
     }
 
     // MARK: - Section tabs
@@ -105,8 +118,7 @@ struct CollectionDetailView: View {
                 Spacer(minLength: 0)
                 saveButton
             }
-            .padding(.horizontal, AppSpacing.medium)
-            .padding(.vertical, AppSpacing.small)
+            .panelToolbar(horizontalPadding: AppSpacing.medium)
 
             sectionTabs
             Divider()
