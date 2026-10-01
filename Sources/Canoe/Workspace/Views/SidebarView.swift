@@ -656,46 +656,6 @@ private struct InlineActionButton: View {
     }
 }
 
-/// Hover-revealed overflow menu for a sidebar row: one glyph wide, holding
-/// the same items the row's right-click menu does. Rows whose action list
-/// outgrew a few hover icons use this instead of a bank of them.
-///
-/// The pill and its size are applied OUTSIDE the menu: a
-/// `.menuStyle(.borderlessButton)` label lays itself out and drops the padding
-/// and backgrounds declared inside it (the top bar's workspace pill learned
-/// this the same way), so a fill drawn in the label never renders. The wash is
-/// a step stronger than a plain icon button's, too - it sits on the row's own
-/// hover tint, where the usual 5% disappears completely - and it is measured
-/// by `tracksHover` rather than `.onHover`, which the menu's AppKit button
-/// swallows.
-private struct RowActionsMenu<Content: View>: View {
-    @ViewBuilder let content: () -> Content
-    @State private var isHovering = false
-
-    var body: some View {
-        Menu {
-            content()
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(AppFont.iconRow)
-                .foregroundStyle(.secondary)
-                .contentShape(Rectangle())
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .padding(AppSpacing.xxSmall)
-        .frame(minWidth: AppSize.compactControl, minHeight: AppSize.compactControl)
-        .background(
-            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                .fill(isHovering ? AppColor.border : .clear)
-        )
-        .clickCursor()
-        .tracksHover { isHovering = $0 }
-        .help("More Actions")
-    }
-}
-
 /// Opaque backdrop for a row's floating action buttons: the row tints are
 /// translucent (secondary 10% / accent 14%), so the buttons need an opaque
 /// sidebar-colored base under the tint or the truncated label shows through.

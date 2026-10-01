@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// alive only while open - see `windowWillClose`.
     private var utilityWindows: [UtilityPanel: NSWindow] = [:]
     private var variablesMenuItem: NSMenuItem?
+    private var consoleMenuItem: NSMenuItem?
     private var fullScreenMenuItem: NSMenuItem?
     private var appearanceMenuItems: [NSMenuItem] = []
     // File-menu items that only make sense with an active workspace; their
@@ -174,7 +175,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         appStore.vault.revealInFinder()
     }
 
-    /// Shows/hides the console panel docked below the Response pane.
+    /// Shows/hides the console panel docked at the bottom of the detail
+    /// area (a session-wide panel, not part of any one request's view).
     @objc func toggleConsole() {
         guard !isSettingsWindowKey else { return }
         appStore.toggleConsole()
@@ -349,16 +351,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         appStore.toggleVariablesSidebar()
     }
 
-    /// Keeps the View-menu checkmark for the variables inspector in step with
-    /// the store, however the panel was shown or hidden (the tab-row buttons
-    /// are SwiftUI now and sync themselves).
+    /// Keeps the View-menu checkmarks for the toggled panels in step with
+    /// the store, however the panel was shown or hidden (the tab-row and
+    /// status-bar buttons are SwiftUI now and sync themselves).
     private func observeEnvironmentChanges() {
         withObservationTracking {
             _ = appStore.showVariablesSidebar
+            _ = appStore.showConsole
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 self?.variablesMenuItem?.state =
                     self?.appStore.showVariablesSidebar == true ? .on : .off
+                self?.consoleMenuItem?.state =
+                    self?.appStore.showConsole == true ? .on : .off
                 self?.observeEnvironmentChanges()
             }
         }
@@ -575,6 +580,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             keyEquivalent: "c")
         consoleItem.keyEquivalentModifierMask = [.command, .option]
         consoleItem.target = self
+        consoleItem.state = appStore.showConsole ? .on : .off
+        consoleMenuItem = consoleItem
         viewMenu.addItem(consoleItem)
         let workspacesItem = NSMenuItem(
             title: "Workspaces",

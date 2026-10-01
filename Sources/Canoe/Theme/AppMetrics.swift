@@ -101,8 +101,13 @@ enum AppSize {
     static let compactControl: CGFloat = 16
     /// Fixed glyph box for icon-only `IconButtonStyle` labels: wide enough
     /// for the widest toolbar symbol at body size, so every hover pill is
-    /// identical (pill = box + 2 × (compact - xxSmall) = 26pt).
+    /// identical. The pill around it is `iconButtonSide` - this box plus the
+    /// style's inset on each side.
     static let iconButtonGlyphBox: CGFloat = 18
+    /// The hover pill of an icon button (glyph box + 2 × the style's 4pt
+    /// inset). Controls that stand beside icon buttons in a toolbar size
+    /// themselves to this so their pills match exactly.
+    static let iconButtonSide: CGFloat = iconButtonGlyphBox + 2 * AppSpacing.xSmall
     /// Dirty-dot diameter in tab pills and the tab-switcher rows.
     static let dirtyDot: CGFloat = 8
     /// Tab-switcher search popup width (matches the sidebar max width).
@@ -138,6 +143,16 @@ enum AppSize {
     static let authLabelColumnWidth: CGFloat = 90
     /// Glyph box of a status chip (the response viewer's metric breakdowns).
     static let statusChipGlyphBox: CGFloat = 20
+    /// The docked console panel's height. Postman docks it at the bottom of
+    /// the window as its own panel, so the size is the user's (persisted),
+    /// not derived from whatever the detail pane above happens to be. The
+    /// floor keeps the detail area usable at the app's minimum window
+    /// height (the request editor and response pane ask for 440 together).
+    static let consoleDefaultHeight: CGFloat = 200
+    static let consoleMinHeight: CGFloat = 120
+    /// Tall enough to read a full entry, short enough to leave the request
+    /// editor usable.
+    static let consoleMaxHeight: CGFloat = 560
     /// Shared cap for a form's field column, so a wide window does not
     /// stretch one editor's inputs across it.
     static let formFieldMaxWidth: CGFloat = 520

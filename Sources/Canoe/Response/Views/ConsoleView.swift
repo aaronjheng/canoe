@@ -12,6 +12,10 @@ struct ConsoleView: View {
     /// autoscroll when this holds, so sending never yanks the user away from
     /// history they are reading.
     @State private var isAtBottom = true
+    /// Whether each row leads with its timestamp (the "Show Timestamps"
+    /// option in the overflow menu). Display-only, like the error filter -
+    /// the expanded entry always spells its own time out.
+    @State private var showTimestamps = false
     /// Clear wipes the whole log (see the button), so it asks first - the
     /// session log has no undo.
     @State private var showClearConfirm = false
@@ -69,7 +73,11 @@ struct ConsoleView: View {
             .pickerStyle(.menu)
             .labelsHidden()
             .fixedSize()
-            Button("Clear", systemImage: "trash") {
+            // An eraser, not a trash can: `trash` is this app's language for
+            // deleting a thing (a request, a collection, a history entry),
+            // while this wipes the log view and leaves nothing behind. It
+            // also stays distinct from the ✕ sitting right next to it.
+            Button("Clear", systemImage: "eraser") {
                 showClearConfirm = true
             }
             .labelStyle(.iconOnly)
@@ -80,6 +88,23 @@ struct ConsoleView: View {
             // destruction of the hidden successful entries.
             .disabled(visibleEntries.isEmpty)
             .help("Clear console")
+            // Overflow menu for the panel's display options (the ones that
+            // do not deserve a permanent icon). The shared ellipsis menu, so
+            // it looks like every other overflow menu in the app.
+            RowActionsMenu(matchesIconButtons: true) {
+                Toggle("Show Timestamps", isOn: $showTimestamps)
+            }
+            // Same close affordance the right-hand inspector panels carry
+            // (see InspectorHeader), so a docked panel can always be put
+            // away from its own row - not only from the View menu.
+            Button("Hide", systemImage: "xmark") {
+                store.showConsole = false
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(IconButtonStyle())
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("Hide Console")
+            .help("Hide Console (⌥⌘C)")
         }
         .panelToolbar(horizontalPadding: AppSpacing.medium)
     }
@@ -124,6 +149,7 @@ struct ConsoleView: View {
                         ConsoleEntryRow(
                             entry: entry,
                             isExpanded: expandedIDs.contains(entry.id),
+                            showsTimestamp: showTimestamps,
                             copied: copiedEntryID == entry.id,
                             onToggle: { toggle(entry) },
                             onCopyRaw: { copyRaw(entry) }
@@ -170,6 +196,8 @@ struct ConsoleView: View {
 private struct ConsoleEntryRow: View {
     let entry: ConsoleEntry
     let isExpanded: Bool
+    /// Whether the summary row leads with the entry's timestamp.
+    let showsTimestamp: Bool
     let copied: Bool
     let onToggle: () -> Void
     let onCopyRaw: () -> Void
@@ -192,7 +220,13 @@ private struct ConsoleEntryRow: View {
                 // never reappears stuck on without the pointer.
                 .onDisappear { isHovering = false }
             if isExpanded {
-                ConsoleEntryDetail(entry: entry, copied: copied, onCopyRaw: onCopyRaw)
+                ConsoleEntryDetail(
+                    entry: entry,
+                    // The summary row already carries the time when the
+                    // timestamp option is on; don't say it twice.
+                    showsTimestamp: showsTimestamp,
+                    copied: copied,
+                    onCopyRaw: onCopyRaw)
             }
         }
         .background(entry.isError ? AppColor.error.opacity(AppOpacity.errorBackground) : Color.clear)
@@ -200,6 +234,12 @@ private struct ConsoleEntryRow: View {
 
     private var summaryRow: some View {
         HStack(spacing: AppSpacing.small) {
+            if showsTimestamp {
+                Text(entry.formattedTime)
+                    .font(AppFont.monoCaption)
+                    .monospacedDigit()
+                    .foregroundStyle(AppColor.tertiaryText)
+            }
             Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                 .font(AppFont.small.weight(.semibold))
                 .foregroundStyle(.secondary)
@@ -245,6 +285,9 @@ private struct ConsoleEntryRow: View {
 /// response or error, with a "Copy Raw Log" shortcut.
 private struct ConsoleEntryDetail: View {
     let entry: ConsoleEntry
+    /// The summary row already shows the time; then the detail omits its
+    /// own copy.
+    let showsTimestamp: Bool
     let copied: Bool
     /// Rendered body cap: the formatted view shows a triage excerpt, the
     /// full text goes through Copy.
@@ -256,10 +299,12 @@ private struct ConsoleEntryDetail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.small) {
             HStack {
-                Text(entry.formattedTime)
-                    .font(AppFont.small)
-                    .monospacedDigit()
-                    .foregroundStyle(AppColor.tertiaryText)
+                if !showsTimestamp {
+                    Text(entry.formattedTime)
+                        .font(AppFont.small)
+                        .monospacedDigit()
+                        .foregroundStyle(AppColor.tertiaryText)
+                }
                 Spacer(minLength: 0)
                 Button(
                     action: { showRaw.toggle() },
@@ -336,8 +381,9 @@ private struct ConsoleEntryDetail: View {
         return raw
     }
 
-    init(entry: ConsoleEntry, copied: Bool, onCopyRaw: @escaping () -> Void) {
+    init(entry: ConsoleEntry, showsTimestamp: Bool, copied: Bool, onCopyRaw: @escaping () -> Void) {
         self.entry = entry
+        self.showsTimestamp = showsTimestamp
         self.copied = copied
         self.onCopyRaw = onCopyRaw
     }

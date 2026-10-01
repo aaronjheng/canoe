@@ -55,6 +55,7 @@ final class AppStore {
         static let openTabs = "openTabs"
         static let selectedTab = "selectedTab"
         static let inspectorWidth = "inspectorWidth"
+        static let consoleHeight = "consoleHeight"
     }
 
     init() {
@@ -86,12 +87,25 @@ final class AppStore {
         if savedWidth > 0 {
             inspectorWidth = min(max(savedWidth, AppSize.inspectorMinWidth), AppSize.inspectorMaxWidth)
         }
+        let savedConsole = defaults.double(forKey: OpenTabStateKeys.consoleHeight)
+        if savedConsole > 0 {
+            consoleHeight = min(max(savedConsole, AppSize.consoleMinHeight), AppSize.consoleMaxHeight)
+        }
     }
 
     /// Persists the dragged inspector width (called on drag end, not per
     /// frame, so typing-speed writes never burst).
     func saveInspectorWidth() {
         UserDefaults.standard.set(inspectorWidth, forKey: OpenTabStateKeys.inspectorWidth)
+    }
+
+    /// Height of the docked console panel, adjustable by dragging its top
+    /// edge (same rule as the inspector's width).
+    var consoleHeight: CGFloat = AppSize.consoleDefaultHeight
+
+    /// Persists the dragged console height (on drag end, not per frame).
+    func saveConsoleHeight() {
+        UserDefaults.standard.set(consoleHeight, forKey: OpenTabStateKeys.consoleHeight)
     }
 
     /// Whether the left sidebar (collections/history) is shown. Toggled from

@@ -347,3 +347,78 @@ extension View {
         }
     }
 }
+
+/// Drag handle on the leading edge of a manually-sized pane (VS Code-style
+/// splitter): drag to resize between the min/max bounds, double-click to
+/// reset to the default.
+///
+/// The pane must live OUTSIDE any split view - a conditionally-presented
+/// split pane breaks the split view's sizing - so the splitter is manual.
+///
+/// `axis` picks the direction: the right-hand inspector resizes horizontally,
+/// the bottom console panel vertically.
+struct PaneResizeHandle: View {
+    let axis: Axis
+    let range: ClosedRange<CGFloat>
+    let defaultLength: CGFloat
+    /// The size at drag start; nil until the pointer actually moves, so an
+    /// abandoned drag leaves the value untouched.
+    @Binding var length: CGFloat
+    /// Called once when the drag ends, to persist the new size.
+    let onCommit: () -> Void
+    @State private var dragStart: CGFloat?
+
+    /// Thickness of the grab area. A touch wider than the hairline it
+    /// straddles, so the pointer does not have to find a 1pt line.
+    private static let thickness: CGFloat = 7
+
+    var body: some View {
+        Color.clear
+            .frame(
+                width: axis == .horizontal ? Self.thickness : nil,
+                height: axis == .vertical ? Self.thickness : nil
+            )
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                guard hovering else {
+                    NSCursor.pop()
+                    return
+                }
+                // The axis decides the cursor: a vertical edge resizes up
+                // and down, a horizontal one left and right.
+                if axis == .vertical {
+                    NSCursor.resizeUpDown.push()
+                } else {
+                    NSCursor.resizeLeftRight.push()
+                }
+            }
+            .gesture(
+                // Global coordinates on purpose: the handle itself moves
+                // with the size it controls, so a local-space translation
+                // feeds back into the layout and oscillates (the tab strip
+                // and the trailing controls jitter). Global space keeps the
+                // delta a pure function of the pointer.
+                DragGesture(minimumDistance: 2, coordinateSpace: .global)
+                    .onChanged { value in
+                        if dragStart == nil { dragStart = length }
+                        let start = dragStart ?? length
+                        // A pane on the leading edge (inspector) grows as
+                        // the pointer moves left; a pane below (console)
+                        // grows as it moves up.
+                        let delta =
+                            axis == .horizontal
+                            ? -value.translation.width : value.translation.height
+                        length = min(max(start + delta, range.lowerBound), range.upperBound)
+                    }
+                    .onEnded { _ in
+                        dragStart = nil
+                        onCommit()
+                    }
+            )
+            .onTapGesture(count: 2) {
+                length = defaultLength
+                onCommit()
+            }
+            .help("Drag to resize the \(axis == .horizontal ? "inspector" : "console") (double-click to reset)")
+    }
+}

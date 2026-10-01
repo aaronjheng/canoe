@@ -165,6 +165,10 @@ struct IconButtonStyle: ButtonStyle {
             .contentShape(Rectangle())
             .onHover { isHovering = $0 }
             .clickCursor(isEnabled: isEnabled)
+            // Disabled reads as disabled: no hover fill and no hand (the rule
+            // at the top of this file), but dimmed too - an icon button that
+            // simply does nothing looks broken rather than unavailable.
+            .opacity(isEnabled ? 1 : AppOpacity.disabled)
             .animation(AppMotion.quick, value: isHovering)
             .animation(AppMotion.quick, value: configuration.isPressed)
     }
@@ -299,4 +303,70 @@ func openFilePanel() -> URL? {
     panel.canChooseDirectories = false
     panel.allowsMultipleSelection = false
     return panel.runModal() == .OK ? panel.url : nil
+}
+
+/// Hover-revealed overflow menu: one glyph wide, holding the actions that
+/// outgrew a few inline icons - a sidebar row's right-click menu, the
+/// console's display options. Shared so every overflow menu in the app is
+/// the same pill, the same hover wash, and the same "More Actions" help.
+///
+/// The pill and its size are applied OUTSIDE the menu: a
+/// `.menuStyle(.borderlessButton)` label lays itself out and drops the padding
+/// and backgrounds declared inside it (the top bar's workspace pill learned
+/// this the same way), so a fill drawn in the label never renders - and, for
+/// the same reason, the SIZE must be imposed from outside too: a fixed frame
+/// inside the label makes the AppKit button pad it further and hand the
+/// inflated ideal size back to `fixedSize()`, which grows the host row.
+///
+/// Two geometries, because the menu has two homes. The default is a tree
+/// row's: natural glyph size, tight padding, and the stronger wash (it sits
+/// on the row's own hover tint, where the usual 5% disappears completely).
+/// `matchesIconButtons` switches to exactly what `IconButtonStyle` draws -
+/// the same pill side, the same icon-chrome wash - so an overflow menu in a
+/// panel toolbar is the same size and shade as the icon buttons beside it.
+struct RowActionsMenu<Content: View>: View {
+    var matchesIconButtons = false
+    @ViewBuilder let content: () -> Content
+    @State private var isHovering = false
+
+    var body: some View {
+        Menu {
+            content()
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(AppFont.iconRow)
+                .foregroundStyle(.secondary)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .padding(matchesIconButtons ? AppSize.compactControl : AppSpacing.xxSmall)
+        .frame(width: pillSide, height: pillSide)
+        .frame(minWidth: pillFloor, minHeight: pillFloor)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                .fill(
+                    isHovering
+                        ? (matchesIconButtons ? AppColor.tabHoverBackground : AppColor.border)
+                        : .clear
+                )
+        )
+        .clickCursor()
+        .tracksHover { isHovering = $0 }
+        .animation(AppMotion.quick, value: isHovering)
+        .help("More Actions")
+    }
+
+    /// The icon-button pill's side when matching; nil keeps the menu's own
+    /// natural width (the tree row's compact case).
+    private var pillSide: CGFloat? {
+        matchesIconButtons ? AppSize.iconButtonSide : nil
+    }
+
+    /// Floor for the compact case, where the menu is only as big as its glyph
+    /// plus padding and must not pad itself out.
+    private var pillFloor: CGFloat? {
+        matchesIconButtons ? nil : AppSize.compactControl
+    }
 }

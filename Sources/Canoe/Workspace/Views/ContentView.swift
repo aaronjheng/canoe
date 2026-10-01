@@ -21,8 +21,6 @@ struct ContentView: View {
     /// Pick from the window-level method dropdown, handed down to the
     /// editor's draft (the panel can't reach the draft itself).
     @State private var pendingMethodPick: HTTPMethod?
-    /// Inspector width at drag start; the drag applies deltas against it.
-    @State private var inspectorDragStartWidth: CGFloat?
     /// Keeps the splash up long enough to perceive even when the vault
     /// loads instantly from the local disk.
     @State private var splashElapsed = false
@@ -236,49 +234,19 @@ struct ContentView: View {
         }
     }
 
-    /// Drag handle on the inspector's leading edge (VSCode-style splitter):
-    /// drag to resize between the min/max widths, double-click to reset to
-    /// the default. The inspector sits outside the HSplitView (a
-    /// conditionally-presented split pane breaks its sizing), so the
-    /// splitter is manual.
+    /// Drag handle on the inspector's leading edge: the shared pane
+    /// splitter (see `PaneResizeHandle`), sized by `inspectorWidth`.
     private var inspectorResizeHandle: some View {
-        Color.clear
-            .frame(width: 7)
-            .contentShape(Rectangle())
-            .onHover { hovering in
-                if hovering {
-                    NSCursor.resizeLeftRight.push()
-                } else {
-                    NSCursor.pop()
-                }
-            }
-            .gesture(
-                // Global coordinates on purpose: the handle itself moves
-                // with the width it controls, so a local-space translation
-                // feeds back into the layout and oscillates (the tab strip
-                // and the trailing toggles jitter). Global space keeps the
-                // delta a pure function of the pointer.
-                DragGesture(minimumDistance: 2, coordinateSpace: .global)
-                    .onChanged { value in
-                        if inspectorDragStartWidth == nil {
-                            inspectorDragStartWidth = store.inspectorWidth
-                        }
-                        let start = inspectorDragStartWidth ?? store.inspectorWidth
-                        store.inspectorWidth = min(
-                            max(start - value.translation.width, AppSize.inspectorMinWidth),
-                            AppSize.inspectorMaxWidth
-                        )
-                    }
-                    .onEnded { _ in
-                        inspectorDragStartWidth = nil
-                        store.saveInspectorWidth()
-                    }
-            )
-            .onTapGesture(count: 2) {
-                store.inspectorWidth = AppSize.inspectorWidth
-                store.saveInspectorWidth()
-            }
-            .help("Drag to resize the inspector (double-click to reset)")
+        PaneResizeHandle(
+            axis: .horizontal,
+            range: AppSize.inspectorMinWidth...AppSize.inspectorMaxWidth,
+            defaultLength: AppSize.inspectorWidth,
+            length: Binding(
+                get: { store.inspectorWidth },
+                set: { store.inspectorWidth = $0 }
+            ),
+            onCommit: { store.saveInspectorWidth() }
+        )
     }
 
     private var detailPane: some View {
@@ -293,8 +261,34 @@ struct ContentView: View {
             )
             Divider()
             detailContent
+            // Postman-style docked console, at the bottom of the whole
+            // detail area rather than inside the request workspace: it
+            // logs the session, not one request, so it stays available (and
+            // keeps its log) whatever the detail pane above is showing -
+            // an environment editor, a collection page, or nothing at all.
+            if store.showConsole {
+                Divider()
+                ConsoleView()
+                    .frame(height: store.consoleHeight)
+                    .overlay(alignment: .top) { consoleResizeHandle }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Drag handle on the console's top edge: the shared pane splitter
+    /// (see `PaneResizeHandle`), sized by `consoleHeight`.
+    private var consoleResizeHandle: some View {
+        PaneResizeHandle(
+            axis: .vertical,
+            range: AppSize.consoleMinHeight...AppSize.consoleMaxHeight,
+            defaultLength: AppSize.consoleDefaultHeight,
+            length: Binding(
+                get: { store.consoleHeight },
+                set: { store.consoleHeight = $0 }
+            ),
+            onCommit: { store.saveConsoleHeight() }
+        )
     }
 
     /// Warning shown when per-file skips happened on load: names the count
@@ -354,7 +348,9 @@ struct ContentView: View {
 }
 
 /// Splits the detail area into a request editor (top) and response viewer
-/// (bottom), like the classic Postman layout.
+/// (bottom), like the classic Postman layout. The console is NOT here - it
+/// is docked below this whole pane (see ContentView), so it survives any
+/// change of context.
 struct RequestWorkspaceView: View {
     @Environment(AppStore.self) private var store
     let request: Request
@@ -373,11 +369,6 @@ struct RequestWorkspaceView: View {
             .frame(minHeight: 240)
             ResponseViewerView()
                 .frame(minHeight: 200)
-            // Postman-style docked console: opens below the Response pane.
-            if store.showConsole {
-                ConsoleView()
-                    .frame(minHeight: 150, idealHeight: 220)
-            }
         }
         // VSplitView otherwise collapses to its panes' ideal heights, and a
         // section switch to fixed-height content (e.g. the GET "No Body"
