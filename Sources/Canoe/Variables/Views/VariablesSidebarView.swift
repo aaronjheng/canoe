@@ -304,6 +304,9 @@ private struct ScopeSection: View {
         }
     }
 
+    /// No trailing hairline: only the top summary block (Resolved /
+    /// Unresolved) draws a divider, so the scope groups below it read as one
+    /// continuous list headed by their own labels.
     private var section: some View {
         VStack(spacing: 0) {
             header
@@ -312,7 +315,6 @@ private struct ScopeSection: View {
             } else {
                 rows
             }
-            Divider()
         }
     }
 
@@ -337,8 +339,8 @@ private struct ScopeSection: View {
     }
 
     private var rows: some View {
-        // No hairlines between rows: the sections are divided, the variables
-        // within a section read as one compact list.
+        // No hairlines between rows: the variables within a section read as
+        // one compact list.
         ForEach(visibleVariables) { variable in
             VariableRow(
                 variable: variable,
