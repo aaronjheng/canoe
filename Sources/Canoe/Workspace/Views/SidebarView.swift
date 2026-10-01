@@ -835,12 +835,14 @@ private struct CollectionTree: View {
                 renameRow
             } else {
                 // Postman-style: the whole row opens the collection's page (an
-                // overview of its requests, auth, and variables); only the
-                // chevron toggles the tree. A tap on the chevron reaches the
-                // inner button alone, anywhere else opens the page.
+                // overview of its requests, auth, and variables) and toggles
+                // its branch, so one click both previews the collection and
+                // reveals/hides its folders and requests. A tap on the chevron
+                // reaches the inner button alone, so the chevron only ever
+                // toggles.
                 Button {
                     store.preview(.collection(collection.id))
-                    store.setSidebarNodeExpanded(collection.id, true)
+                    store.toggleSidebarNode(collection.id)
                 } label: {
                     HStack(spacing: AppSpacing.xSmall) {
                         Button {
