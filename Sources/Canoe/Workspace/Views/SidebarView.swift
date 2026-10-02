@@ -1028,12 +1028,15 @@ private struct FolderTree: View {
             if isRenamingNode {
                 renameRow
             } else {
-                // Postman-style: the row opens the folder's page (Overview /
-                // Authorization); only the chevron toggles the tree. A tap on
-                // the chevron reaches the inner button alone, anywhere else
-                // opens the page.
+                // Postman-style: the whole row opens the folder's page (Overview
+                // / Authorization) and toggles its branch, so one click both
+                // previews the folder and reveals/hides its subfolders and
+                // requests - same as the collection row. A tap on the chevron
+                // reaches the inner button alone, so the chevron only ever
+                // toggles.
                 Button {
                     store.preview(.folder(folder.id))
+                    store.toggleSidebarNode(folder.id)
                 } label: {
                     HStack(spacing: 0) {
                         // The chevron sits one tree step per level right of the
