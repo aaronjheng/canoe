@@ -70,8 +70,8 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
             try container.decodeIfPresent(String.self, forKey: .bodyContentType) ?? "application/json"
         bodyType = try container.decodeIfPresent(String.self, forKey: .bodyType) ?? RequestBodyType.raw.rawValue
         bodyRawKind = try container.decodeIfPresent(String.self, forKey: .bodyRawKind) ?? RawBodyKind.json.rawValue
-        formFields = try container.decodeIfPresent([FormField].self, forKey: .formFields) ?? []
-        urlEncodedFields = try container.decodeIfPresent([FormField].self, forKey: .urlEncodedFields) ?? []
+        formFields = try container.decodeLossyArray(forKey: .formFields)
+        urlEncodedFields = try container.decodeLossyArray(forKey: .urlEncodedFields)
         binaryFilePath = try container.decodeIfPresent(String.self, forKey: .binaryFilePath) ?? ""
         authType = try container.decodeIfPresent(String.self, forKey: .authType) ?? AuthType.none.rawValue
         authUsername = try container.decodeIfPresent(String.self, forKey: .authUsername) ?? ""
@@ -81,8 +81,8 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
         folderID = try container.decodeIfPresent(UUID.self, forKey: .folderID)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
-        headers = try container.decodeIfPresent([HTTPHeader].self, forKey: .headers) ?? []
-        params = try container.decodeIfPresent([QueryParam].self, forKey: .params) ?? []
+        headers = try container.decodeLossyArray(forKey: .headers)
+        params = try container.decodeLossyArray(forKey: .params)
     }
 
     var httpMethod: HTTPMethod {

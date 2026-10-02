@@ -30,6 +30,6 @@ extension Workspace {
         name = try container.decodeIfPresent(String.self, forKey: .name) ?? "My Workspace"
         orderIndex = try container.decodeIfPresent(Int.self, forKey: .orderIndex) ?? 0
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
-        variables = try container.decodeIfPresent([Variable].self, forKey: .variables) ?? []
+        variables = try container.decodeLossyArray(forKey: .variables)
     }
 }

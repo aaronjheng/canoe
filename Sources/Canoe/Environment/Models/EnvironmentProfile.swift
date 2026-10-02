@@ -30,6 +30,28 @@ struct EnvironmentProfile: Identifiable, Codable, Hashable, Sendable {
     var variablesDictionary: [String: String] {
         variables.resolvingDictionary()
     }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case orderIndex
+        case createdAt
+        case workspaceID
+        case variables
+    }
+
+    /// Tolerant like the other vault models: an absent key falls back to its
+    /// default, and a single malformed variable row is skipped instead of
+    /// taking the whole environment file - and every variable in it - down.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? "New Environment"
+        orderIndex = try container.decodeIfPresent(Int.self, forKey: .orderIndex) ?? 0
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        workspaceID = try container.decodeIfPresent(UUID.self, forKey: .workspaceID)
+        variables = try container.decodeLossyArray(forKey: .variables)
+    }
 }
 /// Transition alias for the pre-rename environment name. Remove once all call sites use `EnvironmentProfile` directly.
 typealias EnvProfile = EnvironmentProfile

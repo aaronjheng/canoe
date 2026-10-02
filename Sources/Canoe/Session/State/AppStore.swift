@@ -161,6 +161,11 @@ final class AppStore {
     /// mirrored to drafts.json so it survives relaunches. Tracked by the
     /// observation system so the Save button and tab dirty dots update live.
     var pendingRequestSnapshots: [UUID: Request] = [:]
+    /// Monotonic id of the newest Save-all pass. A pass that failed to write
+    /// only puts its entity back into the dirty set while it is still the
+    /// newest pass - a later pass has captured its own (newer) snapshot for
+    /// that entity and owns the outcome.
+    var savePassGeneration = 0
     /// Unsaved environment edits - same model as the request snapshots.
     var pendingEnvironmentSnapshots: [UUID: EnvironmentProfile] = [:]
     /// Unsaved workspace/collection variable edits - same draft model.

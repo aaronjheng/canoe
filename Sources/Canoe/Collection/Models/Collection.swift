@@ -46,7 +46,9 @@ struct Collection: Identifiable, Codable, Hashable, Sendable {
 
 extension Collection {
     /// Tolerates files written before `variables` existed so old vault files
-    /// keep loading.
+    /// keep loading, and drops a single malformed row instead of the whole
+    /// file: a bad folder/request/variable no longer takes the collection's
+    /// other requests, folders, variables and Authorization down with it.
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
@@ -54,9 +56,9 @@ extension Collection {
         name = try container.decodeIfPresent(String.self, forKey: .name) ?? "New Collection"
         orderIndex = try container.decodeIfPresent(Int.self, forKey: .orderIndex) ?? 0
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
-        folders = try container.decodeIfPresent([Folder].self, forKey: .folders) ?? []
-        requests = try container.decodeIfPresent([Request].self, forKey: .requests) ?? []
-        variables = try container.decodeIfPresent([Variable].self, forKey: .variables) ?? []
+        folders = try container.decodeLossyArray(forKey: .folders)
+        requests = try container.decodeLossyArray(forKey: .requests)
+        variables = try container.decodeLossyArray(forKey: .variables)
         authorization = try container.decodeIfPresent(Authorization.self, forKey: .authorization) ?? Authorization()
     }
 }

@@ -123,22 +123,30 @@ extension AppStore {
     }
 
     /// Writes a folder's unsaved Authorization edit into its collection file.
-    func persistFolderAuthorization(_ folderID: UUID, _ authorization: Authorization) async {
+    /// @return whether the change reached disk.
+    ///
+    /// Note for new callers: the pending map must already be clear of this
+    /// folder (the save flow clears it before writing), otherwise the rewind
+    /// inside `persistable` would put the previous baseline back on disk
+    /// while this function advanced the baseline to the new value.
+    @discardableResult
+    func persistFolderAuthorization(_ folderID: UUID, _ authorization: Authorization) async -> Bool {
         guard let at = folderIndexes(folderID) else {
             // The folder vanished (deleted while a save was in flight).
             persistedFolderAuthorizationBaselines[folderID] = nil
-            return
+            return true
         }
         let baseline =
             persistedFolderAuthorizationBaselines[folderID]
             ?? vault.collections[at.collection].folders[at.folder].authorization
         if authorization == baseline {
             persistedFolderAuthorizationBaselines[folderID] = authorization
-            return
+            return true
         }
         vault.collections[at.collection].folders[at.folder].authorization = authorization
-        await vault.writeCollection(persistable(vault.collections[at.collection]))
+        guard await vault.writeCollection(persistable(vault.collections[at.collection])) else { return false }
         persistedFolderAuthorizationBaselines[folderID] = authorization
+        return true
     }
 
     // MARK: - Collections
@@ -243,16 +251,29 @@ extension AppStore {
         return pending != baseline
     }
 
-    /// Rewinds a collection copy's draft-owned fields (variables,
-    /// Authorization) to their persisted baselines, so structural saves
-    /// (rename, add/delete folder or request) and request saves never leak
-    /// unsaved edits into the collection file - the "nothing is written
-    /// until Save (⌘S / Save button)" contract. Baselines are only read for
-    /// entities that actually have a pending draft: rebasing keeps them
-    /// fresh for those, while a stale baseline for a clean entity must not
-    /// overwrite external content.
-    func persistable(_ collection: Collection) -> Collection {
+    /// Rewinds a collection copy's draft-owned fields (requests,
+    /// variables, Authorization) to their persisted baselines, so
+    /// structural saves (rename, add/delete folder or request) and request
+    /// saves never leak unsaved edits into the collection file - the
+    /// "nothing is written until Save (⌘S / Save button)" contract. Baselines
+    /// are only read for entities that actually have a pending draft:
+    /// rebasing keeps them fresh for those, while a stale baseline for a
+    /// clean entity must not overwrite external content.
+    /// - Parameter keepingRequestID: a request the caller is writing right
+    ///   now. Its pending entry is the user's *newer* typing that landed while
+    ///   the write was in flight; rewinding it would put the pre-save content
+    ///   on disk while the edit stays dirty in memory.
+    func persistable(_ collection: Collection, keepingRequestID keep: UUID? = nil) -> Collection {
         var collection = collection
+        // Requests first: `persistRequest` writes through here too, so
+        // saving one request must not push a sibling's unsaved edits onto disk.
+        for requestIndex in collection.requests.indices {
+            let requestID = collection.requests[requestIndex].id
+            guard requestID != keep, pendingRequestSnapshots[requestID] != nil else { continue }
+            if let baseline = persistedRequestBaselines[requestID] {
+                collection.requests[requestIndex] = baseline
+            }
+        }
         if pendingCollectionVariables[collection.id] != nil {
             if let baseline = persistedCollectionVariableBaselines[collection.id] {
                 collection.variables = baseline

@@ -93,10 +93,23 @@ struct SettingsView: View {
                     }
                 }
             }
-            if let message = locationError ?? appStore.vault.locationWarning ?? appStore.vault.loadError {
+            // All of them, not just the first: a stale location warning would
+            // otherwise hide `saveError`, which is the one this window most
+            // needs to show - the iCloud toggle is the likeliest thing to fail
+            // a write, and this window does not host the main window's banner.
+            let failures = [
+                locationError,
+                appStore.vault.locationWarning,
+                appStore.vault.loadError,
+                appStore.vault.saveError,
+            ]
+            .compactMap { $0 }
+            if !failures.isEmpty {
                 Section {
-                    Text(message)
-                        .foregroundStyle(AppColor.error)
+                    ForEach(failures, id: \.self) { message in
+                        Text(message)
+                            .foregroundStyle(AppColor.error)
+                    }
                 }
             }
         }

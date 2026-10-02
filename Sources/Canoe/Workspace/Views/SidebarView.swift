@@ -850,7 +850,17 @@ private struct CollectionTree: View {
                 // Double-click pins the preview tab (same instant-click
                 // reasoning as the request rows).
                 .simultaneousGesture(
-                    TapGesture(count: 2).onEnded { store.pin(.collection(collection.id)) }
+                    // A double click delivers two full clicks, so the row
+                    // action toggled the branch twice and landed back where it
+                    // started. One more toggle here brings the result back to
+                    // "a single click happened" - whether this fires before or
+                    // after the second click's action, the branch ends up
+                    // toggled exactly once. No timing heuristic, so keyboard
+                    // activation (Return twice) still toggles twice.
+                    TapGesture(count: 2).onEnded {
+                        store.toggleSidebarNode(collection.id)
+                        store.pin(.collection(collection.id))
+                    }
                 )
                 .contextMenu {
                     Button("Add Request", systemImage: "plus") {
@@ -1090,7 +1100,12 @@ private struct FolderTree: View {
                 // Double-click pins the preview tab (same instant-click
                 // reasoning as the request rows).
                 .simultaneousGesture(
-                    TapGesture(count: 2).onEnded { store.pin(.folder(folder.id)) }
+                    // Same second-toggle cancellation as the collection row
+                    // above - see the note there.
+                    TapGesture(count: 2).onEnded {
+                        store.toggleSidebarNode(folder.id)
+                        store.pin(.folder(folder.id))
+                    }
                 )
                 .contextMenu {
                     Button("Add Request", systemImage: "plus") {

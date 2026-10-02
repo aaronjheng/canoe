@@ -33,6 +33,28 @@ struct Authorization: Codable, Hashable, Sendable {
     var password: String = ""
     var token: String = ""
 
+    enum CodingKeys: String, CodingKey {
+        case type
+        case username
+        case password
+        case token
+    }
+
+    /// Tolerant on purpose, same reason as `QueryParam`: this type is nested
+    /// inside every folder, collection and request draft, so a synthesized
+    /// (all-keys-required, unknown-enum-value) decoder would drop the WHOLE
+    /// enclosing entity - a folder and every request inside it - over one
+    /// missing or renamed field. An unknown `type` degrades to `.none`
+    /// instead of throwing.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let rawType = try container.decodeIfPresent(String.self, forKey: .type)
+        type = rawType.flatMap(AuthType.init(rawValue:)) ?? .none
+        username = try container.decodeIfPresent(String.self, forKey: .username) ?? ""
+        password = try container.decodeIfPresent(String.self, forKey: .password) ?? ""
+        token = try container.decodeIfPresent(String.self, forKey: .token) ?? ""
+    }
+
     init(
         type: AuthType = .none,
         username: String = "",

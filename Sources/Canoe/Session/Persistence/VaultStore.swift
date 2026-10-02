@@ -36,11 +36,27 @@ final class VaultStore {
     var vaultURL: URL?
     var isReady = false
     var loadError: String?
+    /// The most recent write failure per kind of file (disk full, read-only
+    /// vault, a sync lock). Every write funnels its error here: logging alone
+    /// left the user pressing Save with no feedback at all, while the change
+    /// lived only in memory and in `drafts.json`.
+    ///
+    /// Tracked per kind rather than as one flag because an unrelated
+    /// successful write must not silence it: a failing collection save was
+    /// previously cleared by the drafts mirror that ran two lines later, so
+    /// the banner flashed for less than a frame. A kind clears only when a
+    /// write of that same kind succeeds.
+    var saveError: String?
     /// Files that failed to decode on the last load (skipped individually so
     /// one bad file cannot wipe out its section). Surfaced in the UI instead
     /// of vanishing silently - the files stay on disk for manual recovery.
     var corruptFileCount = 0
     var corruptFileNames: [String] = []
+    /// Rows skipped inside otherwise-readable files (a single undecodable
+    /// request, folder, variable, or key/value row). The file loads, so
+    /// `corruptFileCount` stays 0 - but rows are gone, and the next save
+    /// rewrites the file without them, so the user has to hear about it.
+    var droppedRowCount = 0
     /// Set when the vault runs somewhere other than requested: iCloud Drive
     /// unavailable at launch, or lost at runtime (signed out, disabled).
     /// Unlike `loadError`, `loadAll` never clears this - it stays until sync
@@ -55,6 +71,11 @@ final class VaultStore {
     var onExternalChange: (() -> Void)?
     @ObservationIgnored private var watchSources: [DispatchSourceFileSystemObject] = []
     @ObservationIgnored private var watchDebounceTask: Task<Void, Never>?
+    /// Monotonic load id, so a slow load cannot publish counts belonging to a
+    /// newer one (see `DroppedElementCounter`).
+    private var loadGeneration = 0
+    /// The vault root the current `failedSaveKinds` describe; see `loadAll`.
+    private var lastFailureRoot: URL?
 
     // MARK: - Paths
 
@@ -208,6 +229,25 @@ final class VaultStore {
         guard let vaultURL else { return }
         corruptFileCount = 0
         corruptFileNames = []
+        droppedRowCount = 0
+        DroppedElementCounter.shared.reset()
+        // Failures are only forgotten when the vault ROOT changes. Not on
+        // every reload: the iCloud watcher fires on any vault write, and a
+        // failing write is usually caused by the same contention that triggers
+        // the watcher - clearing here would wipe the warning the user needs
+        // while their edit is still unwritten.
+        if lastFailureRoot != vaultURL {
+            lastFailureRoot = vaultURL
+            if !failedSaveKinds.isEmpty {
+                failedSaveKinds.removeAll()
+                refreshSaveError()
+            }
+        }
+        // Concurrent loads (the iCloud watcher can fire while a manual reload
+        // runs) share the dropped-row counter; only the newest load may
+        // publish a count, or one load's reset would erase another's.
+        loadGeneration += 1
+        let generation = loadGeneration
         do {
             try await ensureDirectoryStructure(at: vaultURL)
 
@@ -249,6 +289,19 @@ final class VaultStore {
                     "Skipped \(failedNames.count) corrupt vault file(s)",
                     category: "Vault",
                     fields: ["files": failedNames.joined(separator: ", ")])
+            }
+            // Rows `Lossy` skipped inside files that otherwise loaded. Counted
+            // vault-wide because the files decode concurrently, so per-file
+            // attribution would be fiction.
+            // A stale load leaves the newer load's published count alone
+            // rather than zeroing it (which would silently hide the warning).
+            if generation == loadGeneration {
+                droppedRowCount = DroppedElementCounter.shared.value
+            }
+            if droppedRowCount > 0 {
+                AppLogger.error(
+                    "Skipped \(droppedRowCount) unreadable row(s) inside vault files",
+                    category: "Vault")
             }
             // The id tiebreaker keeps the order deterministic when two files
             // share an orderIndex (legacy files, same-second iCloud copies).
@@ -331,14 +384,40 @@ final class VaultStore {
 
     // MARK: - Workspace persistence
 
-    func saveWorkspace(_ workspace: Workspace) async {
-        guard let workspacesDirectory else { return }
+    /// @return whether the file landed on disk.
+    @discardableResult
+    func saveWorkspace(_ workspace: Workspace) async -> Bool {
+        guard let workspacesDirectory else {
+            noteMissingDirectory("workspace", id: "folder", subject: "workspaces")
+            return false
+        }
         let file = workspacesDirectory.appendingPathComponent("\(workspace.id.uuidString).json")
         do {
             try await FileStore.write(workspace, to: file)
             upsert(workspace, in: &workspaces)
+            noteSaveSuccess("workspace", id: workspace.id.uuidString)
+            return true
         } catch {
-            AppLogger.error("Failed to save workspace: \(error)", category: "Vault")
+            noteSaveFailure("workspace", id: workspace.id.uuidString, subject: "\"\(workspace.name)\"", error)
+            return false
+        }
+    }
+
+    /// @return whether the file landed on disk.
+    @discardableResult
+    func writeWorkspace(_ workspace: Workspace) async -> Bool {
+        guard let workspacesDirectory else {
+            noteMissingDirectory("workspace", id: "folder", subject: "workspaces")
+            return false
+        }
+        let file = workspacesDirectory.appendingPathComponent("\(workspace.id.uuidString).json")
+        do {
+            try await FileStore.write(workspace, to: file)
+            noteSaveSuccess("workspace", id: workspace.id.uuidString)
+            return true
+        } catch {
+            noteSaveFailure("workspace", id: workspace.id.uuidString, subject: "\"\(workspace.name)\"", error)
+            return false
         }
     }
 
@@ -366,14 +445,22 @@ final class VaultStore {
     /// Callers that only want the file rewritten with a `persistable` (draft-
     /// rewound) copy must use `writeCollection` instead: upserting the
     /// rewound copy here would clobber the in-memory drafts.
-    func saveCollection(_ collection: Collection) async {
-        guard let collectionsDirectory else { return }
+    /// @return whether the file landed on disk.
+    @discardableResult
+    func saveCollection(_ collection: Collection) async -> Bool {
+        guard let collectionsDirectory else {
+            noteMissingDirectory("collection", id: "folder", subject: "collections")
+            return false
+        }
         let file = collectionsDirectory.appendingPathComponent("\(collection.id.uuidString).json")
         do {
             try await FileStore.write(collection, to: file)
             upsert(collection, in: &collections)
+            noteSaveSuccess("collection", id: collection.id.uuidString)
+            return true
         } catch {
-            AppLogger.error("Failed to save collection: \(error)", category: "Vault")
+            noteSaveFailure("collection", id: collection.id.uuidString, subject: "\"\(collection.name)\"", error)
+            return false
         }
     }
 
@@ -381,13 +468,21 @@ final class VaultStore {
     /// structural saves and request saves pass a `persistable` (draft-
     /// rewound) copy so disk gets the baselines while memory keeps the
     /// unsaved drafts.
-    func writeCollection(_ collection: Collection) async {
-        guard let collectionsDirectory else { return }
+    /// @return whether the file landed on disk.
+    @discardableResult
+    func writeCollection(_ collection: Collection) async -> Bool {
+        guard let collectionsDirectory else {
+            noteMissingDirectory("collection", id: "folder", subject: "collections")
+            return false
+        }
         let file = collectionsDirectory.appendingPathComponent("\(collection.id.uuidString).json")
         do {
             try await FileStore.write(collection, to: file)
+            noteSaveSuccess("collection", id: collection.id.uuidString)
+            return true
         } catch {
-            AppLogger.error("Failed to save collection: \(error)", category: "Vault")
+            noteSaveFailure("collection", id: collection.id.uuidString, subject: "\"\(collection.name)\"", error)
+            return false
         }
     }
 
@@ -400,14 +495,40 @@ final class VaultStore {
 
     // MARK: - Environment persistence
 
-    func saveEnvironment(_ environment: EnvironmentProfile) async {
-        guard let environmentsDirectory else { return }
+    /// @return whether the file landed on disk.
+    @discardableResult
+    func saveEnvironment(_ environment: EnvironmentProfile) async -> Bool {
+        guard let environmentsDirectory else {
+            noteMissingDirectory("environment", id: "folder", subject: "environments")
+            return false
+        }
         let file = environmentsDirectory.appendingPathComponent("\(environment.id.uuidString).json")
         do {
             try await FileStore.write(environment, to: file)
             upsert(environment, in: &environments)
+            noteSaveSuccess("environment", id: environment.id.uuidString)
+            return true
         } catch {
-            AppLogger.error("Failed to save environment: \(error)", category: "Vault")
+            noteSaveFailure("environment", id: environment.id.uuidString, subject: "\"\(environment.name)\"", error)
+            return false
+        }
+    }
+
+    /// @return whether the file landed on disk.
+    @discardableResult
+    func writeEnvironment(_ environment: EnvironmentProfile) async -> Bool {
+        guard let environmentsDirectory else {
+            noteMissingDirectory("environment", id: "folder", subject: "environments")
+            return false
+        }
+        let file = environmentsDirectory.appendingPathComponent("\(environment.id.uuidString).json")
+        do {
+            try await FileStore.write(environment, to: file)
+            noteSaveSuccess("environment", id: environment.id.uuidString)
+            return true
+        } catch {
+            noteSaveFailure("environment", id: environment.id.uuidString, subject: "\"\(environment.name)\"", error)
+            return false
         }
     }
 
@@ -428,11 +549,15 @@ final class VaultStore {
     /// `config` synchronously first so the UI changes in one frame, then
     /// await this for the disk write.
     func persistConfig() async {
-        guard let configFileURL else { return }
+        guard let configFileURL else {
+            noteMissingDirectory("vault settings", id: "vault.json", subject: "vault settings")
+            return
+        }
         do {
             try await FileStore.write(config, to: configFileURL)
+            noteSaveSuccess("vault settings", id: "vault.json")
         } catch {
-            AppLogger.error("Failed to save vault config: \(error)", category: "Vault")
+            noteSaveFailure("vault settings", id: "vault.json", subject: "vault settings", error)
         }
     }
 
@@ -455,11 +580,15 @@ final class VaultStore {
     /// Mirrors the current unsaved edits to disk (atomic; the caller decides
     /// when - debounced on edits, immediate on quit and after saves).
     func saveDrafts(_ drafts: VaultDrafts) async {
-        guard let draftsFileURL else { return }
+        guard let draftsFileURL else {
+            noteMissingDirectory("unsaved edits", id: "drafts.json", subject: "unsaved edits")
+            return
+        }
         do {
             try await FileStore.write(drafts, to: draftsFileURL)
+            noteSaveSuccess("unsaved edits", id: "drafts.json")
         } catch {
-            AppLogger.error("Failed to save drafts: \(error)", category: "Vault")
+            noteSaveFailure("unsaved edits", id: "drafts.json", subject: "unsaved edits", error)
         }
     }
 
@@ -485,12 +614,80 @@ final class VaultStore {
     /// Mirrors the request history to disk (atomic; the caller decides
     /// when - debounced on each recorded entry, immediate on quit).
     func saveHistory(_ entries: [HistoryEntry]) async {
-        guard let historyFileURL else { return }
+        guard let historyFileURL else {
+            noteMissingDirectory("history", id: "history.json", subject: "history")
+            return
+        }
         do {
             try await FileStore.write(entries, to: historyFileURL)
         } catch {
+            // History is a convenience (it is machine-local and rebuilt by
+            // sending), so it is logged only - a failure here must not
+            // raise the same banner a lost collection edit would.
             AppLogger.error("Failed to save history: \(error)", category: "Vault")
         }
+    }
+
+    // MARK: - Write-failure reporting
+
+    /// Failed writes by kind, so the banner lists everything that is
+    /// currently unwritten and each kind clears on its own retry (or on a
+    /// reload, since a fresh load means a fresh vault root).
+    private var failedSaveKinds: [String: String] = [:]
+
+    /// Key for one saved entity: the kind plus a STABLE identifier. Per kind
+    /// alone would be wrong - collection A failing and collection B
+    /// succeeding would clear the warning about A, whose edit is still not on
+    /// disk. The name cannot go in the key either: renaming the collection and
+    /// saving it would leave the old entry stranded forever. The name is only
+    /// in the message, which is what the user reads.
+    private static func failureKey(_ kind: String, _ id: String) -> String {
+        "\(kind):\(id)"
+    }
+
+    /// Records a failed write: logs it and makes it visible. `kind` names
+    /// what could not be written, so the banner says what was lost.
+    private func noteSaveFailure(_ kind: String, id: String, subject: String, _ error: any Error) {
+        AppLogger.error("Failed to save \(subject) (\(kind)): \(error)", category: "Vault")
+        failedSaveKinds[Self.failureKey(kind, id)] = failureMessage(
+            for: kind, subject: subject, reason: error.localizedDescription)
+        refreshSaveError()
+    }
+
+    /// A missing vault folder means nothing was written at all - previously a
+    /// silent no-op, indistinguishable from success.
+    private func noteMissingDirectory(_ kind: String, id: String, subject: String) {
+        AppLogger.error("Cannot save \(subject) (\(kind)): folder unavailable", category: "Vault")
+        failedSaveKinds[Self.failureKey(kind, id)] = failureMessage(
+            for: kind, subject: subject, reason: "the vault folder is unavailable.")
+        refreshSaveError()
+    }
+
+    /// The banner sentence per kind. The drafts mirror gets its own wording:
+    /// when the *drafts* file is what failed, the edits are not safely held
+    /// anywhere, so promising "still in this session" would be the one lie
+    /// the user cannot afford.
+    private func failureMessage(for kind: String, subject: String, reason: String) -> String {
+        kind == "unsaved edits"
+            ? "Could not save unsaved edits: \(reason) Quitting now will lose them."
+            : "Could not save \(kind) \(subject): \(reason) Your edits are still only in this session."
+    }
+
+    /// A successful write of the same kind clears only that kind's entry - a
+    /// healthy drafts write must not hide a failed collection save.
+    private func noteSaveSuccess(_ kind: String, id: String) {
+        guard failedSaveKinds.removeValue(forKey: Self.failureKey(kind, id)) != nil else { return }
+        refreshSaveError()
+    }
+
+    private func refreshSaveError() {
+        saveError =
+            failedSaveKinds.isEmpty
+            ? nil
+            : failedSaveKinds
+                .sorted { $0.key < $1.key }
+                .map(\.value)
+                .joined(separator: " ")
     }
 
     // MARK: - Finder

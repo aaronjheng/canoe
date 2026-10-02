@@ -54,6 +54,9 @@ struct ResponseModel: Identifiable, Sendable {
     let statusCode: Int
     let headers: [HTTPHeader]
     let body: Data
+    /// The body exceeded `HTTPClient.maxResponseBytes` and was cut short -
+    /// the Size panel still reports the full transferred size.
+    let bodyTruncated: Bool
     let duration: TimeInterval
     let timestamp: Date
     let mimeType: String?

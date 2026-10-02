@@ -597,6 +597,11 @@ extension AppStore {
             return
         }
         let previousSave = saveAllTask
+        // Identifies this pass, so a restore that finds a NEWER pass in
+        // flight can stand down: that pass owns the entity now and captured
+        // its own (newer) snapshot.
+        savePassGeneration += 1
+        let pass = savePassGeneration
         saveAllTask = Task { [weak self] in
             // Serialize overlapping saves: a second ⌘S (or quit) never
             // persists older snapshots after newer ones.
@@ -605,33 +610,217 @@ extension AppStore {
                 completion?()
                 return
             }
+            // Captured here, after the previous pass has finished: a baseline
+            // read before that await can be two saves stale, and a failed
+            // write would reinstate the wrong one.
+            let requestBaselines = self.persistedRequestBaselines
+            let environmentBaselines = self.persistedEnvironmentBaselines
+            let workspaceVariableBaselines = self.persistedWorkspaceVariableBaselines
+            let collectionVariableBaselines = self.persistedCollectionVariableBaselines
+            let collectionAuthorizationBaselines = self.persistedCollectionAuthorizationBaselines
+            let folderAuthorizationBaselines = self.persistedFolderAuthorizationBaselines
             // Sorted by id: dictionary iteration order is nondeterministic,
             // and two dirty requests can share one collection file - keep
             // the write order stable across saves.
             for snapshot in pendingRequests.values.sorted(by: { $0.id.uuidString < $1.id.uuidString }) {
-                await self.persistRequest(snapshot)
+                if await self.persistRequest(snapshot) {
+                    self.clearPersistedRequest(snapshot)
+                } else {
+                    self.restorePendingRequest(pass: pass, snapshot, baseline: requestBaselines[snapshot.id])
+                }
             }
             for snapshot in pendingEnvironments.values.sorted(by: { $0.id.uuidString < $1.id.uuidString }) {
-                await self.persistEnvironment(snapshot)
+                if await self.persistEnvironment(snapshot) {
+                    self.clearPersistedEnvironment(snapshot)
+                } else {
+                    self.restorePendingEnvironment(pass: pass, snapshot, baseline: environmentBaselines[snapshot.id])
+                }
             }
             for (id, variables) in pendingWorkspaceVariables.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
-                await self.persistWorkspaceVariables(id, variables)
+                if await self.persistWorkspaceVariables(id, variables) {
+                    self.clearPersistedWorkspaceVariables(id, variables)
+                } else {
+                    self.restorePendingWorkspaceVariables(pass: pass, id, variables, baseline: workspaceVariableBaselines[id])
+                }
             }
             for (id, variables) in pendingCollectionVariables.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
-                await self.persistCollectionVariables(id, variables)
+                if await self.persistCollectionVariables(id, variables) {
+                    self.clearPersistedCollectionVariables(id, variables)
+                } else {
+                    self.restorePendingCollectionVariables(pass: pass, id, variables, baseline: collectionVariableBaselines[id])
+                }
             }
             for (id, authorization) in pendingCollectionAuthorizations.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
-                await self.persistCollectionAuthorization(id, authorization)
+                if await self.persistCollectionAuthorization(id, authorization) {
+                    self.clearPersistedCollectionAuthorization(id, authorization)
+                } else {
+                    self.restorePendingCollectionAuthorization(
+                        pass: pass, id, authorization, baseline: collectionAuthorizationBaselines[id])
+                }
             }
             for (id, authorization) in pendingFolderAuthorizations.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
-                await self.persistFolderAuthorization(id, authorization)
+                if await self.persistFolderAuthorization(id, authorization) {
+                    self.clearPersistedFolderAuthorization(id, authorization)
+                } else {
+                    self.restorePendingFolderAuthorization(pass: pass, id, authorization, baseline: folderAuthorizationBaselines[id])
+                }
             }
-            await self.vault.saveDrafts(VaultDrafts())
+            // Mirrors whatever is still pending - empty on a fully successful
+            // save, but the failed entities above are back in the maps, so
+            // quitting now still restores them.
+            await self.vault.saveDrafts(self.currentDrafts)
+            // Re-mirror on the usual debounce when something stayed pending,
+            // so the failure is not reported only by the in-memory maps.
+            let stillPending =
+                !self.pendingRequestSnapshots.isEmpty
+                || !self.pendingEnvironmentSnapshots.isEmpty
+                || !self.pendingWorkspaceVariables.isEmpty
+                || !self.pendingCollectionVariables.isEmpty
+                || !self.pendingCollectionAuthorizations.isEmpty
+                || !self.pendingFolderAuthorizations.isEmpty
+            if stillPending { self.scheduleDraftPersistence() }
             completion?()
         }
     }
 
-    func persistRequest(_ request: Request) async {
+    // MARK: - Save bookkeeping (shared by all six entity kinds)
+    //
+    // A save pass clears the pending maps up front, then suspends on every
+    // file write - so by the time a write reports back, the user may have
+    // typed on (a newer snapshot), pressed ⌘S again (a newer pass that already
+    // cleared the maps), or done nothing at all. Both helpers below are
+    // therefore content-guarded rather than nil-guarded: they touch the maps
+    // only when what is in there is the snapshot this pass dealt with, and
+    // leave anything newer alone. Getting this wrong in either direction
+    // loses work: overwriting drops the newest edit, restoring nothing turns a
+    // failed save into a silently clean one.
+
+    /// Re-marks a request dirty after its save failed.
+    private func restorePendingRequest(pass: Int, _ snapshot: Request, baseline: Request?) {
+        guard mayRestorePending(pass: pass) else { return }
+        guard isStalePending(pendingRequestSnapshots[snapshot.id], against: snapshot) else { return }
+        pendingRequestSnapshots[snapshot.id] = snapshot
+        persistedRequestBaselines[snapshot.id] = baseline
+        scheduleDraftPersistence()
+    }
+
+    /// Drops the pending entry for a request that just reached disk - unless
+    /// the pending entry is a NEWER edit (the user kept typing during the
+    /// write), which must stay dirty.
+    private func clearPersistedRequest(_ snapshot: Request) {
+        guard let pending = pendingRequestSnapshots[snapshot.id],
+            pending.isContentEqual(to: snapshot)
+        else { return }
+        pendingRequestSnapshots[snapshot.id] = nil
+        scheduleDraftPersistence()
+    }
+
+    private func restorePendingEnvironment(pass: Int, _ snapshot: EnvironmentProfile, baseline: EnvironmentProfile?) {
+        guard mayRestorePending(pass: pass) else { return }
+        guard isStalePending(pendingEnvironmentSnapshots[snapshot.id], against: snapshot) else { return }
+        pendingEnvironmentSnapshots[snapshot.id] = snapshot
+        persistedEnvironmentBaselines[snapshot.id] = baseline
+        scheduleDraftPersistence()
+    }
+
+    private func clearPersistedEnvironment(_ snapshot: EnvironmentProfile) {
+        guard let pending = pendingEnvironmentSnapshots[snapshot.id], pending == snapshot else { return }
+        pendingEnvironmentSnapshots[snapshot.id] = nil
+        scheduleDraftPersistence()
+    }
+
+    private func restorePendingWorkspaceVariables(
+        pass: Int, _ id: UUID, _ variables: [Variable], baseline: [Variable]?
+    ) {
+        guard mayRestorePending(pass: pass) else { return }
+        guard isStalePending(pendingWorkspaceVariables[id], against: variables) else { return }
+        pendingWorkspaceVariables[id] = variables
+        persistedWorkspaceVariableBaselines[id] = baseline
+        scheduleDraftPersistence()
+    }
+
+    private func clearPersistedWorkspaceVariables(_ id: UUID, _ variables: [Variable]) {
+        guard let pending = pendingWorkspaceVariables[id], pending == variables else { return }
+        pendingWorkspaceVariables[id] = nil
+        scheduleDraftPersistence()
+    }
+
+    private func restorePendingCollectionVariables(
+        pass: Int, _ id: UUID, _ variables: [Variable], baseline: [Variable]?
+    ) {
+        guard mayRestorePending(pass: pass) else { return }
+        guard isStalePending(pendingCollectionVariables[id], against: variables) else { return }
+        pendingCollectionVariables[id] = variables
+        persistedCollectionVariableBaselines[id] = baseline
+        scheduleDraftPersistence()
+    }
+
+    private func clearPersistedCollectionVariables(_ id: UUID, _ variables: [Variable]) {
+        guard let pending = pendingCollectionVariables[id], pending == variables else { return }
+        pendingCollectionVariables[id] = nil
+        scheduleDraftPersistence()
+    }
+
+    private func restorePendingCollectionAuthorization(
+        pass: Int, _ id: UUID, _ authorization: Authorization, baseline: Authorization?
+    ) {
+        guard mayRestorePending(pass: pass) else { return }
+        guard isStalePending(pendingCollectionAuthorizations[id], against: authorization) else { return }
+        pendingCollectionAuthorizations[id] = authorization
+        persistedCollectionAuthorizationBaselines[id] = baseline
+        scheduleDraftPersistence()
+    }
+
+    private func clearPersistedCollectionAuthorization(_ id: UUID, _ authorization: Authorization) {
+        guard let pending = pendingCollectionAuthorizations[id], pending == authorization else { return }
+        pendingCollectionAuthorizations[id] = nil
+        scheduleDraftPersistence()
+    }
+
+    private func restorePendingFolderAuthorization(
+        pass: Int, _ id: UUID, _ authorization: Authorization, baseline: Authorization?
+    ) {
+        guard mayRestorePending(pass: pass) else { return }
+        guard isStalePending(pendingFolderAuthorizations[id], against: authorization) else { return }
+        pendingFolderAuthorizations[id] = authorization
+        persistedFolderAuthorizationBaselines[id] = baseline
+        scheduleDraftPersistence()
+    }
+
+    private func clearPersistedFolderAuthorization(_ id: UUID, _ authorization: Authorization) {
+        guard let pending = pendingFolderAuthorizations[id], pending == authorization else { return }
+        pendingFolderAuthorizations[id] = nil
+        scheduleDraftPersistence()
+    }
+
+    /// Whether the pending slot may be overwritten with the snapshot this save
+    /// pass was dealing with: yes when nothing is there, or when what is
+    /// there IS that snapshot (an identical re-edit). No when a different -
+    /// i.e. newer - value is pending, which belongs to the user's typing and
+    /// to whichever pass is handling it.
+    private func isStalePending<T: Equatable>(_ pending: T?, against snapshot: T) -> Bool {
+        pending == nil || pending == snapshot
+    }
+
+    /// Whether this pass may still put an entity back into the dirty set.
+    /// A newer pass has already captured its own (newer) snapshot for that
+    /// entity and will restore or clear it; reinstating this pass's older
+    /// snapshot would overwrite it - which is how a third save could regress
+    /// the file to an edit the user had already superseded.
+    private func mayRestorePending(pass: Int) -> Bool {
+        pass == savePassGeneration
+    }
+
+    /// Persists one request. @return whether the change reached disk - a
+    /// false result must leave the caller to restore the pending snapshot, so
+    /// the edit is not mistaken for saved work.
+    ///
+    /// Callers must have cleared `pendingRequestSnapshots` first: the rewind
+    /// inside `persistable` is keyed on that map, so with this request still
+    /// listed it would put the previous baseline back on disk while this
+    /// function advances the baseline to the new value.
+    @discardableResult
+    func persistRequest(_ request: Request) async -> Bool {
         for ci in vault.collections.indices {
             guard let ri = vault.collections[ci].requests.firstIndex(where: { $0.id == request.id }) else { continue }
             // Compare against the last persisted content, not the in-memory
@@ -640,7 +829,7 @@ extension AppStore {
             let baseline = persistedRequestBaselines[request.id] ?? vault.collections[ci].requests[ri]
             if request.isContentEqual(to: baseline) {
                 persistedRequestBaselines[request.id] = request
-                return
+                return true
             }
             var copy = request
             copy.updatedAt = Date()
@@ -654,75 +843,91 @@ extension AppStore {
             // rewound to the baselines so in-flight variable/Authorization
             // drafts are not persisted by a request save.
             vault.collections[ci].requests[ri] = copy
+            // The baseline only advances once the bytes are on disk - it is
+            // the reference both the dirty check and the draft rewind trust.
+            guard await vault.writeCollection(persistable(vault.collections[ci], keepingRequestID: request.id))
+            else { return false }
             persistedRequestBaselines[request.id] = copy
-            await vault.writeCollection(persistable(vault.collections[ci]))
-            return
+            return true
         }
         // The request vanished (deleted while a save was in flight).
         persistedRequestBaselines[request.id] = nil
+        return true
     }
 
-    /// Writes an environment's unsaved edits to its vault file.
-    func persistEnvironment(_ environment: EnvironmentProfile) async {
+    /// Writes an environment's unsaved edits to its vault file. @return
+    /// whether the change reached disk.
+    @discardableResult
+    func persistEnvironment(_ environment: EnvironmentProfile) async -> Bool {
         guard vault.environments.contains(where: { $0.id == environment.id }) else {
             persistedEnvironmentBaselines[environment.id] = nil
-            return
+            return true
         }
         let baseline = persistedEnvironmentBaselines[environment.id] ?? environment
         if environment == baseline {
             persistedEnvironmentBaselines[environment.id] = environment
-            return
+            return true
         }
-        await vault.saveEnvironment(environment)
+        guard await vault.saveEnvironment(environment) else { return false }
         persistedEnvironmentBaselines[environment.id] = environment
+        return true
     }
 
     /// Writes a workspace's unsaved variable edits into its vault file.
-    func persistWorkspaceVariables(_ id: UUID, _ variables: [Variable]) async {
+    /// @return whether the change reached disk.
+    @discardableResult
+    func persistWorkspaceVariables(_ id: UUID, _ variables: [Variable]) async -> Bool {
         guard let idx = vault.workspaces.firstIndex(where: { $0.id == id }) else {
             persistedWorkspaceVariableBaselines[id] = nil
-            return
+            return true
         }
         let baseline = persistedWorkspaceVariableBaselines[id] ?? vault.workspaces[idx].variables
         if variables == baseline {
             persistedWorkspaceVariableBaselines[id] = variables
-            return
+            return true
         }
         vault.workspaces[idx].variables = variables
-        await vault.saveWorkspace(vault.workspaces[idx])
+        guard await vault.saveWorkspace(vault.workspaces[idx]) else { return false }
         persistedWorkspaceVariableBaselines[id] = variables
+        return true
     }
 
     /// Writes a collection's unsaved Authorization edit into its vault file.
-    func persistCollectionAuthorization(_ id: UUID, _ authorization: Authorization) async {
+    /// @return whether the change reached disk.
+    @discardableResult
+    func persistCollectionAuthorization(_ id: UUID, _ authorization: Authorization) async -> Bool {
         guard let idx = vault.collections.firstIndex(where: { $0.id == id }) else {
             persistedCollectionAuthorizationBaselines[id] = nil
-            return
+            return true
         }
         let baseline = persistedCollectionAuthorizationBaselines[id] ?? vault.collections[idx].authorization
         if authorization == baseline {
             persistedCollectionAuthorizationBaselines[id] = authorization
-            return
+            return true
         }
         vault.collections[idx].authorization = authorization
-        await vault.saveCollection(vault.collections[idx])
+        guard await vault.saveCollection(vault.collections[idx]) else { return false }
         persistedCollectionAuthorizationBaselines[id] = authorization
+        return true
     }
 
     /// Writes a collection's unsaved variable edits into its vault file.
-    func persistCollectionVariables(_ id: UUID, _ variables: [Variable]) async {
+    /// @return whether the change reached disk.
+    @discardableResult
+    func persistCollectionVariables(_ id: UUID, _ variables: [Variable]) async -> Bool {
         guard let idx = vault.collections.firstIndex(where: { $0.id == id }) else {
             persistedCollectionVariableBaselines[id] = nil
-            return
+            return true
         }
         let baseline = persistedCollectionVariableBaselines[id] ?? vault.collections[idx].variables
         if variables == baseline {
             persistedCollectionVariableBaselines[id] = variables
-            return
+            return true
         }
         vault.collections[idx].variables = variables
-        await vault.saveCollection(vault.collections[idx])
+        guard await vault.saveCollection(vault.collections[idx]) else { return false }
         persistedCollectionVariableBaselines[id] = variables
+        return true
     }
 
     /// True when a key/value row carries no data at all (skipped at send

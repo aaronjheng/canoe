@@ -88,6 +88,9 @@ extension AppStore {
             // matching what the "Variables in Request" inspector displays.
             let variables = variablesForRequest(request)
             let authorization = authorizationForRequest(request)
+            // Secret variable values, redacted from everything the console
+            // records below (the resolved URL, both bodies, the error text).
+            let secretValues = secretVariableValues(for: request, variables: variables)
             let sendStart = Date()
             // The HTTP client runs off the main actor; the callback hands the
             // assembled request back through this mutex-guarded slot. It is
@@ -113,19 +116,24 @@ extension AppStore {
                     sentRequest.withLock { $0 }?.url?.absoluteString
                     ?? VariableResolver.resolve(request.urlString, variables: variables)
                 recordHistory(request: request, response: response)
+                let sentBody = ConsoleEntry.capped(sentRequest.withLock { $0 }?.httpBody)
+                let responseBody = ConsoleEntry.capped(response.body)
                 recordConsoleEntry(
                     ConsoleEntry(
                         date: response.timestamp,
                         requestName: request.name,
                         method: request.httpMethod.rawValue,
-                        url: sentURLString,
+                        url: ConsoleEntry.redactingSecrets(sentURLString, secrets: secretValues),
                         requestHeaders: sentRequest.withLock { $0 }.map(ConsoleEntry.maskedRequestHeaders(from:)) ?? [],
-                        requestBody: ConsoleEntry.capped(sentRequest.withLock { $0 }?.httpBody).data,
-                        requestBodyTruncated: ConsoleEntry.capped(sentRequest.withLock { $0 }?.httpBody).truncated,
+                        requestBody: sentBody.data.map { ConsoleEntry.redactingSecrets($0, secrets: secretValues) },
+                        requestBodyTruncated: sentBody.truncated,
                         statusCode: response.statusCode,
-                        responseHeaders: response.headers,
-                        responseBody: ConsoleEntry.capped(response.body).data,
-                        responseBodyTruncated: ConsoleEntry.capped(response.body).truncated,
+                        // The response side carries credentials too: a
+                        // `Set-Cookie` header, or a body that echoes the token
+                        // back (`GET /me`).
+                        responseHeaders: ConsoleEntry.maskedHeaders(response.headers),
+                        responseBody: responseBody.data.map { ConsoleEntry.redactingSecrets($0, secrets: secretValues) },
+                        responseBodyTruncated: responseBody.truncated,
                         duration: response.duration,
                         error: nil
                     )
@@ -150,21 +158,26 @@ extension AppStore {
                 let fallbackURL =
                     sentRequest.withLock { $0 }?.url?.absoluteString
                     ?? VariableResolver.resolve(request.urlString, variables: variables)
+                let sentBody = ConsoleEntry.capped(sentRequest.withLock { $0 }?.httpBody)
                 recordConsoleEntry(
                     ConsoleEntry(
                         date: Date(),
                         requestName: request.name,
                         method: request.httpMethod.rawValue,
-                        url: fallbackURL,
+                        url: ConsoleEntry.redactingSecrets(fallbackURL, secrets: secretValues),
                         requestHeaders: sentRequest.withLock { $0 }.map(ConsoleEntry.maskedRequestHeaders(from:)) ?? [],
-                        requestBody: ConsoleEntry.capped(sentRequest.withLock { $0 }?.httpBody).data,
-                        requestBodyTruncated: ConsoleEntry.capped(sentRequest.withLock { $0 }?.httpBody).truncated,
+                        requestBody: sentBody.data.map { ConsoleEntry.redactingSecrets($0, secrets: secretValues) },
+                        requestBodyTruncated: sentBody.truncated,
                         statusCode: nil,
                         responseHeaders: [],
                         responseBody: nil,
                         responseBodyTruncated: false,
                         duration: Date().timeIntervalSince(sendStart),
-                        error: error.localizedDescription
+                        // Can quote the resolved URL
+                        // (`HTTPClientError.invalidURL`), so it is redacted
+                        // like everything else the console keeps.
+                        error: ConsoleEntry.redactingSecrets(
+                            error.localizedDescription, secrets: secretValues)
                     )
                 )
             }

@@ -23,6 +23,15 @@ enum HTTPClientError: Error, LocalizedError {
 enum HTTPClient {
     static let userAgent = "Canoe/1.0.0"
 
+    /// Cap on the buffered response body. The body is held in memory for the
+    /// viewer and again in every response-history entry (20 per tab), so an
+    /// uncapped multi-hundred-megabyte download could pin tens of gigabytes.
+    /// Mirrors the request-body cap's intent: refuse to grow without bound,
+    /// while staying far above any real API payload. This bounds ONE
+    /// response; the history multiplies it, which is why the response panel
+    /// says plainly that the body was cut.
+    static let maxResponseBytes = 50 * 1024 * 1024
+
     /// Leaf-certificate fields pulled during the server-trust challenge.
     private struct CertificateSnapshot: Sendable {
         let subjectCN: String?
@@ -32,6 +41,8 @@ enum HTTPClient {
 
     private struct Outcome {
         let data: Data
+        /// The body hit `maxResponseBytes` and was cut short.
+        let truncated: Bool
         let response: HTTPURLResponse
         let metrics: URLSessionTaskMetrics?
         let certificate: CertificateSnapshot?
@@ -44,7 +55,12 @@ enum HTTPClient {
     private final class RequestTelemetry: @unchecked Sendable {
         private struct State {
             var continuation: CheckedContinuation<Outcome, Error>?
-            var data: Data?
+            var data = Data()
+            /// Tail of a chunk that ended mid-UTF-8 character (URLSession
+            /// splits wherever it likes), held back until the next chunk
+            /// completes it - otherwise the retained body can decode as nil.
+            var pendingTail = Data()
+            var truncated = false
             var response: HTTPURLResponse?
             var error: Error?
             var metrics: URLSessionTaskMetrics?
@@ -85,10 +101,93 @@ enum HTTPClient {
             pump()
         }
 
-        func finishBody(data: Data?, response: URLResponse?, error: Error?) {
+        /// Accumulates one body chunk, stopping at `maxResponseBytes`. The
+        /// rest of the response still downloads (and still shows up in the
+        /// Size panel, which reads the true byte counts from the task
+        /// metrics) but is never retained.
+        func append(_ chunk: Data) {
+            state.withLock { current in
+                guard !chunk.isEmpty else { return }
+                let incoming = current.pendingTail.isEmpty ? chunk : current.pendingTail + chunk
+                current.pendingTail = Data()
+                let room = HTTPClient.maxResponseBytes - current.data.count
+                guard room > 0 else {
+                    current.truncated = true
+                    return
+                }
+                if incoming.count <= room {
+                    // Hold back a character the chunk boundary split: at most
+                    // three bytes of a UTF-8 sequence can be leading over.
+                    // `count - 1`: a one-byte chunk is a complete character by
+                    // definition, so never hold the whole buffer back.
+                    let hold = max(0, min(Self.incompleteUTF8TailLength(incoming), incoming.count - 1))
+                    current.data.append(incoming.prefix(incoming.count - hold))
+                    current.pendingTail = Data(incoming.suffix(hold))
+                } else {
+                    // The cap can land mid-character; `utf8Prefix` drops the
+                    // continuation bytes, and a trailing lead byte whose
+                    // character never arrived has to go too - otherwise the
+                    // retained body no longer decodes as UTF-8 at all.
+                    var cut = Self.utf8Prefix(incoming, bytes: room)
+                    let dangling = Self.incompleteUTF8TailLength(cut)
+                    if dangling > 0 { cut = cut.prefix(cut.count - dangling) }
+                    current.data.append(cut)
+                    current.truncated = true
+                }
+            }
+        }
+
+        /// Bytes at the end of `chunk` that begin a UTF-8 character the chunk
+        /// did not finish (0 when it ends on a character boundary).
+        ///
+        /// Scans back over at most one character's worth of bytes to the lead
+        /// byte and compares what is present against what that lead byte
+        /// promises: 0xF0-0xF7 need four bytes, 0xE0-0xEF three, 0xC0-0xDF
+        /// two, anything else is ASCII and always complete.
+        static func incompleteUTF8TailLength(_ chunk: Data) -> Int {
+            let boundary = chunk.startIndex + chunk.count
+            let earliest = chunk.index(boundary, offsetBy: -min(4, chunk.count))
+            var cursor = boundary
+            while cursor > earliest {
+                cursor -= 1
+                let byte = chunk[cursor]
+                guard byte & 0b1100_0000 == 0b1000_0000 else {
+                    let expected =
+                        byte & 0b1111_1000 == 0b1111_0000
+                        ? 4
+                        : byte & 0b1111_0000 == 0b1110_0000
+                            ? 3
+                            : byte & 0b1110_0000 == 0b1100_0000
+                                ? 2
+                                : 1
+                    let available = boundary - cursor
+                    return available < expected ? available : 0
+                }
+            }
+            // A window of nothing but continuation bytes is not valid UTF-8 to
+            // begin with: holding it back would only delay the same decode
+            // failure by one chunk.
+            return 0
+        }
+
+        /// The first `bytes` of a chunk (`bytes < chunk.count`), cut at a UTF-8
+        /// character boundary:
+        /// slicing mid-sequence would make the whole retained body decode as
+        /// nil, turning a text response into "<binary data>" in the viewer.
+        private static func utf8Prefix(_ chunk: Data, bytes: Int) -> Data {
+            var end = bytes
+            // Continuation bytes match 0b10xxxxxx; a lead byte starts a new
+            // character. Dropping trailing continuation bytes lands on the
+            // last complete character. At most three steps for UTF-8.
+            while end > 0, chunk[chunk.startIndex + end] & 0b1100_0000 == 0b1000_0000 {
+                end -= 1
+            }
+            return Data(chunk.prefix(end))
+        }
+
+        func finishBody(response: URLResponse?, error: Error?) {
             state.withLock {
                 $0.bodySettled = true
-                $0.data = data
                 $0.error = error
                 if let http = response as? HTTPURLResponse {
                     $0.response = http
@@ -131,7 +230,7 @@ enum HTTPClient {
                 guard current.bodySettled else { return .none }
                 if !current.metricsSettled && !current.allowMissingMetrics { return .none }
 
-                guard let data = current.data, let response = current.response else {
+                guard let response = current.response else {
                     current.resumed = true
                     current.continuation = nil
                     current.metricsTimeout?.cancel()
@@ -146,7 +245,8 @@ enum HTTPClient {
                 return .success(
                     cont,
                     Outcome(
-                        data: data,
+                        data: current.data,
+                        truncated: current.truncated,
                         response: response,
                         metrics: current.metrics,
                         certificate: current.certificate
@@ -172,7 +272,7 @@ enum HTTPClient {
     /// leaked to a third party through a redirect. Same-host redirects pass
     /// through untouched. Stateless, so sharing it across sends is safe.
     /// Also collects per-send task metrics and server-trust certificates.
-    private final class RedirectPolicy: NSObject, URLSessionTaskDelegate {
+    private final class RedirectPolicy: NSObject, URLSessionTaskDelegate, URLSessionDataDelegate {
         private let telemetryByID = Mutex<[Int: RequestTelemetry]>([:])
 
         func makeTelemetry(taskID: Int) -> RequestTelemetry {
@@ -209,6 +309,27 @@ enum HTTPClient {
             didFinishCollecting metrics: URLSessionTaskMetrics
         ) {
             telemetryByID.withLock { $0[task.taskIdentifier]?.setMetrics(metrics) }
+        }
+
+        /// Body chunks stream in here rather than through the task's
+        /// completion handler (which yields nil as soon as a delegate claims
+        /// the data), so `RequestTelemetry` can cap what it retains.
+        func urlSession(
+            _ session: URLSession,
+            dataTask: URLSessionDataTask,
+            didReceive data: Data
+        ) {
+            telemetryByID.withLock { $0[dataTask.taskIdentifier]?.append(data) }
+        }
+
+        /// The task's end: with a data delegate in place this - not the
+        /// completion handler - is what settles the body.
+        func urlSession(
+            _ session: URLSession,
+            task: URLSessionTask,
+            didCompleteWithError error: Error?
+        ) {
+            telemetryByID.withLock { $0[task.taskIdentifier]?.finishBody(response: task.response, error: error) }
         }
 
         func urlSession(
@@ -416,6 +537,7 @@ enum HTTPClient {
             statusCode: outcome.response.statusCode,
             headers: headers,
             body: outcome.data,
+            bodyTruncated: outcome.truncated,
             duration: duration,
             timestamp: Date(),
             mimeType: outcome.response.mimeType,
@@ -438,27 +560,62 @@ enum HTTPClient {
     /// Runs the data task while the session delegate fills in task metrics
     /// and the leaf certificate. Uses an explicit task so telemetry can be
     /// keyed by `taskIdentifier`.
+    ///
+    /// Wrapped in a cancellation handler: without it, cancelling the calling
+    /// `Task` (Stop button, closing the tab) only abandoned the continuation -
+    /// the upload/download kept running to completion server-side and the
+    /// socket stayed open until the resource timeout.
     private static func dataWithTelemetry(
         for urlRequest: URLRequest
     ) async throws -> Outcome {
-        try await withCheckedThrowingContinuation { continuation in
-            let holder = TelemetryHolder()
-            let task = session.dataTask(with: urlRequest) { data, response, error in
-                holder.telemetry?.finishBody(data: data, response: response, error: error)
+        let box = DataTaskBox()
+        let outcome = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                // No completion handler: the body arrives through the
+                // session's data delegate, which is what lets it be capped.
+                let task = session.dataTask(with: urlRequest)
+                // Before `resume`, and before the handler can see it: a
+                // cancellation that already arrived cancels it right here.
+                box.attach(task)
+                let telemetry = redirectPolicy.makeTelemetry(taskID: task.taskIdentifier)
+                redirectPolicy.register(telemetry, taskID: task.taskIdentifier)
+                telemetry.attach(continuation)
+                task.resume()
             }
-            let telemetry = redirectPolicy.makeTelemetry(taskID: task.taskIdentifier)
-            redirectPolicy.register(telemetry, taskID: task.taskIdentifier)
-            holder.telemetry = telemetry
-            telemetry.attach(continuation)
-            task.resume()
+        } onCancel: {
+            box.cancel()
         }
+        // The task can already be finished when the cancellation lands (the
+        // body is in, the 500ms metrics wait is still running), and
+        // `URLSessionTask.cancel()` on a completed task is a no-op - so the
+        // wait would still resume with a success. Checked here instead of
+        // leaving it to every caller to re-test cancellation.
+        try Task.checkCancellation()
+        return outcome
     }
 
-    /// Completion-handler bridge: the data task needs its completion at
-    /// creation, but telemetry is keyed by the task's identifier - so the
-    /// handler reads through this one-slot box, written before `resume`.
-    private final class TelemetryHolder: @unchecked Sendable {
-        var telemetry: RequestTelemetry?
+    /// Hand-off slot between the cancellation handler and the task creation
+    /// inside the continuation: cancellation can be delivered before the
+    /// `URLSessionTask` exists, so the flag has to be sticky.
+    private final class DataTaskBox: @unchecked Sendable {
+        private let state = Mutex<(task: URLSessionDataTask?, cancelled: Bool)>((nil, false))
+
+        func attach(_ task: URLSessionDataTask) {
+            let cancelNow = state.withLock { current -> Bool in
+                guard !current.cancelled else { return true }
+                current.task = task
+                return false
+            }
+            if cancelNow { task.cancel() }
+        }
+
+        func cancel() {
+            let task = state.withLock { current -> URLSessionDataTask? in
+                current.cancelled = true
+                return current.task
+            }
+            task?.cancel()
+        }
     }
 
     /// Postman-style Network panel fields from transaction metrics + trust.
@@ -506,7 +663,11 @@ enum HTTPClient {
                     }
                 ),
             responseBody: transaction.map { Int($0.countOfResponseBodyBytesReceived) }
-                ?? body.count
+                // Metrics are the only source that knows the real transferred
+                // size; `body` is the capped buffer, so it would under-report
+                // a truncated download as exactly the cap. `expectedContentLength`
+                // is the next best thing (-1 when unknown).
+                ?? max(body.count, Int(response.expectedContentLength))
         )
     }
 

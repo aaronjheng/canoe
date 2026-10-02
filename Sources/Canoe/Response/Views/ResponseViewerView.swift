@@ -601,7 +601,9 @@ struct ResponseViewerView: View {
                             .padding(.top, AppSpacing.xSmall)
                     }
                     bodyToolbar(response, display: display)
-                    bodyScroll(display, rendered: effectiveRender, matchCount: matchCount, currentIndex: currentIndex)
+                    bodyScroll(
+                        response, display, rendered: effectiveRender, matchCount: matchCount,
+                        currentIndex: currentIndex)
                     // ⌘F: open the find bar. Lives inside the body content, so
                     // the shortcut exists exactly while a body is on screen.
                     // The shortcut buttons MUST stay inside this VStack as
@@ -698,7 +700,7 @@ struct ResponseViewerView: View {
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(IconButtonStyle())
-                .help("Copy full response body")
+                .help(response.bodyTruncated ? "Copy response body (truncated)" : "Copy full response body")
                 Button("Save Response", systemImage: "square.and.arrow.down") {
                     saveResponse(response)
                 }
@@ -712,18 +714,43 @@ struct ResponseViewerView: View {
     }
 
     private func bodyScroll(
-        _ display: BodyDisplay, rendered: Text,
+        _ response: ResponseModel, _ display: BodyDisplay, rendered: Text,
         matchCount: Int, currentIndex: Int?
     ) -> some View {
         VStack(spacing: 0) {
+            if response.bodyTruncated {
+                // The transport-level cap (HTTPClient.maxResponseBytes), not
+                // the render limit below: the bytes past it were never kept,
+                // so "save the body" cannot recover them either.
+                HStack {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(AppFont.small)
+                    Text(
+                        "Response body exceeded \(Int64(HTTPClient.maxResponseBytes).formattedByteCount) and was truncated."
+                    )
+                    .font(AppFont.small)
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, AppSpacing.medium)
+                .padding(.vertical, AppSpacing.xSmall)
+                Divider()
+            }
             if let totalCount = display.totalCount {
                 let shown = display.text.count.formatted()
                 let total = totalCount.formatted()
                 HStack {
                     Image(systemName: "info.circle")
                         .font(AppFont.small)
-                    Text("Showing the first \(shown) of \(total) characters. Save the body to keep it all.")
-                        .font(AppFont.small)
+                    // "Save the body" is only true for the render limit - a
+                    // body cut at the transport cap has nothing more to save,
+                    // and saying otherwise would send the user to a file that
+                    // is missing the tail.
+                    Text(
+                        response.bodyTruncated
+                            ? "Showing the first \(shown) of \(total) characters."
+                            : "Showing the first \(shown) of \(total) characters. Save the body to keep it all."
+                    )
+                    .font(AppFont.small)
                 }
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, AppSpacing.medium)
@@ -998,10 +1025,13 @@ struct ResponseViewerView: View {
         }
     }
 
-    /// Saves the full (untruncated) response body to a file, like Postman's
-    /// "Save Response". The suggested extension follows the response MIME.
-    /// The id suffix keeps two saves within the same second from suggesting
-    /// the same filename and silently overwriting each other.
+    /// Saves the response body to a file, like Postman's "Save Response".
+    /// "Full" means everything this response holds: a body cut at the
+    /// transport cap (`HTTPClient.maxResponseBytes`) is saved as the prefix
+    /// that survived - the panel's truncation banner is the user's warning
+    /// that the file is partial. The suggested extension follows the
+    /// response MIME. The id suffix keeps two saves within the same second
+    /// from suggesting the same filename and silently overwriting each other.
     private func saveResponse(_ response: ResponseModel) {
         saveError = nil
         let panel = NSSavePanel()

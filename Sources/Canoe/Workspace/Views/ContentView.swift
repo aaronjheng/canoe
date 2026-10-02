@@ -55,6 +55,16 @@ struct ContentView: View {
                     mainLayout
                 }
             }
+            // Vault write failures are shown at the root, not inside the
+            // detail pane: a failed save can happen on any screen (the
+            // welcome flow, the workspaces manager, Settings), and an edit
+            // that never reached disk must be visible everywhere. Above the
+            // status bar so it reads as an application-level warning rather
+            // than a stray strip under the panes. Cleared by the next
+            // successful write of the same kind.
+            if let saveError = store.vault.saveError {
+                saveFailureBanner(saveError)
+            }
             if store.vault.isReady && store.activeWorkspace != nil {
                 Divider()
                 StatusBarView()
@@ -210,10 +220,12 @@ struct ContentView: View {
                     )
                     .clipped()
                 VStack(spacing: 0) {
-                    // Corrupt files are skipped per-file on load: say so here
-                    // instead of letting collections silently vanish. The
-                    // files stay on disk for manual recovery.
-                    if store.vault.loadError == nil, store.vault.corruptFileCount > 0 {
+                    // Unreadable vault content is skipped on load: say so here
+                    // instead of letting collections or rows silently vanish.
+                    // The files stay on disk for manual recovery.
+                    let hasUnreadableVaultContent =
+                        store.vault.corruptFileCount > 0 || store.vault.droppedRowCount > 0
+                    if store.vault.loadError == nil, hasUnreadableVaultContent {
                         corruptFilesBanner
                         Divider()
                     }
@@ -294,13 +306,23 @@ struct ContentView: View {
     /// Warning shown when per-file skips happened on load: names the count
     /// so missing collections read as known damage, not mystery.
     private var corruptFilesBanner: some View {
+        vaultWarningBanner(corruptFilesMessage)
+    }
+
+    /// One banner chrome for both vault warnings (unreadable files, unreadable
+    /// rows) and write failures - they look identical and say the same kind of
+    /// thing, so they must not drift apart.
+    private func vaultWarningBanner(_ message: String) -> some View {
         HStack(spacing: AppSpacing.small) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(AppColor.warning)
-            Text(corruptFilesMessage)
+            Text(message)
                 .font(AppFont.emptyStateBody)
                 .foregroundStyle(.primary)
-                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                // The message can run to two sentences and name a file; the
+                // full text stays reachable on hover.
+                .help(message)
             Spacer(minLength: 0)
             LinkButton("Reveal Vault") { store.vault.revealInFinder() }
         }
@@ -310,12 +332,34 @@ struct ContentView: View {
     }
 
     private var corruptFilesMessage: String {
+        // Two different failures, one banner: a file that could not be read
+        // at all, and rows skipped inside a file that otherwise loaded (a
+        // single undecodable request). The second is the quieter one - the
+        // file looks fine and the next save rewrites it without the rows -
+        // so it gets its own sentence.
+        var message: [String] = []
         if store.vault.corruptFileCount == 1 {
             let name = store.vault.corruptFileNames.first ?? "unknown"
-            return "1 vault file could not be read and was skipped (\(name)). It is still on disk."
+            message.append("1 vault file could not be read and was skipped (\(name)). It is still on disk.")
+        } else if store.vault.corruptFileCount > 1 {
+            message.append(
+                "\(store.vault.corruptFileCount) vault files could not be read and were skipped. They are still on disk."
+            )
         }
-        return
-            "\(store.vault.corruptFileCount) vault files could not be read and were skipped. They are still on disk."
+        let dropped = store.vault.droppedRowCount
+        if dropped > 0 {
+            let rows = dropped == 1 ? "1 row" : "\(dropped) rows"
+            let verb = dropped == 1 ? "was" : "were"
+            message.append("\(rows) in the vault could not be read and \(verb) skipped.")
+        }
+        return message.joined(separator: " ")
+    }
+
+    /// A write that never reached disk. The sentence itself lives in
+    /// `VaultStore` (it differs for the drafts mirror, where the edits are
+    /// not safely held anywhere), so this only supplies the chrome.
+    private func saveFailureBanner(_ message: String) -> some View {
+        vaultWarningBanner(message)
     }
 
     @ViewBuilder

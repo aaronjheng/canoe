@@ -15,6 +15,28 @@ extension AppStore {
         return merged
     }
 
+    /// The values of every enabled secret variable in scope for a request,
+    /// already resolved - the console redacts these from what it logs (see
+    /// `redactingSecrets`), and it logs post-resolution text. A secret
+    /// defined as `token = "{{base_token}}"` would otherwise never match the
+    /// credential that actually went out on the wire.
+    ///
+    /// Deliberately every scope, not only the variables the request happens
+    /// to reference: the console records the whole URL and body, so a secret
+    /// can turn up anywhere in them. `variables` is passed in because the
+    /// caller has already merged them for the send.
+    func secretVariableValues(for request: Request, variables: [String: String]) -> [String] {
+        var secrets: Set<String> = []
+        for scope in variableScopesForRequest(request) {
+            for variable in scope.variables where variable.isSecret && variable.isEnabled {
+                let value = VariableResolver.resolve(variable.value, variables: variables)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !value.isEmpty { secrets.insert(value) }
+            }
+        }
+        return Array(secrets)
+    }
+
     /// The scopes that apply to `request`, lowest precedence first (workspace
     /// → collection → environment), so the inspector can list them in this
     /// order: a later section overrides an earlier one on key conflicts. The
@@ -117,6 +139,12 @@ extension AppStore {
     /// inspector never adds or deletes rows, so a missing owner or row id
     /// is a no-op. The edit lands on disk when the field commits (blur or
     /// Enter) - see `persistVariableEdit`.
+    ///
+    /// Seeds the owner's persisted baseline on the first edit, before the row
+    /// changes. Without it the commit path has no "saved content" to splice
+    /// the row into (`persistedRow` falls back to the live array), so a failed
+    /// write could not be marked dirty in a way a later Save would actually
+    /// retry. Same rule as the full-array editors' `updateXVariables`.
     func updateVariable(
         _ variable: Variable, kind: VariableScope.Kind, ownerID: UUID
     ) {
@@ -125,16 +153,25 @@ extension AppStore {
             guard let idx = vault.workspaces.firstIndex(where: { $0.id == ownerID }),
                 let varIdx = vault.workspaces[idx].variables.firstIndex(where: { $0.id == variable.id })
             else { return }
+            if persistedWorkspaceVariableBaselines[ownerID] == nil {
+                persistedWorkspaceVariableBaselines[ownerID] = vault.workspaces[idx].variables
+            }
             vault.workspaces[idx].variables[varIdx] = variable
         case .collection:
             guard let idx = vault.collections.firstIndex(where: { $0.id == ownerID }),
                 let varIdx = vault.collections[idx].variables.firstIndex(where: { $0.id == variable.id })
             else { return }
+            if persistedCollectionVariableBaselines[ownerID] == nil {
+                persistedCollectionVariableBaselines[ownerID] = vault.collections[idx].variables
+            }
             vault.collections[idx].variables[varIdx] = variable
         case .environment:
             guard let idx = vault.environments.firstIndex(where: { $0.id == ownerID }),
                 let varIdx = vault.environments[idx].variables.firstIndex(where: { $0.id == variable.id })
             else { return }
+            if persistedEnvironmentBaselines[ownerID] == nil {
+                persistedEnvironmentBaselines[ownerID] = vault.environments[idx]
+            }
             vault.environments[idx].variables[varIdx] = variable
         }
     }
@@ -143,10 +180,12 @@ extension AppStore {
     /// inspector has no Save button, so blur/Enter has to land the edit.
     ///
     /// Only that row is written, and the owner's editor baseline is left
-    /// untouched. The live array the inspector edits is shared with the full
-    /// variables editor, so persisting it wholesale (the old behaviour) also
-    /// wrote - and de-dirtied - whatever unsaved draft that editor had: one
-    /// keystroke here silently committed a different tab.
+    /// untouched: the write-only `writeWorkspace` / `writeCollection` /
+    /// `writeEnvironment` twins put the file on disk without upserting the
+    /// in-memory vault, so a draft the full variables editor is still holding
+    /// survives this call. (The `save*` variants would replace the live slot
+    /// and silently revert that draft - the table would visibly undo itself
+    /// while the dirty marker stayed lit.)
     ///
     /// What goes to disk is the editor's baseline (the content that is
     /// actually saved) with this row swapped in. With no baseline - no
@@ -164,7 +203,26 @@ extension AppStore {
             // A copy, never the live slot: the editor's draft lives there.
             var workspace = vault.workspaces[idx]
             workspace.variables = variables
-            Task { await vault.saveWorkspace(workspace) }
+            let liveAtCommit = vault.workspaces[idx].variables
+            Task {
+                guard await vault.writeWorkspace(workspace) else {
+                    // The row looked committed but never reached disk: fold it
+                    // into the pending state so the draft mirror carries it
+                    // and Save retries. Merged over any editor draft rather
+                    // than replacing it - that draft holds the PRE-commit row,
+                    // so writing it back would silently revert this commit.
+                    let draft = self.pendingWorkspaceVariables[ownerID] ?? variables
+                    self.pendingWorkspaceVariables[ownerID] = Self.splicing(
+                        variableID, into: draft, from: liveAtCommit)
+                    self.persistedWorkspaceVariableBaselines[ownerID] = baseline
+                    self.scheduleDraftPersistence()
+                    return
+                }
+                // The row is on disk now, so it becomes the baseline: leaving
+                // the pre-first-edit array there would make the NEXT commit
+                // splice into a stale copy and write this row back reverted.
+                self.persistedWorkspaceVariableBaselines[ownerID] = variables
+            }
         case .collection:
             guard let idx = vault.collections.firstIndex(where: { $0.id == ownerID }) else { return }
             let baseline = persistedCollectionVariableBaselines[ownerID]
@@ -172,15 +230,24 @@ extension AppStore {
                 let variables = persistedRow(
                     variableID, live: vault.collections[idx].variables, baseline: baseline)
             else { return }
-            var collection = vault.collections[idx]
+            // `persistable` first, so every other draft-owned field in the
+            // file is rewound too - the unsaved request edits and folder
+            // Authorization drafts this path used to leak to disk. The
+            // committed row is applied after, so it survives the rewind.
+            var collection = persistable(vault.collections[idx])
             collection.variables = variables
-            // Same rule for the collection's other dirty-tracked field: an
-            // unsaved Authorization edit in a tab must not ride along on
-            // this row's write.
-            if let authorization = persistedCollectionAuthorizationBaselines[ownerID] {
-                collection.authorization = authorization
+            let liveAtCommit = vault.collections[idx].variables
+            Task {
+                guard await vault.writeCollection(collection) else {
+                    let draft = self.pendingCollectionVariables[ownerID] ?? variables
+                    self.pendingCollectionVariables[ownerID] = Self.splicing(
+                        variableID, into: draft, from: liveAtCommit)
+                    self.persistedCollectionVariableBaselines[ownerID] = baseline
+                    self.scheduleDraftPersistence()
+                    return
+                }
+                self.persistedCollectionVariableBaselines[ownerID] = variables
             }
-            Task { await vault.saveCollection(collection) }
         case .environment:
             guard let idx = vault.environments.firstIndex(where: { $0.id == ownerID }) else { return }
             let baseline = persistedEnvironmentBaselines[ownerID]
@@ -192,8 +259,31 @@ extension AppStore {
             // name edit in the environment tab must not ride along.
             var environment = baseline ?? vault.environments[idx]
             environment.variables = variables
-            Task { await vault.saveEnvironment(environment) }
+            let liveAtCommit = vault.environments[idx]
+            Task {
+                guard await vault.writeEnvironment(environment) else {
+                    var retry = self.pendingEnvironmentSnapshots[ownerID] ?? environment
+                    retry.variables = Self.splicing(
+                        variableID, into: retry.variables, from: liveAtCommit.variables)
+                    self.pendingEnvironmentSnapshots[ownerID] = retry
+                    self.persistedEnvironmentBaselines[ownerID] = baseline
+                    self.scheduleDraftPersistence()
+                    return
+                }
+                self.persistedEnvironmentBaselines[ownerID] = environment
+            }
         }
+    }
+
+    /// One row from `live` applied over `target`, leaving the rest of
+    /// `target` alone. Used when a committed inspector row has to be folded
+    /// into a pending draft: the draft is the user's other unsaved work, and
+    /// the committed row is newer than the copy of it the draft holds.
+    private static func splicing(
+        _ variableID: UUID, into target: [Variable], from live: [Variable]
+    ) -> [Variable] {
+        guard let edited = live.first(where: { $0.id == variableID }) else { return target }
+        return target.map { $0.id == variableID ? edited : $0 }
     }
 
     /// The array to write for a single inspector row: the saved baseline with
