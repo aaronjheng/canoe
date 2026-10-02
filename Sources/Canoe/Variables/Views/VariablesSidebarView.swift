@@ -141,6 +141,12 @@ struct VariablesSidebarView: View {
         for scope in scopes {
             resolvedVariables = scope.variables.resolvingDictionary(into: resolvedVariables)
         }
+        // Deliberately NOT filtered, unlike the request branch: this fallback
+        // exists for its actionable hints - "Select environment" for an
+        // unselected one, "Add Variables" for an empty scope. A filter here
+        // would hide the very row that unblocks the scope (the environment
+        // section has zero variables, so any filter empties it), trading a
+        // long list for a dead end.
         return VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 0) {
@@ -465,6 +471,19 @@ private struct VariableRow: View {
     var onCommit: ((UUID) -> Void)?
     @Binding var revealedSecrets: Set<UUID>
     @State private var isHovering = false
+    /// This row's copy acknowledgement (the glyph turns into a checkmark
+    /// for a moment). Row-local, like the hover state: every row owns its
+    /// own copy button. ForEach identity alone is NOT enough to keep the
+    /// ack on the right row - a Resolved Variables row is keyed by the
+    /// placeholder string, and its displayed value can change under a
+    /// stable key - so the ack is also cleared whenever the value on
+    /// screen changes (see the `onChange` below). A green checkmark must
+    /// never certify a value that was not the one copied.
+    @State private var didCopy = false
+    /// Pending reset for the acknowledgement above: cancelled on every new
+    /// copy so a second copy restarts the window instead of being cut short
+    /// by the first one's timer.
+    @State private var copyResetTask: Task<Void, Never>?
     /// Per-field chrome states: the hover tier and the focused accent ring
     /// come from the field itself (AppKit first-responder), not the row.
     @State private var isValueFocused = false
@@ -541,7 +560,7 @@ private struct VariableRow: View {
                     } label: {
                         Image(systemName: variable.isEnabled ? "checkmark.square" : "square")
                     }
-                    .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
+                    .buttonStyle(IconButtonStyle(inset: 0))
                     .foregroundStyle(.secondary)
                     .focused($focusedAction, equals: .toggle)
                     .accessibilityLabel(variable.isEnabled ? "Disable Variable" : "Enable Variable")
@@ -557,7 +576,7 @@ private struct VariableRow: View {
                     } label: {
                         Image(systemName: isRevealed ? "eye.slash" : "eye")
                     }
-                    .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
+                    .buttonStyle(IconButtonStyle(inset: 0))
                     .foregroundStyle(.secondary)
                     .focused($focusedAction, equals: .reveal)
                     .accessibilityLabel(isRevealed ? "Hide value" : "Reveal value")
@@ -567,14 +586,21 @@ private struct VariableRow: View {
                     let pasteboard = NSPasteboard.general
                     pasteboard.clearContents()
                     pasteboard.setString(shownValue, forType: .string)
+                    didCopy = true
+                    copyResetTask?.cancel()
+                    copyResetTask = Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(1500))
+                        guard !Task.isCancelled else { return }
+                        didCopy = false
+                    }
                 } label: {
-                    Image(systemName: "doc.on.doc")
+                    Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
                 }
-                .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
-                .foregroundStyle(.secondary)
+                .buttonStyle(IconButtonStyle(inset: 0))
+                .foregroundStyle(didCopy ? AppColor.success : .secondary)
                 .focused($focusedAction, equals: .copy)
-                .accessibilityLabel("Copy value")
-                .help("Copy Value")
+                .accessibilityLabel(didCopy ? "Copied" : "Copy value")
+                .help(didCopy ? "Copied" : "Copy Value")
             }
             .font(AppFont.small)
             .opacity(isHovering || focusedAction != nil ? 1 : 0)
@@ -587,6 +613,13 @@ private struct VariableRow: View {
         .padding(.trailing, AppSpacing.medium)
         .padding(.vertical, AppSpacing.xSmall)
         .onHover { isHovering = $0 }
+        // The acknowledgement belongs to the value that was on the pasteboard:
+        // if the row starts showing something else - the scope editor is live,
+        // or a different variable started winning the key - drop it rather than
+        // tick over a value nobody copied.
+        .onChange(of: shownValue) { _, _ in
+            didCopy = false
+        }
     }
 
     private var keyText: some View {

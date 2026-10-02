@@ -635,15 +635,15 @@ private struct KVRow: View {
                                 guard let onGripDrag else { return NSItemProvider() }
                                 return onGripDrag()
                             }
-                            .onHover { hovering in
-                                // The grip drags the row: swap in the hand
-                                // cursor while the pointer is over it.
-                                if hovering {
-                                    NSCursor.pointingHand.push()
-                                } else {
-                                    NSCursor.pop()
-                                }
-                            }
+                            // The grip drags the row, so the pointer becomes a
+                            // hand over it - through the shared `clickCursor`
+                            // pointer machinery, not `NSCursor.push()/pop()`.
+                            // Push/pop strands a hand cursor whenever the view
+                            // disappears before its exit event arrives, and
+                            // the grip does exactly that: the drag hides the
+                            // glyph and the row leaves its slot. The tracking
+                            // is AppKit's, so it unwinds on its own.
+                            .clickCursor()
                     }
                 }
                 // The trailing ghost row has nothing to enable yet: no

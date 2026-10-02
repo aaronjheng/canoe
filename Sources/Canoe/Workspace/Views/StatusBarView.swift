@@ -13,7 +13,7 @@ struct StatusBarView: View {
             ToolbarToggleButton(
                 systemImage: "sidebar.left",
                 isOn: store.showSidebar,
-                help: store.showSidebar ? "Hide Sidebar" : "Show Sidebar"
+                help: store.showSidebar ? "Hide Sidebar (⌃⌘S)" : "Show Sidebar (⌃⌘S)"
             ) {
                 store.showSidebar.toggle()
             }

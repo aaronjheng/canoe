@@ -379,19 +379,15 @@ struct PaneResizeHandle: View {
                 height: axis == .vertical ? Self.thickness : nil
             )
             .contentShape(Rectangle())
-            .onHover { hovering in
-                guard hovering else {
-                    NSCursor.pop()
-                    return
-                }
-                // The axis decides the cursor: a vertical edge resizes up
-                // and down, a horizontal one left and right.
-                if axis == .vertical {
-                    NSCursor.resizeUpDown.push()
-                } else {
-                    NSCursor.resizeLeftRight.push()
-                }
-            }
+            // The axis decides the cursor: `axis` is the direction the pane
+            // resizes IN, not the orientation of the edge it sits on - the
+            // inspector's vertical leading edge uses `.horizontal` and
+            // resizes left/right, the console's horizontal top edge uses
+            // `.vertical` and resizes up/down. Declared through
+            // `pointerStyle`, not `NSCursor.push()/pop()` - the handle is
+            // torn down whenever its pane closes, and push/pop would leave
+            // the resize cursor stranded over the rest of the UI.
+            .pointerStyle(axis == .vertical ? PointerStyle.rowResize : PointerStyle.columnResize)
             .gesture(
                 // Global coordinates on purpose: the handle itself moves
                 // with the size it controls, so a local-space translation

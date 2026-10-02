@@ -204,8 +204,22 @@ struct InlineNameField: View {
     @Binding var text: String
     var placeholder: String = "Name"
     var font: Font = AppFont.detailTitle
+    /// Fired when an editing session ends with a commit - Return, or a click
+    /// away through the dismissal monitor. Callers whose value only lands on
+    /// a commit (a structural rename, say) need this: macOS text fields do
+    /// not blur on background clicks on their own, so without the hook such
+    /// a value can sit uncommitted until some unrelated blur arrives - and a
+    /// tab switch in between discards it.
+    var onCommit: (() -> Void)?
+    /// Lets a parent follow this field's focus for its own bookkeeping (the
+    /// folder page must not adopt a vault-side rename while the user is
+    /// typing into the title). Unset keeps the field's private focus state.
+    var focus: FocusState<Bool>.Binding?
     @FocusState private var isFocused: Bool
     @State private var isHovered = false
+    /// Set for the one update in which Esc ends the session, so the
+    /// focus-loss commit below treats a cancel as a cancel.
+    @State private var isCancelling = false
     /// Text at focus time; Esc restores it (commit happens on blur/Enter).
     @State private var baseline = ""
     /// The field's frame in window coordinates - the click-away monitor
@@ -227,47 +241,81 @@ struct InlineNameField: View {
         } action: {
             fieldFrame = $0
         }
-        .onChange(of: isFocused) { _, focused in
-            if focused { baseline = text }
+        .onChange(of: isFocusedNow) { _, focused in
+            if focused {
+                baseline = text
+                isCancelling = false
+            } else if !isCancelling {
+                // Focus left by ANY route commits, not just by the monitor:
+                // Tab, ⇧⌘], and clicking another control all end the session,
+                // and a rename that only committed on Return or a
+                // background click would be lost on the next tab switch.
+                onCommit?()
+            }
         }
         .onAppear { installDismissMonitor() }
         .onDisappear { removeDismissMonitor() }
     }
+
+    /// The focus binding actually in force: the caller's when it supplied
+    /// one, this field's own otherwise. One accessor so `focused(_:)`, the
+    /// monitor, and the commit hook can never drift onto different state.
+    private var focusBinding: FocusState<Bool>.Binding {
+        focus ?? $isFocused
+    }
+
+    private var isFocusedNow: Bool { focusBinding.wrappedValue }
 
     private var fieldBody: some View {
         TextField(placeholder, text: $text)
             .font(font)
             .textFieldStyle(.plain)
             .focusEffectDisabled()
-            .focused($isFocused)
+            .focused(focusBinding)
             .padding(.horizontal, AppSpacing.compact)
             .padding(.vertical, AppSpacing.xSmall)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                     // Rest is clear: hover/focus lift to a brighter fill so
-                    // the surface reads as raised, not tinted darker.
+                    // the surface reads as raised, not tinted darker. Read
+                    // through `isFocusedNow`, not the private state: a caller
+                    // that supplies its own focus binding owns the focus, and
+                    // the chrome has to follow that binding or the field
+                    // loses its focus ring entirely.
                     .fill(
-                        isFocused
+                        isFocusedNow
                             ? AppColor.fieldFocusBackground
                             : (isHovered ? AppColor.fieldHoverBackground : .clear)
                     )
             )
             .overlay {
                 // Borderless at rest: field border on hover/focus.
-                if isFocused || isHovered {
+                if isFocusedNow || isHovered {
                     RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                         .strokeBorder(
-                            isFocused ? AppColor.accent : AppColor.borderStrong,
-                            lineWidth: isFocused ? AppLine.focusedField : AppLine.field
+                            isFocusedNow ? AppColor.accent : AppColor.borderStrong,
+                            lineWidth: isFocusedNow ? AppLine.focusedField : AppLine.field
                         )
                 }
             }
-            .onSubmit { isFocused = false }
+            .onSubmit { finishEditing() }
             .onKeyPress(.escape) {
+                // Esc is a cancel, not a commit: restore the focus-time
+                // baseline, then end the session with the commit suppressed.
+                // The flag is cleared on the next focus gain, so it can only
+                // ever cover this one focus loss.
+                isCancelling = true
                 text = baseline
-                isFocused = false
+                focusBinding.wrappedValue = false
                 return .handled
             }
+    }
+
+    /// Ends an editing session (Return, or a click away). The commit itself
+    /// is the focus-loss observer above, so there is exactly one commit per
+    /// session no matter which gesture ended it.
+    private func finishEditing() {
+        focusBinding.wrappedValue = false
     }
 
     /// Ends editing when a click lands outside the field. A local NSEvent
@@ -279,7 +327,7 @@ struct InlineNameField: View {
         guard dismissMonitor == nil else { return }
         dismissMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
             MainActor.assumeIsolated {
-                guard isFocused, let window = event.window else { return }
+                guard isFocusedNow, let window = event.window else { return }
                 // Window-base -> screen-top-left conversion for SwiftUI .global
                 // frames (primary screen top edge, same as TabBarView).
                 let screenTop = NSScreen.screens.first?.frame.maxY ?? 0
@@ -287,7 +335,7 @@ struct InlineNameField: View {
                     x: window.frame.origin.x + event.locationInWindow.x,
                     y: screenTop - window.frame.origin.y - event.locationInWindow.y)
                 if !fieldFrame.contains(point) {
-                    isFocused = false
+                    finishEditing()
                 }
             }
             return event

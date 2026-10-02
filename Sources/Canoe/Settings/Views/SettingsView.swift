@@ -10,6 +10,11 @@ struct SettingsView: View {
     @Bindable private var store = SettingsStore.shared
     @State private var isSwitchingLocation = false
     @State private var locationError: String?
+    /// Staged turn-on of iCloud sync: enabling it merges the whole vault
+    /// into the cloud container and repoints every read and write, so it
+    /// asks first. Turning it off only moves the files back, and stays a
+    /// single click.
+    @State private var isConfirmingSyncOn = false
 
     /// Live binding so a theme change from the menu is reflected while the
     /// panel is open (and vice versa through `validateMenuItem`).
@@ -116,6 +121,32 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .background(AppColor.controlBackground)
+        .confirmationDialog(
+            "Sync your vault with iCloud Drive?",
+            isPresented: $isConfirmingSyncOn,
+            titleVisibility: .visible
+        ) {
+            Button("Sync with iCloud Drive") { enableSync() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(syncOnConfirmationMessage)
+        }
+    }
+
+    /// What turning the toggle on actually does, stated before it does it.
+    /// The merge is two-way and newest-file-wins (`VaultStore.mergeFile`),
+    /// so it must NOT read as a one-way copy out: a file in iCloud Drive
+    /// that is newer than its local twin replaces the local one. Stating
+    /// that is the whole point of asking - the user is about to hand this
+    /// decision a real conflict-resolution rule.
+    private var syncOnConfirmationMessage: String {
+        [
+            "Canoe merges your saved requests, collections and environments "
+                + "into your iCloud Drive, then reads and writes there from now on.",
+            "Both copies are combined by taking the newer version of each file, "
+                + "so a file in iCloud Drive that is newer than the one on this Mac replaces it here.",
+            "Nothing is deleted, and turning the toggle off later brings the files back.",
+        ].joined(separator: " ")
     }
 
     private var syncStatus: String {
@@ -129,25 +160,43 @@ struct SettingsView: View {
 
     /// Flips the persisted setting first so a relaunch honors the choice,
     /// then migrates and reloads; a failed switch reverts the setting.
+    /// Turning sync on is confirmed first (`isConfirmingSyncOn`) - the merge
+    /// rewrites every vault file, so it must not ride a single stray click
+    /// on a checkbox, the way every other irreversible action in the app
+    /// (deleting a request, clearing history, closing with unsaved edits)
+    /// asks first.
     private var syncEnabled: Binding<Bool> {
         Binding(
             get: { store.settings.iCloudSyncEnabled },
             set: { enabled in
                 guard !isSwitchingLocation else { return }
-                store.settings.iCloudSyncEnabled = enabled
-                store.save()
-                locationError = nil
-                isSwitchingLocation = true
-                Task {
-                    let message = await appStore.setVaultLocation(enabled ? .iCloud : .local)
-                    locationError = message
-                    if message != nil {
-                        store.settings.iCloudSyncEnabled = !enabled
-                        store.save()
-                    }
-                    isSwitchingLocation = false
+                if enabled {
+                    isConfirmingSyncOn = true
+                } else {
+                    applySync(false)
                 }
             }
         )
+    }
+
+    /// Confirmed turn-on (see `syncEnabled`).
+    private func enableSync() {
+        applySync(true)
+    }
+
+    private func applySync(_ enabled: Bool) {
+        store.settings.iCloudSyncEnabled = enabled
+        store.save()
+        locationError = nil
+        isSwitchingLocation = true
+        Task {
+            let message = await appStore.setVaultLocation(enabled ? .iCloud : .local)
+            locationError = message
+            if message != nil {
+                store.settings.iCloudSyncEnabled = !enabled
+                store.save()
+            }
+            isSwitchingLocation = false
+        }
     }
 }

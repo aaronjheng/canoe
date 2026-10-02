@@ -16,7 +16,6 @@ struct FolderDetailView: View {
     @State private var draft: Folder
     @State private var nameDraft: String
     @State private var section: Section = .overview
-    @State private var isTitleHovered = false
     @FocusState private var isTitleFocused: Bool
 
     enum Section: String, CaseIterable, Identifiable {
@@ -140,55 +139,21 @@ struct FolderDetailView: View {
             .foregroundStyle(AppColor.tertiaryText)
     }
 
-    /// The folder's own name: the last crumb and the page title. Quiet heading
-    /// at rest, field chrome on hover/focus, committed on Return or when focus
-    /// leaves - a structural save, like the sidebar's inline rename.
+    /// The folder's own name: the last crumb and the page title. The shared
+    /// inline name field (same language as the environment page's), so it
+    /// carries that component's click-away dismissal - without it a rename
+    /// stayed uncommitted after a click on dead space and was silently lost
+    /// on the next tab switch. `onCommit` pushes the structural rename;
+    /// Esc still restores the focus-time name without committing.
     private var titleField: some View {
-        ViewThatFits(in: .horizontal) {
-            titleFieldBody
-                .fixedSize()
-            titleFieldBody
-        }
-    }
-
-    private var titleFieldBody: some View {
-        TextField("Folder Name", text: $nameDraft)
-            .font(AppFont.panelTitle)
-            .textFieldStyle(.plain)
-            .focusEffectDisabled()
-            .focused($isTitleFocused)
-            .padding(.horizontal, AppSpacing.compact)
-            .padding(.vertical, AppSpacing.xxSmall)
-            .background(
-                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                    .fill(
-                        isTitleFocused
-                            ? AppColor.fieldFocusBackground
-                            : (isTitleHovered ? AppColor.fieldHoverBackground : .clear)
-                    )
-            )
-            .overlay {
-                if isTitleFocused || isTitleHovered {
-                    RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                        .strokeBorder(
-                            isTitleFocused ? AppColor.accent : AppColor.borderStrong,
-                            lineWidth: isTitleFocused ? AppLine.focusedField : AppLine.field
-                        )
-                }
-            }
-            .onHover { isTitleHovered = $0 }
-            .onSubmit { commitRename() }
-            // Esc restores the name and drops focus, like the request name
-            // field; the resulting blur commit is a no-op (the draft equals
-            // the name again).
-            .onExitCommand {
-                nameDraft = draft.name
-                isTitleFocused = false
-            }
-            .onChange(of: isTitleFocused) { _, focused in
-                if !focused { commitRename() }
-            }
-            .help("Click to rename")
+        InlineNameField(
+            text: $nameDraft,
+            placeholder: "Folder Name",
+            font: AppFont.panelTitle,
+            onCommit: commitRename,
+            focus: $isTitleFocused
+        )
+        .help("Click to rename")
     }
 
     /// The folder's ancestors, outermost first. The collection is not part of

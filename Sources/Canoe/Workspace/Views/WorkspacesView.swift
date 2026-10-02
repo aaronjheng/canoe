@@ -21,6 +21,11 @@ struct WorkspacesView: View {
     @State private var deleteTargets: Set<Workspace.ID> = []
     @State private var checked: Set<Workspace.ID> = []
     @State private var hoveredID: Workspace.ID?
+    /// Which row's trailing action owns keyboard focus. The actions rest
+    /// invisible, and an invisible control that still takes clicks (or
+    /// focus) misfires - the same rule the variables inspector's hover
+    /// actions follow. Focus keeps them reachable for keyboard users.
+    @FocusState private var focusedActionRow: Workspace.ID?
 
     /// Shared relative-time formatter: construction is expensive, so one
     /// instance serves every row.
@@ -201,7 +206,7 @@ struct WorkspacesView: View {
         }
         .background(AppColor.controlBackground)
         .confirmationDialog(
-            deleteTitle,
+            deleteTargetsTitle,
             isPresented: Binding(
                 get: { !deleteTargets.isEmpty },
                 set: { if !$0 { deleteTargets = [] } }
@@ -217,11 +222,7 @@ struct WorkspacesView: View {
             }
             Button("Cancel", role: .cancel) { deleteTargets = [] }
         } message: {
-            Text(
-                deleteTargets.count == 1
-                    ? "Its collections, requests, folders, environments, and variables will be permanently deleted."
-                    : "Their collections, requests, folders, environments, and variables will be permanently deleted."
-            )
+            Text(deleteConfirmationMessage)
         }
     }
 
@@ -334,6 +335,7 @@ struct WorkspacesView: View {
 
     private func workspaceRow(_ workspace: Workspace) -> some View {
         let isHovered = isRowHovered(workspace)
+        let showsActions = isHovered || focusedActionRow == workspace.id
         let latestActivity = store.lastActivity(in: workspace.id)
         return HStack(spacing: 0) {
             Button {
@@ -380,6 +382,8 @@ struct WorkspacesView: View {
                         .foregroundStyle(isHovered ? AppColor.accent : Color.secondary)
                 }
                 .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
+                .focused($focusedActionRow, equals: workspace.id)
+                .accessibilityLabel("Open \(workspace.name)")
                 .help("Open workspace")
                 Button {
                     deleteTargets = [workspace.id]
@@ -388,13 +392,21 @@ struct WorkspacesView: View {
                         .foregroundStyle(isHovered ? AppColor.error : Color.secondary)
                 }
                 .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
+                .focused($focusedActionRow, equals: workspace.id)
+                .accessibilityLabel("Delete \(workspace.name)")
                 .help("Delete workspace")
             }
             // Row actions rest off-stage and fade in under the pointer, so
-            // the table reads as data first - they are only ever clickable
-            // while the row is hovered, hence visible.
-            .opacity(isHovered ? 1 : 0)
-            .animation(AppMotion.quick, value: isHovered)
+            // the table reads as data first. `allowsHitTesting` is what makes
+            // that honest: opacity alone leaves the buttons fully clickable
+            // while invisible, so a click landing in the column before the
+            // row's hover event arrives would fire Open (or stage Delete)
+            // on a control nobody can see. Focus still reaches them - unlike
+            // `disabled` - so the fade follows focus too and keyboard users
+            // keep the same two actions.
+            .opacity(showsActions ? 1 : 0)
+            .allowsHitTesting(showsActions)
+            .animation(AppMotion.quick, value: showsActions)
             .frame(width: ColumnWidth.actions, alignment: .trailing)
             .padding(.trailing, AppSpacing.medium)
         }
@@ -433,12 +445,35 @@ struct WorkspacesView: View {
         deleteTargets.count == 1 ? "Delete Workspace" : "Delete \(deleteTargets.count) Workspaces"
     }
 
-    private var deleteTitle: String {
-        let targets = visibleWorkspaces.filter { deleteTargets.contains($0.id) }
-        if targets.count == 1, let workspace = targets.first {
+    /// Names the rows a batch delete is about to remove. The vault, not the
+    /// filtered view: the selection survives a search, so the confirmation
+    /// has to keep naming workspaces the user can no longer see - deleting
+    /// what is off-screen, unnamed, is the one thing this dialog exists to
+    /// prevent.
+    private var deleteTargetsTitle: String {
+        if deleteTargets.count == 1, let workspace = workspaces.first(where: { deleteTargets.contains($0.id) }) {
             return "Delete workspace \"\(workspace.name)\""
         }
         return "Delete \(deleteTargets.count) workspaces"
+    }
+
+    /// Names up to three targets and counts the rest, then spells out what
+    /// goes with them.
+    private var deleteConfirmationMessage: String {
+        let names =
+            workspaces
+            .filter { deleteTargets.contains($0.id) }
+            .map(\.name)
+        let lost =
+            deleteTargets.count == 1
+            ? "Its collections, requests, folders, environments, and variables will be permanently deleted."
+            : "Their collections, requests, folders, environments, and variables will be permanently deleted."
+        guard !names.isEmpty else { return lost }
+        let named =
+            names.count > 3
+            ? "\(names.prefix(3).joined(separator: ", ")), and \(names.count - 3) more"
+            : names.joined(separator: ", ")
+        return "\(named): \(lost)"
     }
 
     private var header: some View {

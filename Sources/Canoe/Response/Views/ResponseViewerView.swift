@@ -18,6 +18,16 @@ struct ResponseViewerView: View {
     /// tree-sitter parse per keystroke.
     @State private var bodyRenderAttributed = AttributedString("")
     @State private var saveError: String?
+    /// Copy Body's in-place acknowledgement: the glyph turns into a
+    /// checkmark for a moment. Same language as every other copy control in
+    /// the app (the code-snippet copy button, the console's Copy action,
+    /// the License panel, the workspace-ID card) - a copy that overwrites
+    /// the pasteboard silently gives the user nothing to confirm it ran.
+    @State private var didCopyBody = false
+    /// Pending reset for the acknowledgement above. Cancelled on every new
+    /// copy, so a second copy restarts the window instead of being cut short
+    /// by the first one's timer (same pattern as the console's Copy action).
+    @State private var copyResetTask: Task<Void, Never>?
     /// Response-body find (⌘F): query, bar visibility, and which match is
     /// the current one (index into the match list, cycled by ⌘G/⇧⌘G).
     @State private var findVisible = false
@@ -209,6 +219,9 @@ struct ResponseViewerView: View {
         .onChange(of: response.id) { _, _ in
             headerFilter = ""
             saveError = nil
+            // The acknowledgement belongs to the response it was copied
+            // from: a fresh response must not wear a stale checkmark.
+            didCopyBody = false
             findVisible = false
             findQuery = ""
             findCurrentIndex = 0
@@ -695,12 +708,18 @@ struct ResponseViewerView: View {
                 .buttonStyle(IconButtonStyle())
                 .foregroundStyle(findVisible ? AppColor.accent : .secondary)
                 .help("Find in Response (⌘F)")
-                Button("Copy Body", systemImage: "doc.on.doc") {
-                    copyToPasteboard(fullBodyText(response, display: display))
+                Button("Copy Body", systemImage: didCopyBody ? "checkmark" : "doc.on.doc") {
+                    copyBody(fullBodyText(response, display: display))
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(IconButtonStyle())
-                .help(response.bodyTruncated ? "Copy response body (truncated)" : "Copy full response body")
+                .foregroundStyle(didCopyBody ? AppColor.success : Color.primary)
+                .help(
+                    didCopyBody
+                        ? "Copied"
+                        : (response.bodyTruncated
+                            ? "Copy response body (truncated)"
+                            : "Copy full response body"))
                 Button("Save Response", systemImage: "square.and.arrow.down") {
                     saveResponse(response)
                 }
@@ -816,10 +835,6 @@ struct ResponseViewerView: View {
             guard searchStart < text.endIndex else { break }
         }
         return ranges
-    }
-
-    private func countMatches(in text: String, query: String) -> Int {
-        computeMatches(in: text, query: query).count
     }
 
     /// The body with every match of the find query backed in amber and the
@@ -1013,6 +1028,18 @@ struct ResponseViewerView: View {
     private func copyToPasteboard(_ string: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(string, forType: .string)
+    }
+
+    /// Copy plus the in-place acknowledgement.
+    private func copyBody(_ text: String) {
+        copyToPasteboard(text)
+        didCopyBody = true
+        copyResetTask?.cancel()
+        copyResetTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1500))
+            guard !Task.isCancelled else { return }
+            didCopyBody = false
+        }
     }
 
     /// The full body text for the current mode (not the truncated preview):

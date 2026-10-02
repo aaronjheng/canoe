@@ -230,7 +230,7 @@ struct AuthorizationForm: View {
                         }
                     }
                     echoRow("Password") {
-                        echoField {
+                        maskedEchoField {
                             SecureField("Password", text: .constant(source.authorization.password))
                                 .textFieldStyle(.plain)
                         }
@@ -272,8 +272,8 @@ struct AuthorizationForm: View {
         }
     }
 
-    /// Read-only echo of one parent field: dashed border marks the value as
-    /// inherited (not editable here).
+    /// Echo row: same geometry as `fieldRow`, with the label muted to mark
+    /// the value beside it as inherited rather than editable here.
     private func echoRow(_ label: String, @ViewBuilder field: () -> some View) -> some View {
         HStack(spacing: AppSpacing.medium) {
             Text(label)
@@ -284,6 +284,13 @@ struct AuthorizationForm: View {
         }
     }
 
+    /// Read-only echo of one parent field: dashed border marks the value as
+    /// inherited (not editable here). The chrome is inert (a background and
+    /// an overlay), but the value itself stays hit-testable on purpose:
+    /// `VariableHighlightEditor(isEditable: false)` is built selectable
+    /// precisely so an inherited username or token can be selected and
+    /// copied - disabling hit testing here made that unreachable and left
+    /// the user with no way to read the credential out to somewhere else.
     private func echoField(@ViewBuilder field: () -> some View) -> some View {
         field()
             // Proportional, like every other value field in the app (the
@@ -300,6 +307,15 @@ struct AuthorizationForm: View {
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                     .strokeBorder(AppColor.borderStrong, style: StrokeStyle(lineWidth: AppLine.field, dash: [4, 3]))
             )
+    }
+
+    /// The one echo row that must NOT be interactive: the inherited password.
+    /// A `SecureField` bound to a constant offers neither editing nor a
+    /// selection to make, so leaving it hit-testable would only let a click
+    /// park the caret in a permanently masked field. It stays a pure visual
+    /// confirmation that a password is configured.
+    private func maskedEchoField(@ViewBuilder field: () -> some View) -> some View {
+        echoField { field() }
             .allowsHitTesting(false)
     }
 }

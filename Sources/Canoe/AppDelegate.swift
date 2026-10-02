@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var utilityWindows: [UtilityPanel: NSWindow] = [:]
     private var variablesMenuItem: NSMenuItem?
     private var consoleMenuItem: NSMenuItem?
+    private var sidebarMenuItem: NSMenuItem?
     private var fullScreenMenuItem: NSMenuItem?
     private var appearanceMenuItems: [NSMenuItem] = []
     // File-menu items that only make sense with an active workspace; their
@@ -351,6 +352,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         appStore.toggleVariablesSidebar()
     }
 
+    /// Shows/hides the left sidebar. The status-bar button is the only
+    /// pointer affordance; without this command the panel is unreachable
+    /// from the keyboard, and a shortcut is the platform convention
+    /// (⌃⌘S) for a sidebar toggle.
+    @objc func toggleSidebar() {
+        guard !isSettingsWindowKey else { return }
+        appStore.showSidebar.toggle()
+    }
+
     /// Keeps the View-menu checkmarks for the toggled panels in step with
     /// the store, however the panel was shown or hidden (the tab-row and
     /// status-bar buttons are SwiftUI now and sync themselves).
@@ -358,12 +368,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         withObservationTracking {
             _ = appStore.showVariablesSidebar
             _ = appStore.showConsole
+            _ = appStore.showSidebar
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 self?.variablesMenuItem?.state =
                     self?.appStore.showVariablesSidebar == true ? .on : .off
                 self?.consoleMenuItem?.state =
                     self?.appStore.showConsole == true ? .on : .off
+                self?.sidebarMenuItem?.state =
+                    self?.appStore.showSidebar == true ? .on : .off
                 self?.observeEnvironmentChanges()
             }
         }
@@ -564,6 +577,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         fullScreenMenuItem = fullScreenItem
         viewMenu.addItem(fullScreenItem)
         viewMenu.addItem(.separator())
+        // The left sidebar: the status-bar toggle is pointer-only without
+        // this, and ⌃⌘S is what every other Mac app uses for it.
+        let sidebarItem = NSMenuItem(
+            title: "Sidebar",
+            action: #selector(toggleSidebar),
+            keyEquivalent: "s")
+        sidebarItem.keyEquivalentModifierMask = [.command, .control]
+        sidebarItem.target = self
+        sidebarItem.state = appStore.showSidebar ? .on : .off
+        sidebarMenuItem = sidebarItem
+        viewMenu.addItem(sidebarItem)
         let variablesItem = NSMenuItem(
             title: "Variables in Request",
             action: #selector(toggleVariablesSidebar),

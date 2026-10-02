@@ -44,6 +44,11 @@ struct NewWorkspaceView: View {
                     // Standard sheet confirm, matching the folder editor's
                     // Save (hero buttons stay on the welcome/empty states).
                     .buttonStyle(PrimaryButtonStyle())
+                    // Nothing to create yet: `createWorkspace` would silently
+                    // fall back to a placeholder name, dismissing the sheet
+                    // on an outcome the user never chose. Dimmed instead,
+                    // like the Send button on an empty URL.
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .keyboardShortcut(.defaultAction)
             }
         }
@@ -60,7 +65,14 @@ struct NewWorkspaceView: View {
     }
 
     private func create() {
-        store.createWorkspace(name: name)
+        // The gate lives here, not only on the button: Return submits the
+        // auto-focused field straight into this action, and a disabled
+        // button would not stop it. Without the guard an empty (or
+        // whitespace-only) name silently created the "New Workspace"
+        // placeholder and dismissed the sheet.
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        store.createWorkspace(name: trimmed)
         dismiss()
     }
 }
