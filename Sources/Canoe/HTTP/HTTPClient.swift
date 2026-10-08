@@ -285,6 +285,13 @@ enum HTTPClient {
             telemetryByID.withLock { $0[taskID] = telemetry }
         }
 
+        /// Lookup only: the caller must drop the lock before touching the
+        /// telemetry, because its methods pump back into `unregister`, which
+        /// takes this same (non-recursive) lock.
+        private func telemetry(for task: URLSessionTask) -> RequestTelemetry? {
+            telemetryByID.withLock { $0[task.taskIdentifier] }
+        }
+
         func urlSession(
             _ session: URLSession,
             task: URLSessionTask,
@@ -308,7 +315,7 @@ enum HTTPClient {
             task: URLSessionTask,
             didFinishCollecting metrics: URLSessionTaskMetrics
         ) {
-            telemetryByID.withLock { $0[task.taskIdentifier]?.setMetrics(metrics) }
+            telemetry(for: task)?.setMetrics(metrics)
         }
 
         /// Body chunks stream in here rather than through the task's
@@ -319,7 +326,7 @@ enum HTTPClient {
             dataTask: URLSessionDataTask,
             didReceive data: Data
         ) {
-            telemetryByID.withLock { $0[dataTask.taskIdentifier]?.append(data) }
+            telemetry(for: dataTask)?.append(data)
         }
 
         /// The task's end: with a data delegate in place this - not the
@@ -329,7 +336,7 @@ enum HTTPClient {
             task: URLSessionTask,
             didCompleteWithError error: Error?
         ) {
-            telemetryByID.withLock { $0[task.taskIdentifier]?.finishBody(response: task.response, error: error) }
+            telemetry(for: task)?.finishBody(response: task.response, error: error)
         }
 
         func urlSession(
@@ -339,7 +346,7 @@ enum HTTPClient {
             completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
         ) {
             if let snapshot = Self.serverTrustSnapshot(from: challenge) {
-                telemetryByID.withLock { $0[task.taskIdentifier]?.setCertificate(snapshot) }
+                telemetry(for: task)?.setCertificate(snapshot)
             }
             completionHandler(.performDefaultHandling, nil)
         }
