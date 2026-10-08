@@ -82,7 +82,7 @@ struct ResponseModel: Identifiable, Sendable {
         guard
             let pretty = try? JSONSerialization.data(
                 withJSONObject: object,
-                options: [.prettyPrinted, .sortedKeys]
+                options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
             )
         else { return bodyString }
         return String(data: pretty, encoding: .utf8) ?? bodyString
