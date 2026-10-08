@@ -161,7 +161,7 @@ final class AppStore {
     /// mirrored to drafts.json so it survives relaunches. Tracked by the
     /// observation system so the Save button and tab dirty dots update live.
     var pendingRequestSnapshots: [UUID: Request] = [:]
-    /// Monotonic id of the newest Save-all pass. A pass that failed to write
+    /// Monotonic id of the newest Save pass. A pass that failed to write
     /// only puts its entity back into the dirty set while it is still the
     /// newest pass - a later pass has captured its own (newer) snapshot for
     /// that entity and owns the outcome.
@@ -206,7 +206,7 @@ final class AppStore {
     /// Debounced writer for the history mirror; rescheduled on every
     /// recorded entry so a burst of sends rewrites history.json once.
     @ObservationIgnored var historySaveTask: Task<Void, Never>?
-    /// In-flight Save-all (⌘S) task, if any. Tracked so the quit path can
+    /// In-flight Save (⌘S) task, if any. Tracked so the quit path can
     /// wait for the vault writes to land before the process exits: the
     /// pending snapshots are cleared up front, so quitting mid-save would
     /// otherwise strand the edits in neither the vault nor the drafts.

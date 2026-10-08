@@ -540,7 +540,7 @@ extension AppStore {
         }
     }
 
-    /// Quit path: waits for an in-flight Save-all to land, then flushes the
+    /// Quit path: waits for an in-flight Save pass to land, then flushes the
     /// draft mirror and the history mirror and calls `completion`. Drafts are
     /// flushed last so the mirror reflects the post-save state (empty when
     /// everything saved).
@@ -572,27 +572,80 @@ extension AppStore {
         return !snapshot.isContentEqual(to: baseline)
     }
 
-    /// Persists every request and environment with unsaved changes (Save
-    /// button / ⌘S) and drops their drafts. `completion` (used on quit) runs
-    /// after all writes finish.
-    func savePendingChanges(completion: (() -> Void)? = nil) {
-        let pendingRequests = pendingRequestSnapshots
-        let pendingEnvironments = pendingEnvironmentSnapshots
-        let pendingWorkspaceVariables = self.pendingWorkspaceVariables
-        let pendingCollectionVariables = self.pendingCollectionVariables
-        let pendingCollectionAuthorizations = self.pendingCollectionAuthorizations
-        let pendingFolderAuthorizations = self.pendingFolderAuthorizations
-        pendingRequestSnapshots.removeAll()
-        pendingEnvironmentSnapshots.removeAll()
-        self.pendingWorkspaceVariables.removeAll()
-        self.pendingCollectionVariables.removeAll()
-        self.pendingCollectionAuthorizations.removeAll()
-        self.pendingFolderAuthorizations.removeAll()
-        guard
-            !pendingRequests.isEmpty || !pendingEnvironments.isEmpty
-                || !pendingWorkspaceVariables.isEmpty || !pendingCollectionVariables.isEmpty
-                || !pendingCollectionAuthorizations.isEmpty || !pendingFolderAuthorizations.isEmpty
-        else {
+    /// What one Save pass writes.
+    enum SaveScope {
+        /// Only the edits belonging to the selected tab: ⌘S (or a Save chip)
+        /// in one tab must not persist another tab's half-finished work.
+        case activeTab
+        /// Every pending edit of every kind (close-with-save confirmation).
+        case all
+    }
+
+    /// The pending snapshots a single Save pass takes on, keyed like the live
+    /// maps. `isEmpty` means the pass has nothing in scope to write.
+    private struct PendingEdits {
+        var requests: [UUID: Request] = [:]
+        var environments: [UUID: EnvironmentProfile] = [:]
+        var workspaceVariables: [UUID: [Variable]] = [:]
+        var collectionVariables: [UUID: [Variable]] = [:]
+        var collectionAuthorizations: [UUID: Authorization] = [:]
+        var folderAuthorizations: [UUID: Authorization] = [:]
+
+        var isEmpty: Bool {
+            requests.isEmpty && environments.isEmpty && workspaceVariables.isEmpty
+                && collectionVariables.isEmpty && collectionAuthorizations.isEmpty
+                && folderAuthorizations.isEmpty
+        }
+    }
+
+    /// The pending edits `scope` covers: everything for `.all`, only the
+    /// selected tab's entity for `.activeTab` (the workspace Overview and an
+    /// empty detail area edit nothing).
+    private func pendingEdits(scope: SaveScope) -> PendingEdits {
+        var edits = PendingEdits()
+        switch scope {
+        case .all:
+            edits.requests = pendingRequestSnapshots
+            edits.environments = pendingEnvironmentSnapshots
+            edits.workspaceVariables = pendingWorkspaceVariables
+            edits.collectionVariables = pendingCollectionVariables
+            edits.collectionAuthorizations = pendingCollectionAuthorizations
+            edits.folderAuthorizations = pendingFolderAuthorizations
+        case .activeTab:
+            switch selectedTab {
+            case .request(let id):
+                edits.requests = pendingRequestSnapshots[id].map { [id: $0] } ?? [:]
+            case .environment(let id):
+                edits.environments = pendingEnvironmentSnapshots[id].map { [id: $0] } ?? [:]
+            case .collection(let id):
+                edits.collectionVariables = pendingCollectionVariables[id].map { [id: $0] } ?? [:]
+                edits.collectionAuthorizations = pendingCollectionAuthorizations[id].map { [id: $0] } ?? [:]
+            case .folder(let id):
+                edits.folderAuthorizations = pendingFolderAuthorizations[id].map { [id: $0] } ?? [:]
+            case .workspaceVariables(let id):
+                edits.workspaceVariables = pendingWorkspaceVariables[id].map { [id: $0] } ?? [:]
+            case .workspace, nil:
+                break
+            }
+        }
+        return edits
+    }
+
+    /// Persists the unsaved edits `scope` covers and drops their drafts.
+    /// `.activeTab` (Save button / ⌘S) writes only the selected tab's entity;
+    /// `.all` (close-with-save) writes everything. `completion` runs after all
+    /// writes finish.
+    func savePendingChanges(scope: SaveScope, completion: (() -> Void)? = nil) {
+        let captured = pendingEdits(scope: scope)
+        // Clear only what this pass captured: edits outside the scope stay
+        // dirty and keep mirroring to drafts.json, exactly as before.
+        for id in captured.requests.keys { pendingRequestSnapshots[id] = nil }
+        for id in captured.environments.keys { pendingEnvironmentSnapshots[id] = nil }
+        for id in captured.workspaceVariables.keys { pendingWorkspaceVariables[id] = nil }
+        for id in captured.collectionVariables.keys { pendingCollectionVariables[id] = nil }
+        for id in captured.collectionAuthorizations.keys { pendingCollectionAuthorizations[id] = nil }
+        for id in captured.folderAuthorizations.keys { pendingFolderAuthorizations[id] = nil }
+        guard !captured.isEmpty else {
             completion?()
             return
         }
@@ -622,35 +675,35 @@ extension AppStore {
             // Sorted by id: dictionary iteration order is nondeterministic,
             // and two dirty requests can share one collection file - keep
             // the write order stable across saves.
-            for snapshot in pendingRequests.values.sorted(by: { $0.id.uuidString < $1.id.uuidString }) {
+            for snapshot in captured.requests.values.sorted(by: { $0.id.uuidString < $1.id.uuidString }) {
                 if await self.persistRequest(snapshot) {
                     self.clearPersistedRequest(snapshot)
                 } else {
                     self.restorePendingRequest(pass: pass, snapshot, baseline: requestBaselines[snapshot.id])
                 }
             }
-            for snapshot in pendingEnvironments.values.sorted(by: { $0.id.uuidString < $1.id.uuidString }) {
+            for snapshot in captured.environments.values.sorted(by: { $0.id.uuidString < $1.id.uuidString }) {
                 if await self.persistEnvironment(snapshot) {
                     self.clearPersistedEnvironment(snapshot)
                 } else {
                     self.restorePendingEnvironment(pass: pass, snapshot, baseline: environmentBaselines[snapshot.id])
                 }
             }
-            for (id, variables) in pendingWorkspaceVariables.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
+            for (id, variables) in captured.workspaceVariables.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
                 if await self.persistWorkspaceVariables(id, variables) {
                     self.clearPersistedWorkspaceVariables(id, variables)
                 } else {
                     self.restorePendingWorkspaceVariables(pass: pass, id, variables, baseline: workspaceVariableBaselines[id])
                 }
             }
-            for (id, variables) in pendingCollectionVariables.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
+            for (id, variables) in captured.collectionVariables.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
                 if await self.persistCollectionVariables(id, variables) {
                     self.clearPersistedCollectionVariables(id, variables)
                 } else {
                     self.restorePendingCollectionVariables(pass: pass, id, variables, baseline: collectionVariableBaselines[id])
                 }
             }
-            for (id, authorization) in pendingCollectionAuthorizations.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
+            for (id, authorization) in captured.collectionAuthorizations.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
                 if await self.persistCollectionAuthorization(id, authorization) {
                     self.clearPersistedCollectionAuthorization(id, authorization)
                 } else {
@@ -658,7 +711,7 @@ extension AppStore {
                         pass: pass, id, authorization, baseline: collectionAuthorizationBaselines[id])
                 }
             }
-            for (id, authorization) in pendingFolderAuthorizations.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
+            for (id, authorization) in captured.folderAuthorizations.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
                 if await self.persistFolderAuthorization(id, authorization) {
                     self.clearPersistedFolderAuthorization(id, authorization)
                 } else {

@@ -106,7 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         // Unsaved edits live in memory and are mirrored to drafts.json
-        // (debounced) - wait for an in-flight Save-all to land, then flush
+        // (debounced) - wait for an in-flight Save pass to land, then flush
         // the mirror, before quitting so the next launch restores the
         // edited state. Nothing is prompted and nothing is persisted as
         // saved content beyond what ⌘S already requested.
@@ -155,7 +155,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc func saveRequest() {
         guard !isSettingsWindowKey else { return }
-        appStore.savePendingChanges()
+        // Scoped to the selected tab: ⌘S saves what is on screen, not every
+        // dirty tab behind it.
+        appStore.savePendingChanges(scope: .activeTab)
     }
 
     @objc func closeTab() {

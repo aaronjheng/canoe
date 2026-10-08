@@ -412,7 +412,7 @@ extension AppStore {
         guard let pending = pendingClose else { return }
         pendingClose = nil
         if saving {
-            savePendingChanges()
+            savePendingChanges(scope: .all)
         }
         switch pending {
         case .tab(let tab):

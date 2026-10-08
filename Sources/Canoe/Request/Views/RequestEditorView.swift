@@ -712,7 +712,7 @@ struct RequestEditorView: View {
         SaveChipButton(isDirty: isDirty, help: "Save Request (⌘S)") {
             urlFieldFocused = nil
             isNameFieldFocused = false
-            store.savePendingChanges()
+            store.savePendingChanges(scope: .activeTab)
         }
     }
 

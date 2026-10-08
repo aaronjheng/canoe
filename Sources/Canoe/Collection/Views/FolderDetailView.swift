@@ -356,7 +356,7 @@ struct FolderDetailView: View {
     /// Postman-style Save: shared chip, enabled while dirty.
     private var saveButton: some View {
         SaveChipButton(isDirty: isDirty, help: "Save Folder (⌘S)") {
-            store.savePendingChanges()
+            store.savePendingChanges(scope: .activeTab)
         }
     }
 }
