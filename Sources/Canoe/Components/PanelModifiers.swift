@@ -196,7 +196,7 @@ struct SaveChipButton: View {
                 Text("Save")
             }
             .font(AppFont.small.weight(.medium))
-            .foregroundStyle(isDirty ? AppColor.accent : .secondary)
+            .foregroundStyle(isDirty ? AppColor.accent : AppColor.textSecondary)
             .padding(.horizontal, AppSpacing.comfortable)
             .padding(.vertical, AppSpacing.xxSmall)
             .background(

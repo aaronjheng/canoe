@@ -334,7 +334,7 @@ struct ContentView: View {
                 .foregroundStyle(AppColor.warning)
             Text(message)
                 .font(AppFont.emptyStateBody)
-                .foregroundStyle(.primary)
+                .foregroundStyle(AppColor.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
                 // The message can run to two sentences and name a file; the
                 // full text stays reachable on hover.
@@ -451,7 +451,7 @@ struct EmptyStateView: View {
                     .font(.title2.weight(.semibold))
                 Text("Select a request from the sidebar, or create a new one to get started.")
                     .font(AppFont.emptyStateBody)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 360)
             }
@@ -511,7 +511,7 @@ private struct VaultLoadingView: View {
                 ProgressView()
                 Text("Loading vault…")
                     .font(AppFont.emptyStateBody)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

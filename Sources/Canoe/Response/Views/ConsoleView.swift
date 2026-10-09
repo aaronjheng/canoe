@@ -86,7 +86,7 @@ struct ConsoleView: View {
             }
             .labelStyle(.iconOnly)
             .buttonStyle(IconButtonStyle())
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AppColor.textSecondary)
             // Clear wipes everything, not just the filtered view: with the
             // Errors filter on, an empty visible list must not enable the
             // destruction of the hidden successful entries.
@@ -106,7 +106,7 @@ struct ConsoleView: View {
             }
             .labelStyle(.iconOnly)
             .buttonStyle(IconButtonStyle())
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AppColor.textSecondary)
             .accessibilityLabel("Hide Console")
             .help("Hide Console (⌥⌘C)")
         }
@@ -134,7 +134,7 @@ struct ConsoleView: View {
         Text(label)
             .font(AppFont.small.weight(.medium))
             .monospaced()
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AppColor.textSecondary)
             .padding(.horizontal, AppSpacing.compact)
             .padding(.vertical, AppSpacing.xxSmall)
             .background(
@@ -246,7 +246,7 @@ private struct ConsoleEntryRow: View {
             }
             Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                 .font(AppFont.small.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
                 .frame(width: 12)
             Image(systemName: entry.isError ? "exclamationmark.triangle.fill" : "arrow.down.circle")
                 .font(AppFont.small)
@@ -256,7 +256,7 @@ private struct ConsoleEntryRow: View {
             } else {
                 Text(entry.method)
                     .font(AppFont.cellText.weight(.semibold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(AppColor.textPrimary)
             }
             Text(entry.url)
                 .font(AppFont.monoSubheadline)
@@ -277,7 +277,7 @@ private struct ConsoleEntryRow: View {
                 Text(duration)
                     .font(AppFont.small)
                     .monospacedDigit()
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
             }
         }
         .padding(.horizontal, AppSpacing.medium)
@@ -352,7 +352,7 @@ private struct ConsoleEntryDetail: View {
                             Text(duration)
                                 .font(AppFont.small)
                                 .monospacedDigit()
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(AppColor.textSecondary)
                         }
                     }
                     // Same on the response side: :status stands in for the
@@ -400,7 +400,7 @@ private struct ConsoleEntryDetail: View {
     private func sectionTitle(_ title: String) -> some View {
         Text(title)
             .font(AppFont.microHeader)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AppColor.textSecondary)
     }
 
     private func headerList(_ headers: [HTTPHeader]) -> some View {
@@ -409,10 +409,10 @@ private struct ConsoleEntryDetail: View {
                 HStack(alignment: .top, spacing: 0) {
                     Text("\(header.key): ")
                         .font(AppFont.monoSubheadline)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(AppColor.textPrimary)
                     Text("\"\(header.value)\"")
                         .font(AppFont.monoSubheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
                         .textSelection(.enabled)
                 }
             }
@@ -438,7 +438,7 @@ private struct ConsoleEntryDetail: View {
     private func bodyBlock(_ text: String) -> some View {
         Text(text)
             .font(AppFont.monoSubheadline)
-            .foregroundStyle(.primary)
+            .foregroundStyle(AppColor.textPrimary)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(AppSpacing.small)

@@ -64,7 +64,7 @@ struct VariableSuggestionList: View {
                     Text(kind.rawValue)
                         .font(AppFont.small)
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
             }
         }
         .padding(.horizontal, AppSpacing.small)

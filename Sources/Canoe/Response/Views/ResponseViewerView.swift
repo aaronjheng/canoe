@@ -126,7 +126,7 @@ struct ResponseViewerView: View {
         Text(label)
             .font(AppFont.small.weight(.medium))
             .monospaced()
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AppColor.textSecondary)
             .padding(.horizontal, AppSpacing.compact)
             .padding(.vertical, AppSpacing.xxSmall)
             .background(
@@ -151,7 +151,7 @@ struct ResponseViewerView: View {
                 ProgressView().controlSize(.small)
                 Text("Sending…")
                     .font(AppFont.small)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
             }
             Spacer()
         }
@@ -179,7 +179,7 @@ struct ResponseViewerView: View {
                 Label(value, systemImage: systemImage)
                     .font(AppFont.small)
                     .monospacedDigit()
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
             }
         )
     }
@@ -366,7 +366,7 @@ struct ResponseViewerView: View {
             content: {
                 Image(systemName: "network")
                     .font(AppFont.small)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
             }
         )
     }
@@ -377,7 +377,7 @@ struct ResponseViewerView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: AppSpacing.small) {
                 Image(systemName: "network")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
                 Text("Network")
                     .font(AppFont.small.weight(.semibold))
                 Spacer(minLength: 0)
@@ -418,13 +418,13 @@ struct ResponseViewerView: View {
                 if !hasConnection, !hasTLS, !hasCert {
                     Text("No network details captured for this response.")
                         .font(AppFont.emptyStateBody)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
                         .padding(AppSpacing.medium)
                 }
             } else {
                 Text("No network details captured for this response.")
                     .font(AppFont.emptyStateBody)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
                     .padding(AppSpacing.medium)
             }
         }
@@ -438,7 +438,7 @@ struct ResponseViewerView: View {
                 if let value {
                     HStack(alignment: .firstTextBaseline, spacing: AppSpacing.medium) {
                         Text(label)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(AppColor.textSecondary)
                             .frame(width: 110, alignment: .leading)
                         Text(value)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -479,7 +479,7 @@ struct ResponseViewerView: View {
             } else {
                 Text("No size details captured for this response.")
                     .font(AppFont.emptyStateBody)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
                     .padding(AppSpacing.medium)
             }
         }
@@ -506,7 +506,7 @@ struct ResponseViewerView: View {
                 if rows.isEmpty {
                     Text("No timing phases captured for this response.")
                         .font(AppFont.emptyStateBody)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
                         .padding(AppSpacing.medium)
                 } else {
                     hoverSection(
@@ -517,7 +517,7 @@ struct ResponseViewerView: View {
             } else {
                 Text("No timing details captured for this response.")
                     .font(AppFont.emptyStateBody)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
                     .padding(AppSpacing.medium)
             }
         }
@@ -553,12 +553,12 @@ struct ResponseViewerView: View {
             ForEach(rows, id: \.0) { label, value in
                 HStack {
                     Text(label)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
                         .padding(.leading, AppSize.statusChipGlyphBox + AppSpacing.small)
                     Spacer(minLength: 0)
                     Text(value)
                         .monospacedDigit()
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
                 }
             }
         }
@@ -697,21 +697,21 @@ struct ResponseViewerView: View {
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(IconButtonStyle())
-                .foregroundStyle(wordWrap ? AppColor.accent : .secondary)
+                .foregroundStyle(wordWrap ? AppColor.accent : AppColor.textSecondary)
                 .help(wordWrap ? "Disable word wrap" : "Enable word wrap")
                 Button("Find in Response", systemImage: "magnifyingglass") {
                     findVisible = true
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(IconButtonStyle())
-                .foregroundStyle(findVisible ? AppColor.accent : .secondary)
+                .foregroundStyle(findVisible ? AppColor.accent : AppColor.textSecondary)
                 .help("Find in Response (⌘F)")
                 Button("Copy Body", systemImage: didCopyBody ? "checkmark" : "doc.on.doc") {
                     copyBody(fullBodyText(response, display: display))
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(IconButtonStyle())
-                .foregroundStyle(didCopyBody ? AppColor.success : Color.primary)
+                .foregroundStyle(didCopyBody ? AppColor.success : AppColor.textPrimary)
                 .help(
                     didCopyBody
                         ? "Copied"
@@ -747,7 +747,7 @@ struct ResponseViewerView: View {
                     )
                     .font(AppFont.small)
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
                 .padding(.horizontal, AppSpacing.medium)
                 .padding(.vertical, AppSpacing.xSmall)
                 Divider()
@@ -769,7 +769,7 @@ struct ResponseViewerView: View {
                     )
                     .font(AppFont.small)
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
                 .padding(.horizontal, AppSpacing.medium)
                 .padding(.vertical, AppSpacing.xSmall)
                 Divider()
@@ -907,7 +907,7 @@ struct ResponseViewerView: View {
             }
             .font(AppFont.small)
             .monospacedDigit()
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AppColor.textSecondary)
             Button {
                 stepFind(-1, matchCount: matchCount)
             } label: {

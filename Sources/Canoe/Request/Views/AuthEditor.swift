@@ -111,10 +111,10 @@ struct AuthorizationForm: View {
             .fixedSize()
             Text("The Authorization header will be automatically generated when you send the request.")
                 .font(AppFont.emptyStateBody)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
             Text("Fields support {{variables}} from the active environment.")
                 .font(AppFont.emptyStateBody)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
             Spacer(minLength: 0)
         }
     }
@@ -135,7 +135,7 @@ struct AuthorizationForm: View {
                 case .none:
                     Text("No Authorization header will be sent.")
                         .font(AppFont.emptyStateBody)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
                 case .basic:
                     fieldRow("Username") {
                         VariableHighlightEditor(
@@ -252,13 +252,13 @@ struct AuthorizationForm: View {
                     echoRow("Auth type") { echoField { Text(AuthType.none.label) } }
                     Text("\"\(source.ownerName)\" has no Authorization configured; requests under it send without one.")
                         .font(AppFont.emptyStateBody)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
                 }
             }
         } else {
             Text("This level takes its Authorization from its parent.")
                 .font(AppFont.emptyStateBody)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
         }
     }
 
@@ -278,7 +278,7 @@ struct AuthorizationForm: View {
         HStack(spacing: AppSpacing.medium) {
             Text(label)
                 .font(AppFont.small)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
                 .frame(width: AppSize.authLabelColumnWidth, alignment: .leading)
             field()
         }
@@ -296,7 +296,7 @@ struct AuthorizationForm: View {
             // Proportional, like every other value field in the app (the
             // Authorization tab used to be the one monospaced form).
             .font(AppFont.small)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AppColor.textSecondary)
             .padding(.horizontal, AppSpacing.small)
             .frame(maxWidth: .infinity, minHeight: AppSize.controlHeight, alignment: .leading)
             .background(

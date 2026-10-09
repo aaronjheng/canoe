@@ -15,7 +15,7 @@ struct WelcomeView: View {
                     .font(.largeTitle.weight(.semibold))
                 Text("Create a workspace to start organizing your API requests.")
                     .font(AppFont.emptyStateBody)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 420)
             }

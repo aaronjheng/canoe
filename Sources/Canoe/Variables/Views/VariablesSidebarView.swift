@@ -167,7 +167,7 @@ struct VariablesSidebarView: View {
             Divider()
             Text("Select a request to see its collection variables.")
                 .font(AppFont.emptyStateBody)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, AppSpacing.medium)
                 .padding(.vertical, AppSpacing.small)
@@ -331,12 +331,12 @@ private struct ScopeSection: View {
                 .foregroundStyle(AppColor.accent)
             Text(scope.kind.rawValue.uppercased())
                 .font(AppFont.microHeader)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
             Spacer(minLength: 0)
             Text("\(isFiltering ? visibleVariables.count : scope.variables.count)")
                 .font(AppFont.countBadge)
                 .monospacedDigit()
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
         }
         .padding(.leading, AppSpacing.medium)
         .padding(.trailing, AppSpacing.medium)
@@ -377,7 +377,7 @@ private struct ScopeSection: View {
             VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
                 Text(hint.message)
                     .font(AppFont.emptyStateBody)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 switch hint.action {
                 case .openEditor:
@@ -561,7 +561,7 @@ private struct VariableRow: View {
                         Image(systemName: variable.isEnabled ? "checkmark.square" : "square")
                     }
                     .buttonStyle(IconButtonStyle(inset: 0))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
                     .focused($focusedAction, equals: .toggle)
                     .accessibilityLabel(variable.isEnabled ? "Disable Variable" : "Enable Variable")
                     .help(variable.isEnabled ? "Disable Variable" : "Enable Variable")
@@ -577,7 +577,7 @@ private struct VariableRow: View {
                         Image(systemName: isRevealed ? "eye.slash" : "eye")
                     }
                     .buttonStyle(IconButtonStyle(inset: 0))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
                     .focused($focusedAction, equals: .reveal)
                     .accessibilityLabel(isRevealed ? "Hide value" : "Reveal value")
                     .help(isRevealed ? "Hide value" : "Reveal value")
@@ -597,7 +597,7 @@ private struct VariableRow: View {
                     Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
                 }
                 .buttonStyle(IconButtonStyle(inset: 0))
-                .foregroundStyle(didCopy ? AppColor.success : .secondary)
+                .foregroundStyle(didCopy ? AppColor.success : AppColor.textSecondary)
                 .focused($focusedAction, equals: .copy)
                 .accessibilityLabel(didCopy ? "Copied" : "Copy value")
                 .help(didCopy ? "Copied" : "Copy Value")
@@ -626,7 +626,7 @@ private struct VariableRow: View {
         Text(trimmedKey.isEmpty ? "(blank key)" : trimmedKey)
             .font(AppFont.small)
             .fontWeight(.semibold)
-            .foregroundStyle(variable.isEnabled ? .primary : .tertiary)
+            .foregroundStyle(variable.isEnabled ? AppColor.textPrimary : AppColor.tertiaryText)
             .lineLimit(1)
             .truncationMode(.middle)
             .textSelection(.enabled)
@@ -739,7 +739,7 @@ private struct VariableRow: View {
             }
         }
         .font(AppFont.small)
-        .foregroundStyle(isDimmed ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
+        .foregroundStyle(isDimmed ? AnyShapeStyle(AppColor.tertiaryText) : AnyShapeStyle(AppColor.textSecondary))
         .lineLimit(2)
         .truncationMode(.middle)
         .textSelection(.enabled)
@@ -839,7 +839,7 @@ private struct UnresolvedSection: View {
                         Text(key)
                             .font(AppFont.small)
                             .fontWeight(.semibold)
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(AppColor.textPrimary)
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .textSelection(.enabled)

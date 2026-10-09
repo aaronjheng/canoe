@@ -526,7 +526,7 @@ struct RequestEditorView: View {
                 let isHovered = hoveredCrumbID == crumb.id
                 Text(crumb.name)
                     .font(AppFont.small)
-                    .foregroundStyle(isHovered ? .primary : .secondary)
+                    .foregroundStyle(isHovered ? AppColor.textPrimary : AppColor.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     // Padding is constant, never hover-conditional: the pill
@@ -1039,7 +1039,7 @@ private struct MethodPicker: View {
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.down")
                     .font(AppFont.small.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
             }
             .padding(.leading, AppSpacing.xSmall)
             .padding(.trailing, AppSpacing.xSmall)
@@ -1151,7 +1151,7 @@ struct MethodMenuPanel: View {
                 if filteredMethods.isEmpty {
                     Text("No Matching Method")
                         .font(AppFont.emptyStateBody)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
                         .frame(maxWidth: .infinity, minHeight: 28)
                 } else {
                     ForEach(filteredMethods) { method in

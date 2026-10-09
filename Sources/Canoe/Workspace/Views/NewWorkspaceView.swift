@@ -21,7 +21,7 @@ struct NewWorkspaceView: View {
 
             Text("Give your workspace a name to organize related collections and requests.")
                 .font(AppFont.emptyStateBody)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 300)
 

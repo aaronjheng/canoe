@@ -14,7 +14,7 @@ struct ErrorBanner: View {
                 .foregroundStyle(AppColor.error)
             Text(message)
                 .font(AppFont.emptyStateBody)
-                .foregroundStyle(.primary)
+                .foregroundStyle(AppColor.textPrimary)
                 .lineLimit(3)
             Spacer()
             if let dismissAction {
@@ -44,7 +44,7 @@ struct LoadingState: View {
                 .controlSize(.small)
             Text(message)
                 .font(AppFont.emptyStateBody)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
         }
         .padding(AppSpacing.large)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

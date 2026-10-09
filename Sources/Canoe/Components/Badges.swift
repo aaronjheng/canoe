@@ -6,7 +6,7 @@ import SwiftUI
 struct Badge: View {
     let text: String
     var systemImage: String?
-    var foregroundColor: Color = .secondary
+    var foregroundColor: Color = AppColor.textSecondary
     var backgroundColor: Color = AppColor.subtleBackground
 
     var body: some View {

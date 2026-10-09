@@ -123,7 +123,7 @@ struct FolderDetailView: View {
         Button(action: action) {
             Text(title)
                 .font(AppFont.small)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .contentShape(Rectangle())
@@ -243,7 +243,7 @@ struct FolderDetailView: View {
                 .monospacedDigit()
             Text(label)
                 .font(AppFont.small)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
         }
     }
 

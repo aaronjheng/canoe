@@ -30,6 +30,9 @@ import SwiftUI
 /// - Primer brand/status/syntax colors are fixed light/dark pairs. Their
 ///   per-appearance contrast differs by design - that is Primer's palette,
 ///   not a tuning mistake; don't hand-tune them toward equal contrast.
+/// - Text tiers mirror the same way: `textPrimary` (#212121 / #E8E8E8) and
+///   `textSecondary` (#6B6B6B / #9E9E9E) hold roughly equal contrast steps
+///   against the content layer in both appearances.
 enum AppColor {
     // MARK: - Brand (Primer accent)
 
@@ -61,6 +64,19 @@ enum AppColor {
     /// white in both appearances so accent fills stay readable.
     static let onAccent = Color.white
 
+    // MARK: - Text
+
+    /// Primary text tier, for body copy, names, and values.
+    static let textPrimary = dynamic(
+        light: RGB(red: 33, green: 33, blue: 33),
+        dark: RGB(red: 232, green: 232, blue: 232)
+    )
+    /// Secondary text tier, for descriptions, meta, and placeholders.
+    static let textSecondary = dynamic(
+        light: RGB(red: 107, green: 107, blue: 107),
+        dark: RGB(red: 158, green: 158, blue: 158)
+    )
+
     // MARK: - Syntax highlighting (JSON first, more languages later)
 
     /// Object keys.
@@ -75,17 +91,20 @@ enum AppColor {
     /// `true` / `false` / `null`.
     static let syntaxKeyword = dynamic(light: RGB(red: 207, green: 34, blue: 46), dark: RGB(red: 255, green: 123, blue: 114))
 
-    /// Plain (untokenized) source in a highlighted body. The system's
-    /// secondary label tier, so unhighlighted text reads as exactly the
-    /// same text tier as the rest of the app - the AppKit editors and the
+    /// Plain (untokenized) source in a highlighted body. Aliases
+    /// `textSecondary`, so unhighlighted text reads as exactly the same
+    /// text tier as the rest of the app - the AppKit editors and the
     /// highlighter used to pick their own label colors per leaf.
-    static let syntaxPlain = Color(nsColor: .secondaryLabelColor)
+    static let syntaxPlain: Color = textSecondary
 
-    /// Primary text color, as an AppKit color for the custom `NSTextView`
-    /// editors (the highlighter and the text view must agree). Token-
-    /// mediated so a retheme reaches the editors too; dynamic, so it
-    /// follows the appearance like every other color here.
-    static let textPrimaryNS: NSColor = .labelColor
+    /// AppKit twin of `textPrimary` for the custom `NSTextView` editors (the
+    /// highlighter and the text view must agree). Token-mediated so a
+    /// retheme reaches the editors too; dynamic, so it follows the
+    /// appearance like every other color here.
+    static let textPrimaryNS: NSColor = dynamicNS(
+        light: RGB(red: 33, green: 33, blue: 33),
+        dark: RGB(red: 232, green: 232, blue: 232)
+    )
 
     // MARK: - Backgrounds
 

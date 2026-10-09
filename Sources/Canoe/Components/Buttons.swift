@@ -74,7 +74,7 @@ struct SecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.body)
-            .foregroundStyle(isEnabled ? (isDestructive ? AppColor.error : .primary) : .secondary)
+            .foregroundStyle(isEnabled ? (isDestructive ? AppColor.error : AppColor.textPrimary) : AppColor.textSecondary)
             .padding(.horizontal, AppSpacing.medium)
             .padding(.vertical, AppSpacing.xSmall)
             .frame(minHeight: minHeight)
@@ -110,7 +110,7 @@ struct ToolbarButtonStyle: ButtonStyle {
         configuration.label
             .labelStyle(.iconOnly)
             .font(AppFont.iconChrome)
-            .foregroundStyle(configuration.isPressed || (isEnabled && isHovering) ? .primary : .secondary)
+            .foregroundStyle(configuration.isPressed || (isEnabled && isHovering) ? AppColor.textPrimary : AppColor.textSecondary)
             .padding(AppSpacing.compact)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
@@ -189,7 +189,7 @@ struct ToolbarToggleButton: View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(AppFont.iconCompact)
-                .foregroundStyle(isOn ? AppColor.accent : .secondary)
+                .foregroundStyle(isOn ? AppColor.accent : AppColor.textSecondary)
                 .frame(width: AppSize.topBarControlHeight, height: AppSize.topBarControlHeight)
                 .background(
                     RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
@@ -335,7 +335,7 @@ struct RowActionsMenu<Content: View>: View {
         } label: {
             Image(systemName: "ellipsis")
                 .font(AppFont.iconRow)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
                 .contentShape(Rectangle())
         }
         .menuStyle(.borderlessButton)

@@ -31,7 +31,7 @@ struct FilterField: View {
         HStack(spacing: AppSpacing.xSmall) {
             Image(systemName: "magnifyingglass")
                 .font(AppFont.small)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
                 .focusEffectDisabled()
@@ -43,7 +43,7 @@ struct FilterField: View {
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
                 .help("Clear filter")
             }
         }
@@ -165,13 +165,13 @@ struct UnderlineTab: View {
                             .font(AppFont.small.weight(isSelected ? .semibold : .regular))
                             // Hover lifts an unselected tab's label to primary
                             // so the row reads as interactive before the click.
-                            .foregroundStyle(isSelected || isHovering ? .primary : .secondary)
+                            .foregroundStyle(isSelected || isHovering ? AppColor.textPrimary : AppColor.textSecondary)
                     }
                 if let count, count > 0 {
                     Text("\(count)")
                         .font(AppFont.countBadge)
                         .monospacedDigit()
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
                 }
                 if hasContent {
                     Circle()

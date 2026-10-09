@@ -64,7 +64,7 @@ private struct ItemsView: View {
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
                 .help("New collection")
             }
         )
@@ -103,7 +103,7 @@ private struct ItemsView: View {
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
                 .help("Add environment")
             }
         )
@@ -295,6 +295,7 @@ private struct EnvironmentRow: View {
                 Text(env.name)
                     .font(AppFont.sidebarRow)
                     .lineLimit(1)
+                    .foregroundStyle(isSelected ? AppColor.textPrimary : AppColor.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if isActive {
                     Image(systemName: "checkmark")
@@ -366,7 +367,7 @@ private struct HistoryView: View {
             HStack {
                 Text(store.history.isEmpty ? "No requests yet" : "\(store.history.count) requests")
                     .font(AppFont.columnHeader)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
                 Spacer(minLength: 0)
                 if !store.history.isEmpty {
                     Button("Clear", systemImage: "trash") {
@@ -374,7 +375,7 @@ private struct HistoryView: View {
                     }
                     .labelStyle(.iconOnly)
                     .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
                     .help("Clear history")
                     .confirmationDialog(
                         "Clear all history",
@@ -647,7 +648,7 @@ private struct InlineActionButton: View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(AppFont.iconRow)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
                 .frame(width: AppSize.compactControl, height: AppSize.compactControl)
                 .contentShape(Rectangle())
         }
@@ -827,6 +828,7 @@ private struct CollectionTree: View {
                         sidebarRowLabel(collection.name, filter: store.sidebarFilter)
                             .font(AppFont.sidebarRow)
                             .lineLimit(1)
+                            .foregroundStyle(isSelected ? AppColor.textPrimary : AppColor.textSecondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     // Tree level 1: one expander column in from the header.
@@ -1069,10 +1071,11 @@ private struct FolderTree: View {
                             .help(isExpanded ? "Collapse folder" : "Expand folder")
                             Image(systemName: "folder")
                                 .font(AppFont.iconLarge)  // VS Code uses 16px tree icons
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(AppColor.textSecondary)
                             sidebarRowLabel(folder.name, filter: store.sidebarFilter)
                                 .font(AppFont.sidebarRow)
                                 .lineLimit(1)
+                                .foregroundStyle(isSelected ? AppColor.textPrimary : AppColor.textSecondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .padding(.trailing, AppSpacing.xSmall)
@@ -1257,7 +1260,7 @@ private struct RequestRow: View {
                             sidebarRowLabel(request.name, filter: store.sidebarFilter)
                                 .font(AppFont.sidebarRow)
                                 .lineLimit(1)
-                                .foregroundStyle(.primary)
+                                .foregroundStyle(isSelected ? AppColor.textPrimary : AppColor.textSecondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .padding(.trailing, AppSpacing.xSmall)
@@ -1365,7 +1368,7 @@ private struct HistoryRow: View {
                 } label: {
                     Image(systemName: "trash")
                         .font(AppFont.iconRow)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
                 }
                 .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
                 .help("Remove from history")
@@ -1380,7 +1383,7 @@ private struct HistoryRow: View {
                 .fill(isHovering && requestExists ? AppColor.subtleBackground : .clear)
         )
         .animation(AppMotion.quick, value: isHovering)
-        .foregroundStyle(requestExists ? .primary : .tertiary)
+        .foregroundStyle(requestExists ? AppColor.textPrimary : AppColor.tertiaryText)
         .opacity(requestExists ? 1 : AppOpacity.disabled)
         .onHover { isHovering = $0 }
         .help(

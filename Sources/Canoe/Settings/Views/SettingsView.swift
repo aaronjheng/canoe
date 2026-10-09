@@ -85,14 +85,14 @@ struct SettingsView: View {
                     Text("Status")
                     Spacer()
                     Text(syncStatus)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
                 }
                 if let vaultURL = appStore.vault.vaultURL {
                     HStack {
                         Text("Folder")
                         Spacer()
                         Text(vaultURL.path(percentEncoded: false))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(AppColor.textSecondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }

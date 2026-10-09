@@ -497,12 +497,12 @@ struct EnvironmentPicker: View {
         HStack(spacing: AppSpacing.xxSmall) {
             Text(store.activeEnvironment?.name ?? "No environment")
                 .font(AppFont.small)
-                .foregroundStyle(store.activeEnvironment == nil ? .secondary : .primary)
+                .foregroundStyle(store.activeEnvironment == nil ? AppColor.textSecondary : AppColor.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Image(systemName: "chevron.down")
                 .font(AppFont.small.weight(.medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
         }
         .padding(.horizontal, AppSpacing.small)
         .frame(minHeight: AppSize.tabHeight)
@@ -632,7 +632,7 @@ struct EnvironmentPickerPanel: View {
             if visibleRows.isEmpty {
                 Text("No Matching Environments")
                     .font(AppFont.emptyStateBody)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
                     .frame(maxWidth: .infinity, minHeight: AppSize.controlHeight)
             } else {
                 // Rows wrapped in an explicit stack with the insets on the
@@ -648,12 +648,12 @@ struct EnvironmentPickerPanel: View {
                             // (see WorkspacesView's header for the same gotcha).
                             Image(systemName: "checkmark")
                                 .font(AppFont.small.weight(.medium))
-                                .foregroundStyle(.primary)
+                                .foregroundStyle(AppColor.textPrimary)
                                 .frame(width: AppSize.compactControl)
                                 .opacity(row == activeRow ? 1 : 0)
                             Text(name(for: row))
                                 .font(AppFont.small)
-                                .foregroundStyle(.primary)
+                                .foregroundStyle(AppColor.textPrimary)
                                 .lineLimit(1)
                                 .truncationMode(.tail)
                             Spacer(minLength: 0)
@@ -693,13 +693,13 @@ struct EnvironmentPickerPanel: View {
                 HStack(spacing: AppSpacing.small) {
                     Image(systemName: "plus")
                         .font(AppFont.small.weight(.medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
                         // The checkmark gutter, so the create label lines up
                         // with the environment names above it.
                         .frame(width: AppSize.compactControl)
                     Text("Create new environment")
                         .font(AppFont.small)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(AppColor.textPrimary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                     Spacer(minLength: 0)
@@ -862,7 +862,7 @@ private struct TabPill: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(AppFont.small.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
                     .frame(width: Self.closeButtonSide, height: Self.closeButtonSide)
                     // Opaque rounded square matching the pill's fill: the
                     // tints are translucent (primary at 5-8%), so a tile
@@ -1070,7 +1070,7 @@ private struct TabItemIcon: View {
                 MethodTag(method: request.httpMethod)
             } else {
                 Image(systemName: "doc.text")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
             }
         case .environment:
             Image(systemName: "globe")
@@ -1176,7 +1176,7 @@ struct TabDrawer: View {
             if matchingTabs.isEmpty {
                 Text("No Matching Tabs")
                     .font(AppFont.emptyStateBody)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
                     .frame(maxWidth: .infinity, minHeight: AppSize.controlHeight)
             } else {
                 ScrollViewReader { proxy in
@@ -1190,7 +1190,7 @@ struct TabDrawer: View {
                                     TabItemIcon(tab: tab)
                                     Text(store.tabDisplayName(tab))
                                         .font(AppFont.small)
-                                        .foregroundStyle(.primary)
+                                        .foregroundStyle(AppColor.textPrimary)
                                         .lineLimit(1)
                                         .truncationMode(.tail)
                                         .modifier(PreviewTitleStyle(isPreview: store.previewTab == tab))

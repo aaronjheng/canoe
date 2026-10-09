@@ -67,7 +67,7 @@ struct WorkspaceOverviewView: View {
                 .monospacedDigit()
             Text(label)
                 .font(AppFont.small)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
         }
     }
 }

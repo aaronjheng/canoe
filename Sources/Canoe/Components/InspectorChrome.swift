@@ -67,7 +67,7 @@ struct InspectorHeader: View {
                     Button("Hide", systemImage: "xmark", action: onClose)
                         .labelStyle(.iconOnly)
                         .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
                         .help(closeHelp)
                 }
             }

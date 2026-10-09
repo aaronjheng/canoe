@@ -51,11 +51,11 @@ struct WorkspaceListStatusBarView: View {
         HStack(spacing: AppSpacing.compact) {
             Text("Workspaces")
                 .font(AppFont.small)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
             Text("\(workspaceCount)")
                 .font(AppFont.countBadge)
                 .monospacedDigit()
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, AppSpacing.medium)

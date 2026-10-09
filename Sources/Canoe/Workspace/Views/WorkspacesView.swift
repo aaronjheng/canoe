@@ -144,7 +144,7 @@ struct WorkspacesView: View {
     private func countCell(_ value: Int, width: CGFloat) -> some View {
         Text("\(value)")
             .monospacedDigit()
-            .foregroundStyle(value > 0 ? Color.secondary : AppColor.tertiaryText)
+            .foregroundStyle(value > 0 ? AppColor.textSecondary : AppColor.tertiaryText)
             .frame(width: width, alignment: .trailing)
     }
 
@@ -159,7 +159,7 @@ struct WorkspacesView: View {
                     .symbolRenderingMode(.multicolor)
             } else {
                 Image(systemName: "square")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
                     .background {
                         RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
                             .fill(AppColor.controlBackground)
@@ -295,7 +295,7 @@ struct WorkspacesView: View {
             }
             .buttonStyle(.plain)
             .clickCursor()
-            .foregroundStyle(sortMode == .name ? AppColor.accent : Color.secondary)
+            .foregroundStyle(sortMode == .name ? AppColor.accent : AppColor.textSecondary)
             .help("Sort by workspace name")
             Text("Collections")
                 .frame(width: ColumnWidth.count, alignment: .trailing)
@@ -317,7 +317,7 @@ struct WorkspacesView: View {
             }
             .buttonStyle(.plain)
             .clickCursor()
-            .foregroundStyle(sortMode == .activity ? AppColor.accent : Color.secondary)
+            .foregroundStyle(sortMode == .activity ? AppColor.accent : AppColor.textSecondary)
             .help("Sort by last activity")
             // Spacer, not Color.clear: a sizeless view takes whatever height
             // it is offered (blowing the header up); Spacer never inflates.
@@ -327,7 +327,7 @@ struct WorkspacesView: View {
         }
         .containerRelativeFrame(.horizontal, alignment: .leading)
         .font(AppFont.columnHeader)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(AppColor.textSecondary)
         .padding(.vertical, AppSpacing.small)
         .background(AppColor.tableHeaderBackground)
         .clipped()
@@ -358,7 +358,7 @@ struct WorkspacesView: View {
                     .lineLimit(1)
             }
             .font(AppFont.rowTitle)
-            .foregroundStyle(.primary)
+            .foregroundStyle(AppColor.textPrimary)
             .frame(minWidth: ColumnWidth.nameMin, maxWidth: .infinity, alignment: .leading)
             .contextMenu {
                 Button("Open Workspace") { store.openWorkspace(workspace.id) }
@@ -371,7 +371,7 @@ struct WorkspacesView: View {
             countCell(requestCount(for: workspace), width: ColumnWidth.count)
             countCell(environmentCount(for: workspace), width: ColumnWidth.environments)
             Text(lastActivityText(latestActivity))
-                .foregroundStyle(latestActivity != nil ? Color.secondary : AppColor.tertiaryText)
+                .foregroundStyle(latestActivity != nil ? AppColor.textSecondary : AppColor.tertiaryText)
                 .lineLimit(1)
                 .frame(width: ColumnWidth.activity, alignment: .trailing)
             HStack(spacing: AppSpacing.xSmall) {
@@ -379,7 +379,7 @@ struct WorkspacesView: View {
                     store.openWorkspace(workspace.id)
                 } label: {
                     Image(systemName: "arrow.right.circle")
-                        .foregroundStyle(isHovered ? AppColor.accent : Color.secondary)
+                        .foregroundStyle(isHovered ? AppColor.accent : AppColor.textSecondary)
                 }
                 .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
                 .focused($focusedActionRow, equals: workspace.id)
@@ -389,7 +389,7 @@ struct WorkspacesView: View {
                     deleteTargets = [workspace.id]
                 } label: {
                     Image(systemName: "trash")
-                        .foregroundStyle(isHovered ? AppColor.error : Color.secondary)
+                        .foregroundStyle(isHovered ? AppColor.error : AppColor.textSecondary)
                 }
                 .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
                 .focused($focusedActionRow, equals: workspace.id)

@@ -20,11 +20,11 @@ struct AboutView: View {
 
                 Text(Self.versionText)
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
 
                 Text("Native macOS API client")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
             }
             .multilineTextAlignment(.center)
 
@@ -38,7 +38,7 @@ struct AboutView: View {
             if !AppLicense.copyrightLine.isEmpty {
                 Text(AppLicense.copyrightLine)
                     .font(AppFont.small)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
                     .multilineTextAlignment(.center)
             }
         }

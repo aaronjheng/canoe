@@ -150,7 +150,7 @@ struct KeyValueEditor<T: KVItem>: View {
                 HStack {
                     Text(title)
                         .font(AppFont.sectionTitle)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(AppColor.textPrimary)
                     Spacer(minLength: 0)
                     if let titleAction {
                         Button(action: titleAction.action) {
@@ -316,7 +316,7 @@ struct KeyValueEditor<T: KVItem>: View {
     private func headerLabel(_ text: String) -> some View {
         Text(text)
             .font(AppFont.columnHeader)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AppColor.textSecondary)
             .padding(.horizontal, AppSpacing.small)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -338,7 +338,7 @@ struct KeyValueEditor<T: KVItem>: View {
                     }
                 }
                 .font(AppFont.columnHeader)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
@@ -650,7 +650,7 @@ private struct KVRow: View {
                     } else {
                         Image(systemName: "line.3.horizontal")
                             .font(AppFont.iconRow)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(AppColor.textSecondary)
                             .frame(width: gripGlyphWidth)
                             .frame(maxHeight: .infinity)
                             .contentShape(Rectangle())
@@ -778,7 +778,7 @@ private struct KVRow: View {
     private func cell(_ id: HoveredCell, @ViewBuilder field: () -> some View) -> some View {
         field()
             .font(AppFont.small)
-            .foregroundStyle(isEnabled ? .primary : .secondary)
+            .foregroundStyle(isEnabled ? AppColor.textPrimary : AppColor.textSecondary)
             .opacity(isEnabled ? 1 : AppOpacity.disabled)
             .padding(.horizontal, AppSpacing.small)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -851,7 +851,7 @@ private struct KVRow: View {
         HStack(spacing: AppSpacing.xSmall) {
             Text(value.isEmpty ? "No file selected" : URL(fileURLWithPath: value).lastPathComponent)
                 .font(AppFont.small)
-                .foregroundStyle(value.isEmpty ? .tertiary : .primary)
+                .foregroundStyle(value.isEmpty ? AppColor.tertiaryText : AppColor.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -892,7 +892,7 @@ private struct KVRow: View {
                 isSecret.wrappedValue.toggle()
             } label: {
                 Image(systemName: isSecret.wrappedValue ? "eye.slash" : "eye")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
                     .contentShape(Rectangle())
             }
             .buttonStyle(IconButtonStyle(inset: 0))
@@ -911,7 +911,7 @@ private struct KVRow: View {
                 } label: {
                     Image(systemName: "trash")
                         .font(AppFont.iconRow)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(IconButtonStyle(inset: 0))
@@ -984,7 +984,7 @@ private struct ReadOnlyKVRow: View {
     private func readOnlyCell(_ text: String, showsInfo: Bool = false) -> some View {
         Text(text)
             .font(AppFont.small)
-            .foregroundStyle(isMuted ? Color.secondary : Color.primary)
+            .foregroundStyle(isMuted ? AppColor.textSecondary : AppColor.textPrimary)
             .lineLimit(1)
             .truncationMode(.middle)
             .textSelection(.enabled)
@@ -995,7 +995,7 @@ private struct ReadOnlyKVRow: View {
                 if showsInfo {
                     Image(systemName: "info.circle")
                         .font(AppFont.iconRow)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
                         .padding(.trailing, AppSpacing.xSmall)
                         .help("Calculated when request is sent")
                 }

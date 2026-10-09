@@ -292,7 +292,7 @@ private struct WorkspaceInfoCard: View {
     private var createdRow: some View {
         HStack(spacing: AppSpacing.small) {
             Text("Created")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppColor.textSecondary)
             Text(Self.relativeFormatter.localizedString(for: workspace.createdAt, relativeTo: Date()))
         }
         .font(AppFont.small)
@@ -307,7 +307,7 @@ private struct WorkspaceInfoCard: View {
             HStack(spacing: AppSpacing.small) {
                 Text("Workspace ID")
                     .font(AppFont.small)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
                 Spacer(minLength: 0)
                 Button {
                     copyID()
@@ -318,7 +318,7 @@ private struct WorkspaceInfoCard: View {
                 // copy glyph and the checkmark are different sizes, and the
                 // swap must not resize the row under the divider.
                 .buttonStyle(IconButtonStyle())
-                .foregroundStyle(didCopyID ? AppColor.success : Color.secondary)
+                .foregroundStyle(didCopyID ? AppColor.success : AppColor.textSecondary)
                 .help("Copy workspace ID")
             }
             Text(workspace.id.uuidString)

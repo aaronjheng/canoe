@@ -158,11 +158,11 @@ private struct BinaryFileEditor: View {
         VStack(spacing: 0) {
             HStack(spacing: AppSpacing.small) {
                 Image(systemName: "doc.fill")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
                 if path.isEmpty {
                     Text("No file selected. The raw file bytes are sent as the body.")
                         .font(AppFont.emptyStateBody)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
                 } else {
                     VStack(alignment: .leading, spacing: AppSpacing.xxSmall) {
                         Text(URL(fileURLWithPath: path).lastPathComponent)
@@ -173,7 +173,7 @@ private struct BinaryFileEditor: View {
                         if let fileSize {
                             Text(fileSize)
                                 .font(AppFont.small)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(AppColor.textSecondary)
                         }
                     }
                 }
@@ -209,10 +209,10 @@ private struct BodyTypeRadio: View {
             HStack(spacing: AppSpacing.xSmall) {
                 Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
                     .font(AppFont.small)
-                    .foregroundStyle(isSelected ? AppColor.accent : .secondary)
+                    .foregroundStyle(isSelected ? AppColor.accent : AppColor.textSecondary)
                 Text(type.label)
                     .font(AppFont.small)
-                    .foregroundStyle(isSelected ? .primary : .secondary)
+                    .foregroundStyle(isSelected ? AppColor.textPrimary : AppColor.textSecondary)
             }
             .padding(.horizontal, AppSpacing.xxSmall)
             .padding(.vertical, 2)
