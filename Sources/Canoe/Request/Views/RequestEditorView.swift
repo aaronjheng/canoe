@@ -343,7 +343,11 @@ struct RequestEditorView: View {
             urlBar
                 .zIndex(1)
             sectionTabs
+            // On the same gutter as the tab labels above and the section
+            // content below, rather than running across the pane's full
+            // width.
             Divider()
+                .padding(.horizontal, AppSpacing.medium)
             sectionContent
         }
         .background(AppColor.controlBackground)
@@ -843,11 +847,12 @@ struct RequestEditorView: View {
     // MARK: - Section tabs
 
     private var sectionTabs: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: AppSpacing.large) {
             UnderlineTab(
                 title: RequestSection.params.rawValue,
                 count: enabledParamCount,
                 hasContent: enabledParamCount > 0,
+                labelInset: 0,
                 isSelected: section == .params,
                 action: {
                     urlFieldFocused = nil
@@ -858,6 +863,7 @@ struct RequestEditorView: View {
                 title: RequestSection.auth.rawValue,
                 count: isAuthConfigured ? 1 : nil,
                 hasContent: isAuthConfigured,
+                labelInset: 0,
                 isSelected: section == .auth,
                 action: {
                     urlFieldFocused = nil
@@ -870,6 +876,7 @@ struct RequestEditorView: View {
                 // Manual headers only: the generated defaults (Host,
                 // User-Agent, …) are not this section's content.
                 hasContent: enabledHeaderCount > 0,
+                labelInset: 0,
                 isSelected: section == .headers,
                 action: {
                     urlFieldFocused = nil
@@ -881,6 +888,7 @@ struct RequestEditorView: View {
                 count: bodyRowCount,
                 // Any non-none body type counts as content, filled or not.
                 hasContent: draft.requestBodyType != .none,
+                labelInset: 0,
                 isSelected: section == .body,
                 action: {
                     urlFieldFocused = nil
@@ -889,7 +897,10 @@ struct RequestEditorView: View {
             )
             Spacer()
         }
-        .padding(.horizontal, AppSpacing.small)
+        // The row owns the whole gutter: tabs carry no label inset, so the
+        // labels and their underlines sit exactly on the content column
+        // below (URL bar and section content are both at `medium`).
+        .padding(.horizontal, AppSpacing.medium)
     }
 
     // MARK: - Section content

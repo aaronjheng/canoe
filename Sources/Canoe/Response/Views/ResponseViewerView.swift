@@ -5,10 +5,7 @@ struct ResponseViewerView: View {
     @Environment(AppStore.self) private var store
     @State private var bodyMode: BodyMode = .pretty
     @State private var wordWrap = false
-    @State private var headerFilter = ""
     @State private var responseSection: ResponseSection = .body
-    @State private var headerSort: [KeyPathComparator<HTTPHeader>] = []
-    @State private var headerSelection: HTTPHeader.ID?
     /// Render cache keyed by response + body mode (see refreshBodyRender).
     @State private var bodyRenderKey = ""
     @State private var bodyRenderDisplay = BodyDisplay(text: "", totalCount: nil, isJSON: false)
@@ -203,7 +200,10 @@ struct ResponseViewerView: View {
             : (display.isJSON ? SyntaxHighlight.attributedText(display.text) : AttributedString(display.text))
         return VStack(spacing: 0) {
             sectionBar(response)
+            // Same gutter as the request editor's tab bar (labels, underline,
+            // divider, content all on one column).
             Divider()
+                .padding(.horizontal, AppSpacing.medium)
             if responseSection == .body {
                 bodyContent(response, display, rendered: rendered, renderedAttributed: renderedAttributed)
             } else {
@@ -213,11 +213,7 @@ struct ResponseViewerView: View {
         .task(id: key) {
             updateBodyRenderCache(response, key: key)
         }
-        // A header search typed for one response must not leak into the next:
-        // without this a stale filter renders "No Matching Headers" for a
-        // response that does have headers.
         .onChange(of: response.id) { _, _ in
-            headerFilter = ""
             saveError = nil
             // The acknowledgement belongs to the response it was copied
             // from: a fresh response must not wear a stale checkmark.
@@ -318,16 +314,18 @@ struct ResponseViewerView: View {
     /// Headers/Body tabs leading, the status capsule and send metrics
     /// (duration, size) trailing, mirroring the old title bar's summary.
     private func sectionBar(_ response: ResponseModel) -> some View {
-        HStack(spacing: 0) {
+        HStack(spacing: AppSpacing.large) {
             UnderlineTab(
                 title: ResponseSection.headers.rawValue,
                 count: response.headers.isEmpty ? nil : response.headers.count,
+                labelInset: 0,
                 isSelected: responseSection == .headers,
                 action: { responseSection = .headers }
             )
             UnderlineTab(
                 title: ResponseSection.body.rawValue,
                 count: nil,
+                labelInset: 0,
                 isSelected: responseSection == .body,
                 action: { responseSection = .body }
             )
@@ -353,7 +351,7 @@ struct ResponseViewerView: View {
                 networkStatus
             }
         }
-        .padding(.horizontal, AppSpacing.small)
+        .padding(.horizontal, AppSpacing.medium)
     }
 
     /// Network details entry in the metrics row - icon only. Not a button:
@@ -978,46 +976,30 @@ struct ResponseViewerView: View {
                 description: Text("This response did not return any headers.")
             )
         } else {
-            VStack(spacing: 0) {
-                FilterField(text: $headerFilter, placeholder: "Search Headers", isBoxed: true)
-                    .padding(.vertical, AppSpacing.xSmall)
-                let query = headerFilter.trimmingCharacters(in: .whitespacesAndNewlines)
-                let matches = response.headers.filter { header in
-                    query.isEmpty
-                        || header.key.localizedCaseInsensitiveContains(query)
-                        || header.value.localizedCaseInsensitiveContains(query)
-                }
-                if matches.isEmpty {
-                    ContentUnavailableView(
-                        "No Matching Headers",
-                        systemImage: "magnifyingglass",
-                        description: Text("No headers match the current search.")
+            // Same grid as the request editor's headers table, in its bare
+            // two-column form (no checkbox/action columns, no ghost row): a
+            // pure content display whose leading edge sits on the shared
+            // 12pt gutter. The 8pt top pad keeps it from crowding the
+            // section-bar divider.
+            KeyValueEditor(
+                items: .constant([]),
+                makeNew: { HTTPHeader() },
+                readOnlyItems: response.headers.map {
+                    KeyValueReadOnlyItem(
+                        id: $0.id.uuidString,
+                        key: $0.key,
+                        value: $0.value,
+                        showsKeyInfo: false
                     )
-                } else {
-                    Table(matches.sorted(using: headerSort), selection: $headerSelection, sortOrder: $headerSort) {
-                        TableColumn("Key", value: \.key) { header in
-                            Text(header.key)
-                                .textSelection(.enabled)
-                        }
-                        .width(min: 120, ideal: 200)
-                        TableColumn("Value", value: \.value) { header in
-                            Text(header.value)
-                                .textSelection(.enabled)
-                        }
-                    }
-                    .font(AppFont.small)
-                    .scrollContentBackground(.hidden)
-                    .background(AppColor.controlBackground)
-                    .contextMenu {
-                        Button("Copy All as Text") {
-                            copyToPasteboard(
-                                matches.map { "\($0.key): \($0.value)" }.joined(separator: "\n"))
-                        }
-                        if let selected = matches.first(where: { $0.id == headerSelection }) {
-                            Button("Copy Value") { copyToPasteboard(selected.value) }
-                            Button("Copy Header") { copyToPasteboard("\(selected.key): \(selected.value)") }
-                        }
-                    }
+                },
+                showsGhostRow: false,
+                showsIconColumns: false
+            )
+            .padding(.top, AppSpacing.small)
+            .contextMenu {
+                Button("Copy All as Text") {
+                    copyToPasteboard(
+                        response.headers.map { "\($0.key): \($0.value)" }.joined(separator: "\n"))
                 }
             }
         }

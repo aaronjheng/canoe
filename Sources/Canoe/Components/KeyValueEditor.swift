@@ -20,6 +20,10 @@ struct KeyValueReadOnlyItem: Identifiable, Hashable {
     let key: String
     let value: String
     var isMuted: Bool = false
+    /// Info glyph trailing the key cell ("Calculated when request is sent").
+    /// On for the request's generated headers; off for display-only tables
+    /// such as the response headers, where nothing is calculated.
+    var showsKeyInfo: Bool = true
 }
 
 struct KeyValueEditorTitleAction {
@@ -53,6 +57,14 @@ struct KeyValueEditor<T: KVItem>: View {
     var title: String?
     var titleAction: KeyValueEditorTitleAction?
     var readOnlyItems: [KeyValueReadOnlyItem] = []
+    /// Whether the trailing in-progress row is drawn. Read-only displays
+    /// (the response headers) have nothing to type into, so they hide it.
+    var showsGhostRow: Bool = true
+    /// Drop the leading checkbox and trailing action columns (and their
+    /// rules): the grid becomes a bare Key | Value table for pure content
+    /// display - the response headers. Read-only tables only; editable rows
+    /// need those columns for their controls.
+    var showsIconColumns: Bool = true
     /// Resolved variable scope for `{{placeholder}}` highlighting.
     var variables: [String: String] = [:]
     /// Completion candidates for `{{` auto-completion; nil derives names
@@ -117,7 +129,10 @@ struct KeyValueEditor<T: KVItem>: View {
     private let kindMenuWidth: CGFloat = 72
     private var secretColumnWidth: CGFloat { secretKeyPath == nil ? 0 : 26 }
     private var showsKindMenu: Bool { kindKeyPath != nil }
-    private var leadingColumnWidth: CGFloat { allowsReorder ? 38 : toggleColumnWidth }
+    private var leadingColumnWidth: CGFloat {
+        guard showsIconColumns else { return 0 }
+        return allowsReorder ? 38 : toggleColumnWidth
+    }
     /// Merged trailing icon column. Eye and trash share one fixed glyph box
     /// each (18pt, squared so SF Symbols of different widths match) with the
     /// leading column's 2pt group gap, plus 4pt side insets so neither glyph
@@ -125,7 +140,8 @@ struct KeyValueEditor<T: KVItem>: View {
     /// secret column keep the lone delete cell in a 26pt column (4pt insets
     /// around the same 18pt box).
     private var trailingColumnWidth: CGFloat {
-        secretColumnWidth > 0 ? 46 : deleteColumnWidth
+        guard showsIconColumns else { return 0 }
+        return secretColumnWidth > 0 ? 46 : deleteColumnWidth
     }
 
     var body: some View {
@@ -173,6 +189,8 @@ struct KeyValueEditor<T: KVItem>: View {
                     key: item.key,
                     value: item.value,
                     isMuted: item.isMuted,
+                    showsKeyInfo: item.showsKeyInfo,
+                    showsIconColumns: showsIconColumns,
                     leadingColumnWidth: leadingColumnWidth,
                     trailingColumnWidth: trailingColumnWidth,
                     showsGrip: allowsReorder,
@@ -228,29 +246,31 @@ struct KeyValueEditor<T: KVItem>: View {
             // report when their editing session ends: the ghost then resets
             // to an empty buffer - the real row owns the content from there.
             // It is also a drop target: dropping here moves the row to the end.
-            KVRow(
-                isEnabled: ghostEnabledBinding,
-                key: ghostBinding(\.key, focusOn: { .key($0) }),
-                value: ghostBinding(\.value, focusOn: { .value($0) }),
-                kind: ghostKindBinding,
-                showsKindMenu: showsKindMenu,
-                kindMenuWidth: kindMenuWidth,
-                isSecret: nil,
-                secretColumnWidth: secretColumnWidth,
-                variables: variables,
-                suggestions: rowSuggestions,
-                keyPlaceholder: keyPlaceholder,
-                valuePlaceholder: valuePlaceholder,
-                focus: $focusedCell,
-                keyFocus: .ghostKey,
-                valueFocus: .ghostValue,
-                leadingColumnWidth: leadingColumnWidth,
-                trailingColumnWidth: trailingColumnWidth,
-                onEditingEnded: { ghost = nil },
-                dropTarget: $dropTargetEnd,
-                onDropRow: { moveDraggedRowToEnd() },
-                allowsReorder: allowsReorder
-            )
+            if showsGhostRow {
+                KVRow(
+                    isEnabled: ghostEnabledBinding,
+                    key: ghostBinding(\.key, focusOn: { .key($0) }),
+                    value: ghostBinding(\.value, focusOn: { .value($0) }),
+                    kind: ghostKindBinding,
+                    showsKindMenu: showsKindMenu,
+                    kindMenuWidth: kindMenuWidth,
+                    isSecret: nil,
+                    secretColumnWidth: secretColumnWidth,
+                    variables: variables,
+                    suggestions: rowSuggestions,
+                    keyPlaceholder: keyPlaceholder,
+                    valuePlaceholder: valuePlaceholder,
+                    focus: $focusedCell,
+                    keyFocus: .ghostKey,
+                    valueFocus: .ghostValue,
+                    leadingColumnWidth: leadingColumnWidth,
+                    trailingColumnWidth: trailingColumnWidth,
+                    onEditingEnded: { ghost = nil },
+                    dropTarget: $dropTargetEnd,
+                    onDropRow: { moveDraggedRowToEnd() },
+                    allowsReorder: allowsReorder
+                )
+            }
         }
         .background(AppColor.controlBackground)
         .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
@@ -267,11 +287,15 @@ struct KeyValueEditor<T: KVItem>: View {
         // instead. Form-data's Type menu lives inside the key cell, so it
         // needs no header cell either.
         HStack(spacing: 0) {
-            Color.clear.frame(width: leadingIconWidth)
+            if showsIconColumns {
+                Color.clear.frame(width: leadingIconWidth)
+            }
             headerLabel(keyHeader, isKey: true)
             verticalRule
             headerLabel(valueHeader)
-            Color.clear.frame(width: trailingIconWidth)
+            if showsIconColumns {
+                Color.clear.frame(width: trailingIconWidth)
+            }
         }
         .frame(height: AppSize.tableRowHeight)
         .background(headerBackground ?? .clear)
@@ -912,6 +936,8 @@ private struct ReadOnlyKVRow: View {
     let key: String
     let value: String
     let isMuted: Bool
+    let showsKeyInfo: Bool
+    let showsIconColumns: Bool
     let leadingColumnWidth: CGFloat
     let trailingColumnWidth: CGFloat
     let showsGrip: Bool
@@ -919,13 +945,17 @@ private struct ReadOnlyKVRow: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            readOnlyLeadingCell
-            verticalRule
-            readOnlyCell(key, showsInfo: true)
+            if showsIconColumns {
+                readOnlyLeadingCell
+                verticalRule
+            }
+            readOnlyCell(key, showsInfo: showsKeyInfo)
             verticalRule
             readOnlyCell(value)
-            verticalRule
-            Color.clear.frame(width: trailingColumnWidth)
+            if showsIconColumns {
+                verticalRule
+                Color.clear.frame(width: trailingColumnWidth)
+            }
         }
         .frame(height: AppSize.tableRowHeight)
         .background(alignment: .bottom) {

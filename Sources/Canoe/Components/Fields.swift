@@ -4,9 +4,9 @@ import SwiftUI
 // Shared filter fields and underline tabs.
 // MARK: - Filter field
 
-/// Shared magnifier + plain field + clear button used by the sidebar,
-/// variables inspector, and response headers search. Same spacing and help
-/// everywhere; only the placeholder differs.
+/// Shared magnifier + plain field + clear button used by the sidebar and
+/// variables inspector. Same spacing and help everywhere; only the
+/// placeholder differs.
 struct FilterField: View {
     @Binding var text: String
     var placeholder: String
@@ -142,6 +142,10 @@ struct UnderlineTab: View {
     /// Draws the success-green content dot (the request editor's signal that
     /// the section holds data even when it shows no count).
     var hasContent: Bool = false
+    /// Horizontal inset between the label and the tab's underline/hit area.
+    /// The request editor passes 0 and pads the whole row to its content
+    /// gutter instead, so label, underline, and content share one edge.
+    var labelInset: CGFloat = AppSpacing.small
     let isSelected: Bool
     let action: () -> Void
     @State private var isHovering = false
@@ -175,7 +179,7 @@ struct UnderlineTab: View {
                         .frame(width: AppSize.contentDot, height: AppSize.contentDot)
                 }
             }
-            .padding(.horizontal, AppSpacing.small)
+            .padding(.horizontal, labelInset)
             .padding(.top, AppSpacing.small)
             .padding(.bottom, AppSpacing.xSmall)
             // Underline as a bottom-aligned background: a bare `Rectangle()`
