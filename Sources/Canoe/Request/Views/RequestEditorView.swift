@@ -917,6 +917,8 @@ struct RequestEditorView: View {
                 suggestions: requestSuggestions,
                 keyPlaceholder: "Key",
                 valuePlaceholder: "Value",
+                // Request tables skip the header wash.
+                headerBackground: nil,
                 allowsReorder: true
             )
             // Fresh table state per request: the editor holds ghost-row and
@@ -938,6 +940,8 @@ struct RequestEditorView: View {
                 suggestions: requestSuggestions,
                 keyPlaceholder: "Key",
                 valuePlaceholder: "Value",
+                // Request tables skip the header wash.
+                headerBackground: nil,
                 allowsReorder: true
             )
             .id(draft.id)

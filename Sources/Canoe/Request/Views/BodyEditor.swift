@@ -95,6 +95,8 @@ struct BodyEditor: View {
                 suggestions: requestSuggestions,
                 keyPlaceholder: "Key",
                 valuePlaceholder: "Value",
+                // Request tables skip the header wash.
+                headerBackground: nil,
                 kindKeyPath: \.fieldKind
             )
             .id(request.id)
@@ -105,7 +107,9 @@ struct BodyEditor: View {
                 variables: resolvedVariables,
                 suggestions: requestSuggestions,
                 keyPlaceholder: "Key",
-                valuePlaceholder: "Value"
+                valuePlaceholder: "Value",
+                // Request tables skip the header wash.
+                headerBackground: nil
             )
             .id(request.id)
         case .raw:

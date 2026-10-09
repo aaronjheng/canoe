@@ -986,7 +986,9 @@ struct ResponseViewerView: View {
                 makeNew: { HTTPHeader() },
                 readOnlyItems: headerRows(for: response),
                 showsGhostRow: false,
-                showsIconColumns: false
+                showsIconColumns: false,
+                // Response tables skip the header wash.
+                headerBackground: nil
             )
             .padding(.top, AppSpacing.small)
             .contextMenu {
