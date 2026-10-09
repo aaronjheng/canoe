@@ -1019,24 +1019,28 @@ private struct ReadOnlyKVRow: View {
     }
 
     private func readOnlyCell(_ text: String, showsInfo: Bool = false) -> some View {
-        Text(text)
-            .font(AppFont.small)
-            .foregroundStyle(isMuted ? AppColor.textSecondary : AppColor.textPrimary)
-            .lineLimit(1)
-            .truncationMode(.middle)
-            .textSelection(.enabled)
-            .padding(.leading, AppSpacing.small)
-            .padding(.trailing, showsInfo ? AppSpacing.large : AppSpacing.small)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .overlay(alignment: .trailing) {
-                if showsInfo {
-                    Image(systemName: "info.circle")
-                        .font(AppFont.iconRow)
-                        .foregroundStyle(AppColor.textSecondary)
-                        .padding(.trailing, AppSpacing.xSmall)
-                        .help("Calculated when request is sent")
-                }
+        // The info glyph is a real sibling, not an overlay: tooltips do not
+        // fire reliably from inside an overlay, and the selectable text
+        // below is AppKit-backed and would swallow the hover anyway (same
+        // reason editable cells report hover through onHoverChanged).
+        HStack(spacing: 0) {
+            Text(text)
+                .font(AppFont.small)
+                .foregroundStyle(isMuted ? AppColor.textSecondary : AppColor.textPrimary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+                .padding(.leading, AppSpacing.small)
+                .padding(.trailing, AppSpacing.small)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            if showsInfo {
+                Image(systemName: "info.circle")
+                    .font(AppFont.iconRow)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .padding(.trailing, AppSpacing.xSmall)
+                    .help("Calculated when request is sent")
             }
+        }
     }
 
     private var verticalRule: some View {
