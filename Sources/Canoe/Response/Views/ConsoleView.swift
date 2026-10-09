@@ -331,7 +331,9 @@ private struct ConsoleEntryDetail: View {
                 bodyBlock(rawText)
             } else {
                 sectionTitle("Request Headers")
-                headerList(entry.requestHeaders)
+                // HTTP/2+ has no request line: the same information rides
+                // the header block as :method/:scheme/:authority/:path.
+                headerList(entry.requestPseudoHeaders + entry.requestHeaders)
                 if let bodyText = bodyPreview(entry.requestBody, truncated: entry.requestBodyTruncated) {
                     sectionTitle("Request Body")
                     bodyBlock(bodyText)
@@ -349,9 +351,12 @@ private struct ConsoleEntryDetail: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    if !entry.responseHeaders.isEmpty {
+                    // Same on the response side: :status stands in for the
+                    // HTTP/1.x status line.
+                    let responseHeaders = entry.responsePseudoHeaders + entry.responseHeaders
+                    if !responseHeaders.isEmpty {
                         sectionTitle("Response Headers")
-                        headerList(entry.responseHeaders)
+                        headerList(responseHeaders)
                     }
                     if let bodyText = bodyPreview(entry.responseBody, truncated: entry.responseBodyTruncated) {
                         sectionTitle("Response Body")

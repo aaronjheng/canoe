@@ -135,7 +135,8 @@ extension AppStore {
                         responseBody: responseBody.data.map { ConsoleEntry.redactingSecrets($0, secrets: secretValues) },
                         responseBodyTruncated: responseBody.truncated,
                         duration: response.duration,
-                        error: nil
+                        error: nil,
+                        httpVersion: response.network?.httpVersion
                     )
                 )
             } catch is CancellationError {
@@ -177,7 +178,10 @@ extension AppStore {
                         // (`HTTPClientError.invalidURL`), so it is redacted
                         // like everything else the console keeps.
                         error: ConsoleEntry.redactingSecrets(
-                            error.localizedDescription, secrets: secretValues)
+                            error.localizedDescription, secrets: secretValues),
+                        // No response means no metrics - the version is
+                        // unknowable here.
+                        httpVersion: nil
                     )
                 )
             }

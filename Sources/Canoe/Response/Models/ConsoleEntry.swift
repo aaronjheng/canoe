@@ -23,6 +23,10 @@ struct ConsoleEntry: Identifiable, Sendable {
     let responseBodyTruncated: Bool
     let duration: TimeInterval?
     let error: String?
+    /// The negotiated HTTP version as `NetworkInfo.httpVersion` reports it
+    /// ("1.1" / "2" / "3"); nil when metrics reported nothing or the request
+    /// failed before a response.
+    let httpVersion: String?
 
     /// Stored body cap: the console is for triage, not payload archives.
     /// Redaction always runs on top of this cap (see `redactingSecrets`), so
@@ -41,9 +45,34 @@ struct ConsoleEntry: Identifiable, Sendable {
         return "\(statusCode) \(httpReasonPhrase(for: statusCode))"
     }
 
-    /// URLSession negotiates the version; the log reports what the console
-    /// can verify. Upgraded connections still receive HTTP/1.1-shaped text.
-    private let httpVersion = "HTTP/1.1"
+    /// HTTP/2 and HTTP/3 frame the request/response metadata as
+    /// pseudo-headers instead of the HTTP/1.x start lines (RFC 9113 §8.2).
+    var usesPseudoHeaders: Bool {
+        httpVersion == "2" || httpVersion == "3"
+    }
+
+    /// The request start line in its HTTP/2 form: `:method`, `:scheme`,
+    /// `:authority`, `:path` (RFC 9113 §8.3.1 order). Empty on HTTP/1.x,
+    /// where the start line is a line and not a header.
+    var requestPseudoHeaders: [HTTPHeader] {
+        guard usesPseudoHeaders else { return [] }
+        var headers = [HTTPHeader(key: ":method", value: method)]
+        if let scheme = URLComponents(string: url)?.scheme {
+            headers.append(HTTPHeader(key: ":scheme", value: scheme))
+        }
+        if let authority = hostHeader {
+            headers.append(HTTPHeader(key: ":authority", value: authority))
+        }
+        headers.append(HTTPHeader(key: ":path", value: pathAndQuery))
+        return headers
+    }
+
+    /// The response status line in its HTTP/2 form, `:status`. Empty when
+    /// there is no response or the connection ran HTTP/1.x.
+    var responsePseudoHeaders: [HTTPHeader] {
+        guard usesPseudoHeaders, let statusCode else { return [] }
+        return [HTTPHeader(key: ":status", value: String(statusCode))]
+    }
 
     var formattedTime: String {
         date.formatted(Self.timeFormat)
@@ -69,15 +98,24 @@ struct ConsoleEntry: Identifiable, Sendable {
         return duration.formattedDuration
     }
 
-    /// The transaction as a raw HTTP exchange: request line + headers + body,
-    /// then the status line + headers + body - replayable, diffable text.
+    /// The transaction as a raw HTTP exchange: the start line (or the
+    /// pseudo-headers that replace it on HTTP/2+) + headers + body, then the
+    /// status line (or `:status`) + headers + body - replayable, diffable
+    /// text.
     var rawLog: String {
         var lines: [String] = []
-        lines.append("\(method) \(pathAndQuery) HTTP/1.1")
-        // HTTP/1.1 requires Host; URLSession adds it on the wire, not in
-        // allHTTPHeaderFields, so supply it from the URL.
-        if let host = hostHeader {
-            lines.append("Host: \(host)")
+        if usesPseudoHeaders {
+            for header in requestPseudoHeaders {
+                lines.append("\(header.key): \(header.value)")
+            }
+        } else {
+            lines.append("\(method) \(pathAndQuery) HTTP/1.1")
+            // HTTP/1.1 requires Host; URLSession adds it on the wire, not in
+            // allHTTPHeaderFields, so supply it from the URL. HTTP/2 carries
+            // the same information as :authority instead.
+            if let host = hostHeader {
+                lines.append("Host: \(host)")
+            }
         }
         for header in requestHeaders {
             lines.append("\(header.key): \(header.value)")
@@ -88,7 +126,16 @@ struct ConsoleEntry: Identifiable, Sendable {
         }
         if statusCode != nil {
             lines.append("")
-            lines.append("\(httpVersion) \(statusText)")
+            if usesPseudoHeaders {
+                for header in responsePseudoHeaders {
+                    lines.append("\(header.key): \(header.value)")
+                }
+            } else {
+                // Metrics that missed their settle window leave the version
+                // unknown; HTTP/1.1-shaped text is what the console can
+                // verify.
+                lines.append("HTTP/1.1 \(statusText)")
+            }
             for header in responseHeaders {
                 lines.append("\(header.key): \(header.value)")
             }

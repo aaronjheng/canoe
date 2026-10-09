@@ -98,6 +98,13 @@ struct ResponseModel: Identifiable, Sendable {
 
     var isSuccess: Bool { (200..<300).contains(statusCode) }
 
+    /// Whether the exchange ran HTTP/2 or HTTP/3: those carry the status as
+    /// a `:status` pseudo-header in the header block instead of an HTTP/1.x
+    /// status line (RFC 9113 §8.2.2).
+    var usesPseudoHeaders: Bool {
+        network?.httpVersion == "2" || network?.httpVersion == "3"
+    }
+
     var statusText: String {
         statusCode == 0 ? "Error" : httpReasonPhrase(for: statusCode)
     }

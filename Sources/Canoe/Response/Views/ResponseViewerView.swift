@@ -969,7 +969,7 @@ struct ResponseViewerView: View {
 
     @ViewBuilder
     private func headersPane(_ response: ResponseModel) -> some View {
-        if response.headers.isEmpty {
+        if response.headers.isEmpty && !response.usesPseudoHeaders {
             ContentUnavailableView(
                 "No Headers",
                 systemImage: "list.bullet.indent",
@@ -984,14 +984,7 @@ struct ResponseViewerView: View {
             KeyValueEditor(
                 items: .constant([]),
                 makeNew: { HTTPHeader() },
-                readOnlyItems: response.headers.map {
-                    KeyValueReadOnlyItem(
-                        id: $0.id.uuidString,
-                        key: $0.key,
-                        value: $0.value,
-                        showsKeyInfo: false
-                    )
-                },
+                readOnlyItems: headerRows(for: response),
                 showsGhostRow: false,
                 showsIconColumns: false
             )
@@ -999,10 +992,35 @@ struct ResponseViewerView: View {
             .contextMenu {
                 Button("Copy All as Text") {
                     copyToPasteboard(
-                        response.headers.map { "\($0.key): \($0.value)" }.joined(separator: "\n"))
+                        headerRows(for: response)
+                            .map { "\($0.key): \($0.value)" }.joined(separator: "\n"))
                 }
             }
         }
+    }
+
+    /// The rows shown above, in display order: HTTP/2+ leads with `:status`,
+    /// which is where the HTTP/1.x status line went (RFC 9113 §8.2.2).
+    private func headerRows(for response: ResponseModel) -> [KeyValueReadOnlyItem] {
+        var rows: [KeyValueReadOnlyItem] = response.headers.map {
+            KeyValueReadOnlyItem(
+                id: $0.id.uuidString,
+                key: $0.key,
+                value: $0.value,
+                showsKeyInfo: false
+            )
+        }
+        guard response.usesPseudoHeaders else { return rows }
+        rows.insert(
+            KeyValueReadOnlyItem(
+                id: ":status",
+                key: ":status",
+                value: "\(response.statusCode)",
+                showsKeyInfo: false
+            ),
+            at: 0
+        )
+        return rows
     }
 
     // MARK: - Helpers
