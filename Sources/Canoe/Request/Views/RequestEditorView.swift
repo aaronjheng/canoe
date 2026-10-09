@@ -59,7 +59,7 @@ struct RequestEditorView: View {
                 .filter { !$0.isEmpty }
         )
         var headers: [KeyValueReadOnlyItem] = []
-        func append(_ key: String, _ value: String, isMuted: Bool = false) {
+        func append(_ key: String, _ value: String, isMuted: Bool = false, isToggleable: Bool = true) {
             let normalizedKey = key.lowercased()
             guard !userHeaderNames.contains(normalizedKey) else { return }
             headers.append(
@@ -67,13 +67,14 @@ struct RequestEditorView: View {
                     id: normalizedKey,
                     key: key,
                     value: value,
-                    isMuted: isMuted
+                    isMuted: isMuted,
+                    isToggleable: isToggleable
                 )
             )
         }
 
         if generatedAuthorization != nil {
-            append("Authorization", String(repeating: "•", count: 8), isMuted: true)
+            append("Authorization", String(repeating: "•", count: 8), isMuted: true, isToggleable: false)
         }
         append("Host", "<calculated when request is sent>")
         append("User-Agent", HTTPClient.userAgent)
@@ -85,6 +86,17 @@ struct RequestEditorView: View {
             append("Content-Length", generatedContentLength ?? "Generated at send time")
         }
         return headers
+    }
+
+    /// Flips a generated header's disabled state in the draft. Reaches the
+    /// store (and the send path) through the draft's onChange like any
+    /// other edit, so the toggle persists with ⌘S.
+    private func toggleGeneratedHeader(_ id: String) {
+        if draft.disabledGeneratedHeaders.contains(id) {
+            draft.disabledGeneratedHeaders.remove(id)
+        } else {
+            draft.disabledGeneratedHeaders.insert(id)
+        }
     }
 
     private var generatedContentType: String? {
@@ -936,6 +948,10 @@ struct RequestEditorView: View {
                     action: { showGeneratedHeaders.toggle() }
                 ),
                 readOnlyItems: showGeneratedHeaders ? generatedHeaders : [],
+                // Generated rows carry the gray wash.
+                highlightsGeneratedRows: true,
+                disabledReadOnlyIDs: draft.disabledGeneratedHeaders,
+                onToggleReadOnly: { toggleGeneratedHeader($0) },
                 variables: resolvedVariables,
                 suggestions: requestSuggestions,
                 keyPlaceholder: "Key",

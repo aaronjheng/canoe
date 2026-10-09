@@ -34,6 +34,13 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
     var updatedAt: Date = Date()
     var headers: [HTTPHeader] = []
     var params: [QueryParam] = []
+    /// Lowercased names of auto-generated headers the user unchecked in the
+    /// Headers table (everything except Authorization, which stays fixed).
+    /// Persisted per request; the send path honors it for the headers Canoe
+    /// sets itself (User-Agent, Content-Type) - transport-managed ones
+    /// (Host, Connection, …) are owned by URLSession and stay on the wire
+    /// regardless.
+    var disabledGeneratedHeaders: Set<String> = []
 
     init(
         id: UUID = UUID(),
@@ -54,6 +61,7 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
         case formFields, urlEncodedFields, binaryFilePath
         case authType, authUsername, authPassword, authToken
         case orderIndex, folderID, createdAt, updatedAt, headers, params
+        case disabledGeneratedHeaders
     }
 
     /// Tolerates files written before newer fields (auth, body types, form
@@ -83,6 +91,8 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
         headers = try container.decodeLossyArray(forKey: .headers)
         params = try container.decodeLossyArray(forKey: .params)
+        disabledGeneratedHeaders =
+            try container.decodeIfPresent(Set<String>.self, forKey: .disabledGeneratedHeaders) ?? []
     }
 
     var httpMethod: HTTPMethod {
@@ -132,6 +142,7 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
             && folderID == other.folderID
             && headers == other.headers
             && params == other.params
+            && disabledGeneratedHeaders == other.disabledGeneratedHeaders
     }
 }
 /// Transition alias for the pre-rename request name. Remove once all call sites use `Request` directly.

@@ -20,6 +20,11 @@ struct KeyValueReadOnlyItem: Identifiable, Hashable {
     let key: String
     let value: String
     var isMuted: Bool = false
+    /// Whether the leading checkbox is interactive. On for generated rows
+    /// the user may disable (every request generated header except
+    /// Authorization); off for fixed display (response headers, the masked
+    /// Authorization row).
+    var isToggleable: Bool = false
     /// Info glyph trailing the key cell ("Calculated when request is sent").
     /// On for the request's generated headers; off for display-only tables
     /// such as the response headers, where nothing is calculated.
@@ -65,6 +70,16 @@ struct KeyValueEditor<T: KVItem>: View {
     /// display - the response headers. Read-only tables only; editable rows
     /// need those columns for their controls.
     var showsIconColumns: Bool = true
+    /// Gray wash behind the read-only rows: the request's auto-generated
+    /// headers are filler, not user data (Postman shades them the same
+    /// way). Off by default - display-only tables such as the response
+    /// headers show real returned data, so they stay clean.
+    var highlightsGeneratedRows: Bool = false
+    /// IDs of read-only rows the user unchecked, and the toggle callback.
+    /// Only consulted for rows flagged `isToggleable` with a callback set;
+    /// everything else renders the fixed checked box.
+    var disabledReadOnlyIDs: Set<String> = []
+    var onToggleReadOnly: ((String) -> Void)?
     /// Resolved variable scope for `{{placeholder}}` highlighting.
     var variables: [String: String] = [:]
     /// Completion candidates for `{{` auto-completion; nil derives names
@@ -189,6 +204,9 @@ struct KeyValueEditor<T: KVItem>: View {
                     key: item.key,
                     value: item.value,
                     isMuted: item.isMuted,
+                    isGenerated: highlightsGeneratedRows,
+                    isOn: !disabledReadOnlyIDs.contains(item.id),
+                    onToggle: item.isToggleable ? { onToggleReadOnly?(item.id) } : nil,
                     showsKeyInfo: item.showsKeyInfo,
                     showsIconColumns: showsIconColumns,
                     leadingColumnWidth: leadingColumnWidth,
@@ -936,6 +954,14 @@ private struct ReadOnlyKVRow: View {
     let key: String
     let value: String
     let isMuted: Bool
+    /// Auto-generated filler (the request's calculated headers): shaded
+    /// gray so it reads as non-user data. Real returned data (the response
+    /// headers) passes false and stays clean.
+    let isGenerated: Bool
+    /// Checked state for toggleable rows; ignored for fixed display.
+    let isOn: Bool
+    /// Toggle callback; nil renders the fixed checked box.
+    let onToggle: (() -> Void)?
     let showsKeyInfo: Bool
     let showsIconColumns: Bool
     let leadingColumnWidth: CGFloat
@@ -959,10 +985,13 @@ private struct ReadOnlyKVRow: View {
         }
         .frame(height: AppSize.tableRowHeight)
         .background(alignment: .bottom) {
+            // Closest to the content: the opaque wash below must not cover
+            // it, or the row separators vanish under the fill.
             Rectangle()
                 .fill(AppColor.hairline)
                 .frame(height: AppLine.hairline)
         }
+        .background(isGenerated ? AppColor.tableHeaderBackground : .clear)
     }
 
     private var readOnlyLeadingCell: some View {
@@ -972,11 +1001,19 @@ private struct ReadOnlyKVRow: View {
                     .frame(width: gripWidth)
                     .frame(maxHeight: .infinity)
             }
-            Toggle("", isOn: .constant(true))
-                .labelsHidden()
-                .toggleStyle(.checkbox)
-                .controlSize(.small)
-                .allowsHitTesting(false)
+            Toggle(
+                "",
+                isOn: onToggle == nil
+                    ? .constant(true)
+                    : Binding(get: { isOn }, set: { _ in onToggle?() })
+            )
+            .labelsHidden()
+            .toggleStyle(.checkbox)
+            .controlSize(.small)
+            // Fixed display (the masked Authorization row): grayed out so it
+            // does not read as clickable. Disabled also swallows hits, so no
+            // separate allowsHitTesting is needed.
+            .disabled(onToggle == nil)
         }
         .frame(width: leadingColumnWidth)
     }

@@ -470,7 +470,19 @@ enum HTTPClient {
 
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = request.method
-        urlRequest.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        // Generated headers the user unchecked in the Headers table
+        // (lowercased names, matching the table's item ids). Only the
+        // headers Canoe sets itself can actually be withheld - User-Agent
+        // is blanked rather than skipped, because leaving it unset would
+        // let CFNetwork send its own default instead (verified against a
+        // local echo server); transport-managed ones (Host, Connection, …)
+        // are owned by URLSession and stay on the wire regardless.
+        let disabledGenerated = Set(request.disabledGeneratedHeaders.map { $0.lowercased() })
+        if disabledGenerated.contains("user-agent") {
+            urlRequest.setValue("", forHTTPHeaderField: "User-Agent")
+        } else {
+            urlRequest.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        }
 
         // Headers (skip rows with an empty name - URLRequest ignores them and
         // they only add noise).
@@ -514,7 +526,9 @@ enum HTTPClient {
         let built = try buildBody(for: request, variables: variables)
         if let built, !built.data.isEmpty {
             urlRequest.httpBody = built.data
-            if !hasContentType, let contentType = built.contentType {
+            if !hasContentType, let contentType = built.contentType,
+                !disabledGenerated.contains("content-type")
+            {
                 urlRequest.setValue(contentType, forHTTPHeaderField: "Content-Type")
             }
         }
