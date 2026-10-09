@@ -633,6 +633,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         viewMenuItem.submenu = viewMenu
 
+        let windowMenuItem = NSMenuItem()
+        mainMenu.addItem(windowMenuItem)
+        let windowMenu = NSMenu(title: "Window")
+        // Standard window commands ride the responder chain (no target), so
+        // they act on whichever window is key - main, Settings, or a panel -
+        // and validate themselves per window (a fixed-size panel cannot zoom,
+        // so Zoom disables itself there).
+        windowMenu.addItem(
+            withTitle: "Minimize",
+            action: #selector(NSWindow.performMiniaturize(_:)),
+            keyEquivalent: "m")
+        windowMenu.addItem(
+            withTitle: "Zoom",
+            action: #selector(NSWindow.performZoom(_:)),
+            keyEquivalent: "")
+        windowMenu.addItem(.separator())
+        windowMenu.addItem(
+            withTitle: "Bring All to Front",
+            action: #selector(NSApplication.arrangeInFront(_:)),
+            keyEquivalent: "")
+        windowMenuItem.submenu = windowMenu
+        // Hands the menu to AppKit: it lists the open windows below (main,
+        // Settings, About, License) and checkmarks the key window.
+        NSApp.windowsMenu = windowMenu
+
         NSApp.mainMenu = mainMenu
     }
 }
