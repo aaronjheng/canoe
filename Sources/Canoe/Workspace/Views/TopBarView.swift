@@ -18,6 +18,7 @@ struct TopBarView: View {
         HStack(spacing: AppSpacing.small) {
             WorkspaceSwitcher()
             Spacer(minLength: 0)
+            appearanceButton
             settingsButton
         }
         .padding(.leading, isFullScreen ? AppSpacing.medium : AppSize.trafficLightInset)
@@ -44,6 +45,34 @@ struct TopBarView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification)) { _ in
             isFullScreen = false
         }
+    }
+
+    /// One-click theme shortcut left of Settings: cycles System → Light →
+    /// Dark, and the glyph shows the active style. Read through the app
+    /// delegate - workspace views must not reach into Settings state - and
+    /// Observation tracks the underlying store read, so the icon follows
+    /// changes from the menu or the Settings panel too.
+    private var appearance: AppAppearance {
+        (NSApp.delegate as? AppDelegate)?.currentAppearance ?? .system
+    }
+
+    private var appearanceIcon: String {
+        switch appearance {
+        case .system: "circle.lefthalf.filled"
+        case .light: "sun.max"
+        case .dark: "moon"
+        }
+    }
+
+    private var appearanceButton: some View {
+        Button {
+            (NSApp.delegate as? AppDelegate)?.cycleAppearance()
+        } label: {
+            Image(systemName: appearanceIcon)
+        }
+        .buttonStyle(ToolbarButtonStyle())
+        .frame(width: AppSize.topBarControlHeight, height: AppSize.topBarControlHeight)
+        .help("Appearance: \(appearance.name) (click to switch)")
     }
 
     /// Shortcut for `Canoe -> Settings…`: same window, focused if open.

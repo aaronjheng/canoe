@@ -31,8 +31,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var saveMenuItem: NSMenuItem?
 
     /// Currently selected appearance, for windows created or reopened after a
-    /// menu-driven theme change.
-    private var currentAppearance: AppAppearance {
+    /// menu-driven theme change - and for the top bar's theme shortcut,
+    /// which shows the active style without reaching into Settings state.
+    var currentAppearance: AppAppearance {
         AppAppearance(rawValue: SettingsStore.shared.settings.appearance) ?? .system
     }
 
@@ -386,6 +387,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc func setAppearance(_ sender: NSMenuItem) {
         guard let appearance = AppAppearance(rawValue: sender.tag) else { return }
+        applyAppearance(appearance)
+    }
+
+    /// One-click theme shortcut for the top bar: cycles System → Light →
+    /// Dark through the same write path as the menu and the Settings panel,
+    /// so their checkmarks stay in step through the store observer.
+    func cycleAppearance() {
+        let all = AppAppearance.allCases
+        let current = AppAppearance(rawValue: SettingsStore.shared.settings.appearance) ?? .system
+        let next = all[((all.firstIndex(of: current) ?? 0) + 1) % all.count]
+        applyAppearance(next)
+    }
+
+    private func applyAppearance(_ appearance: AppAppearance) {
         SettingsStore.shared.settings.appearance = appearance.rawValue
         SettingsStore.shared.save()
         appearance.apply()
