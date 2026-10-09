@@ -272,31 +272,47 @@ struct ContentView: View {
                 isEnvPickerShown: $isEnvPickerShown
             )
             Divider()
-            detailContent
-            // Postman-style docked console, at the bottom of the whole
-            // detail area rather than inside the request workspace: it
-            // logs the session, not one request, so it stays available (and
-            // keeps its log) whatever the detail pane above is showing -
-            // an environment editor, a collection page, or nothing at all.
-            if store.showConsole {
-                Divider()
-                ConsoleView()
-                    .frame(height: store.consoleHeight)
-                    .overlay(alignment: .top) { consoleResizeHandle }
+            // The console floats over the detail content (a bottom drawer),
+            // not inside the stack: dragging it taller covers the
+            // request/response area instead of squeezing it out of the
+            // window and pushing the status bar down. The content always
+            // takes the full pane, so nothing else ever moves.
+            GeometryReader { proxy in
+                // The panel may cover the whole content area, so the cap is
+                // the pane itself - floored so a tiny window cannot invert
+                // the handle's range.
+                let consoleCap = max(AppSize.consoleMinHeight, proxy.size.height)
+                let consoleHeight = min(store.consoleHeight, consoleCap)
+                detailContent
+                    .overlay(alignment: .bottom) {
+                        if store.showConsole {
+                            VStack(spacing: 0) {
+                                Divider()
+                                ConsoleView()
+                                    .frame(height: consoleHeight)
+                                    .overlay(alignment: .top) {
+                                        consoleResizeHandle(cap: consoleCap)
+                                    }
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                    }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     /// Drag handle on the console's top edge: the shared pane splitter
-    /// (see `PaneResizeHandle`), sized by `consoleHeight`.
-    private var consoleResizeHandle: some View {
+    /// (see `PaneResizeHandle`), sized by `consoleHeight`. `cap` is the
+    /// content area's height (see `detailPane`): the drawer may cover all
+    /// of it, but never outgrow it.
+    private func consoleResizeHandle(cap: CGFloat) -> some View {
         PaneResizeHandle(
             axis: .vertical,
-            range: AppSize.consoleMinHeight...AppSize.consoleMaxHeight,
+            range: AppSize.consoleMinHeight...cap,
             defaultLength: AppSize.consoleDefaultHeight,
             length: Binding(
-                get: { store.consoleHeight },
+                get: { min(store.consoleHeight, cap) },
                 set: { store.consoleHeight = $0 }
             ),
             onCommit: { store.saveConsoleHeight() }
@@ -410,9 +426,9 @@ struct RequestWorkspaceView: View {
                 isMethodMenuVisible: $isMethodMenuShown,
                 pendingMethodPick: $pendingMethodPick
             )
-            .frame(minHeight: 240)
+            .frame(minHeight: AppSize.requestEditorMinHeight)
             ResponseViewerView()
-                .frame(minHeight: 200)
+                .frame(minHeight: AppSize.responseViewerMinHeight)
         }
         // VSplitView otherwise collapses to its panes' ideal heights, and a
         // section switch to fixed-height content (e.g. the GET "No Body"

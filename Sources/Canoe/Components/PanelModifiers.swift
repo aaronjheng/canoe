@@ -400,10 +400,13 @@ struct PaneResizeHandle: View {
                         let start = dragStart ?? length
                         // A pane on the leading edge (inspector) grows as
                         // the pointer moves left; a pane below (console)
-                        // grows as it moves up.
+                        // grows as it moves up. Both are therefore the
+                        // negative of the translation - the console's top
+                        // edge follows the pointer instead of running from
+                        // it.
                         let delta =
                             axis == .horizontal
-                            ? -value.translation.width : value.translation.height
+                            ? -value.translation.width : -value.translation.height
                         length = min(max(start + delta, range.lowerBound), range.upperBound)
                     }
                     .onEnded { _ in

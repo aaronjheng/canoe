@@ -31,9 +31,13 @@ struct ConsoleView: View {
     var body: some View {
         VStack(spacing: 0) {
             toolbar
-            Divider()
+            // The section claims the remaining height. Without a flexible
+            // child the stack sizes to its content and the caller's
+            // .frame(height:) centers it, so the toolbar sits in a band that
+            // moves as the console is dragged - worst on an empty log, whose
+            // fixed-size empty state never fills the panel.
             if visibleEntries.isEmpty {
-                emptyState
+                emptyState.frame(maxHeight: .infinity)
             } else {
                 entryList
             }

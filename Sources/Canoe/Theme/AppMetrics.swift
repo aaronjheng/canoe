@@ -156,6 +156,10 @@ enum AppSize {
     /// Tall enough to read a full entry, short enough to leave the request
     /// editor usable.
     static let consoleMaxHeight: CGFloat = 560
+    /// Minimum heights of the request editor and response viewer panes in
+    /// the detail split.
+    static let requestEditorMinHeight: CGFloat = 240
+    static let responseViewerMinHeight: CGFloat = 200
     /// Shared cap for a form's field column, so a wide window does not
     /// stretch one editor's inputs across it.
     static let formFieldMaxWidth: CGFloat = 520
