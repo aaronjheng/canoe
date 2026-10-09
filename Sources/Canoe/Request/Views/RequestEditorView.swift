@@ -847,6 +847,7 @@ struct RequestEditorView: View {
             UnderlineTab(
                 title: RequestSection.params.rawValue,
                 count: enabledParamCount,
+                hasContent: enabledParamCount > 0,
                 isSelected: section == .params,
                 action: {
                     urlFieldFocused = nil
@@ -856,6 +857,7 @@ struct RequestEditorView: View {
             UnderlineTab(
                 title: RequestSection.auth.rawValue,
                 count: isAuthConfigured ? 1 : nil,
+                hasContent: isAuthConfigured,
                 isSelected: section == .auth,
                 action: {
                     urlFieldFocused = nil
@@ -865,6 +867,9 @@ struct RequestEditorView: View {
             UnderlineTab(
                 title: RequestSection.headers.rawValue,
                 count: enabledHeaderCount,
+                // Manual headers only: the generated defaults (Host,
+                // User-Agent, …) are not this section's content.
+                hasContent: enabledHeaderCount > 0,
                 isSelected: section == .headers,
                 action: {
                     urlFieldFocused = nil
@@ -874,6 +879,8 @@ struct RequestEditorView: View {
             UnderlineTab(
                 title: RequestSection.body.rawValue,
                 count: bodyRowCount,
+                // Any non-none body type counts as content, filled or not.
+                hasContent: draft.requestBodyType != .none,
                 isSelected: section == .body,
                 action: {
                     urlFieldFocused = nil

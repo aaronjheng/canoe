@@ -133,11 +133,15 @@ struct FilterField: View {
 
 // MARK: - Underline tab
 
-/// A tab with an underline indicator and an optional count badge. Used for the
-/// request/response section switchers.
+/// A tab with an underline indicator, an optional count badge, and an
+/// optional green "has content" dot. Used for the request/response section
+/// switchers.
 struct UnderlineTab: View {
     let title: String
     let count: Int?
+    /// Draws the success-green content dot (the request editor's signal that
+    /// the section holds data even when it shows no count).
+    var hasContent: Bool = false
     let isSelected: Bool
     let action: () -> Void
     @State private var isHovering = false
@@ -164,6 +168,11 @@ struct UnderlineTab: View {
                         .font(AppFont.countBadge)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
+                }
+                if hasContent {
+                    Circle()
+                        .fill(AppColor.success)
+                        .frame(width: AppSize.contentDot, height: AppSize.contentDot)
                 }
             }
             .padding(.horizontal, AppSpacing.small)

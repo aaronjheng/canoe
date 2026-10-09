@@ -110,6 +110,9 @@ enum AppSize {
     static let iconButtonSide: CGFloat = iconButtonGlyphBox + 2 * AppSpacing.xSmall
     /// Dirty-dot diameter in tab pills and the tab-switcher rows.
     static let dirtyDot: CGFloat = 8
+    /// Green "this section has content" dot trailing a section tab's label
+    /// and count (Postman-style request editor tabs).
+    static let contentDot: CGFloat = 6
     /// Tab-switcher search popup width (matches the sidebar max width).
     static let tabSearchWidth: CGFloat = 360
     /// Disclosure-chevron column in sidebar tree rows - the 16px codicon box
