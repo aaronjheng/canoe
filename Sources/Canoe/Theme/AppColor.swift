@@ -30,8 +30,8 @@ import SwiftUI
 /// - Primer brand/status/syntax colors are fixed light/dark pairs. Their
 ///   per-appearance contrast differs by design - that is Primer's palette,
 ///   not a tuning mistake; don't hand-tune them toward equal contrast.
-/// - Text tiers mirror the same way: `textPrimary` (#212121 / #E8E8E8) and
-///   `textSecondary` (#6B6B6B / #9E9E9E) hold roughly equal contrast steps
+/// - Text tiers mirror the same way: `textPrimary` (#212121 / #FFFFFF) and
+///   `textSecondary` (#6B6B6B / #A6A6A6) hold roughly equal contrast steps
 ///   against the content layer in both appearances.
 enum AppColor {
     // MARK: - Brand (Primer accent)
@@ -69,12 +69,12 @@ enum AppColor {
     /// Primary text tier, for body copy, names, and values.
     static let textPrimary = dynamic(
         light: RGB(red: 33, green: 33, blue: 33),
-        dark: RGB(red: 232, green: 232, blue: 232)
+        dark: RGB(red: 255, green: 255, blue: 255)
     )
     /// Secondary text tier, for descriptions, meta, and placeholders.
     static let textSecondary = dynamic(
         light: RGB(red: 107, green: 107, blue: 107),
-        dark: RGB(red: 158, green: 158, blue: 158)
+        dark: RGB(red: 166, green: 166, blue: 166)
     )
 
     // MARK: - Syntax highlighting (JSON first, more languages later)
@@ -103,7 +103,7 @@ enum AppColor {
     /// appearance like every other color here.
     static let textPrimaryNS: NSColor = dynamicNS(
         light: RGB(red: 33, green: 33, blue: 33),
-        dark: RGB(red: 232, green: 232, blue: 232)
+        dark: RGB(red: 255, green: 255, blue: 255)
     )
 
     // MARK: - Backgrounds
@@ -187,17 +187,35 @@ enum AppColor {
         dark: RGB(red: 56, green: 56, blue: 56)
     )
 
-    /// Border/hairline tokens for cards, tables, and popups. One scale so
-    /// strokes stay consistent across appearances instead of scattering
-    /// ad-hoc `Color.primary.opacity(...)` values through views.
-    static let borderStrong: Color = Color.primary.opacity(0.16)
-    static let border: Color = Color.primary.opacity(0.12)
+    /// Primary call-to-action fill (Send, Create, New Request) - Postman's
+    /// `button-main-background-color`, one step brighter than the app accent
+    /// so the CTA leads the view without restyling every accent use.
+    static let buttonPrimary = dynamic(light: RGB(red: 58, green: 130, blue: 230), dark: RGB(red: 47, green: 103, blue: 204))
+
+    /// HTTP method colors, tracking Postman's method roles exactly: GET/HEAD
+    /// green, POST yellow, PUT blue, PATCH purple, DELETE red, OPTIONS pink.
+    /// Both appearances come from Postman's live computed tokens (the static
+    /// bundle lags a release behind).
+    static let methodGET = dynamic(light: RGB(red: 36, green: 126, blue: 76), dark: RGB(red: 157, green: 222, blue: 185))
+    static let methodPOST = dynamic(light: RGB(red: 168, green: 125, blue: 19), dark: RGB(red: 255, green: 224, blue: 131))
+    static let methodPUT = dynamic(light: RGB(red: 37, green: 82, blue: 170), dark: RGB(red: 159, green: 192, blue: 250))
+    static let methodPATCH = dynamic(light: RGB(red: 101, green: 70, blue: 171), dark: RGB(red: 193, green: 169, blue: 238))
+    static let methodDELETE = dynamic(light: RGB(red: 159, green: 47, blue: 34), dark: RGB(red: 249, green: 169, blue: 154))
+    static let methodOPTIONS = dynamic(light: RGB(red: 185, green: 59, blue: 133), dark: RGB(red: 235, green: 121, blue: 183))
+
+    /// Border/hairline tokens for cards, tables, and popups. `border` and
+    /// `borderStrong` track Postman's border scale exactly: default grey-20
+    /// (#EDEDED) / strong grey-30 (#E6E6E6) in light, grey-70 (#303030) /
+    /// grey-60 (#3B3B3B) in dark.
+    static let borderStrong = dynamic(light: RGB(red: 230, green: 230, blue: 230), dark: RGB(red: 59, green: 59, blue: 59))
+    static let border = dynamic(light: RGB(red: 237, green: 237, blue: 237), dark: RGB(red: 48, green: 48, blue: 48))
     static let hairline: Color = Color.primary.opacity(0.08)
 
-    /// URL bar rest outline: fixed #A6A6A6 in both appearances, stronger
-    /// than `borderStrong` so the bar reads as one unit on the content
-    /// surface now that its idle fill is clear.
-    static let urlBarBorder = Color(red: 166 / 255, green: 166 / 255, blue: 166 / 255)
+    /// URL bar rest outline: Postman's live input border in both appearances
+    /// (#C0C0C0 light / #525252 dark) - `--input-border-color-default`.
+    /// The bar sits on the content surface, so it borrows the input token
+    /// rather than the faint `borderStrong` it had at rest.
+    static let urlBarBorder = dynamic(light: RGB(red: 192, green: 192, blue: 192), dark: RGB(red: 82, green: 82, blue: 82))
 
     /// Key-value table grid (outer border plus row/column rules): renders
     /// as #EDEDED on the light content surface. Translucent rather than a

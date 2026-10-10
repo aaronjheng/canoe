@@ -72,8 +72,11 @@ enum AppFont {
 
     // MARK: - Badges and compact labels (decorative; may sit below the 12pt body floor)
 
-    /// HTTP method tags in the sidebar/history.
-    static let methodTag = Font.system(size: 9, weight: .bold)
+    /// HTTP method tags in the sidebar/history. Postman renders method
+    /// labels at semibold (its scale tops out at 600); the 9pt size is
+    /// Canoe's own compact tag idiom (a 12pt tag would overflow the fixed
+    /// history method column), so only the weight follows.
+    static let methodTag = Font.system(size: 9, weight: .semibold)
     /// Protocol badge in the breadcrumb row.
     static let requestTypeBadge = Font.system(size: 10, weight: .bold)
     /// Completion-popup metadata.

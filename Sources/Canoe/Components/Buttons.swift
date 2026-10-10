@@ -33,8 +33,8 @@ extension View {
 
 // MARK: - Button styles
 
-/// The primary call-to-action button (Primer `accent.fg` blue): Send, Create,
-/// New Request. Disabled state dims so it never reads as tappable.
+/// The primary call-to-action button (Postman's `button-main` blue): Send,
+/// Create, New Request. Disabled state dims so it never reads as tappable.
 struct SendButtonStyle: ButtonStyle {
     var minHeight: CGFloat?
     @Environment(\.isEnabled) private var isEnabled
@@ -47,7 +47,7 @@ struct SendButtonStyle: ButtonStyle {
             .padding(.horizontal, AppSpacing.large)
             .padding(.vertical, AppSpacing.xSmall)
             .frame(minHeight: minHeight)
-            .background(AppColor.accent)
+            .background(AppColor.buttonPrimary)
             .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
             .brightness(configuration.isPressed ? -0.10 : (isEnabled && isHovering ? 0.06 : 0))
             .scaleEffect(configuration.isPressed ? 0.97 : 1)

@@ -9,13 +9,13 @@ import SwiftUI
 extension HTTPMethod {
     var color: Color {
         switch self {
-        case .get: AppColor.success
-        case .post: AppColor.accent
-        case .put: AppColor.accentDark
-        case .patch: AppColor.done
-        case .delete: AppColor.error
-        case .head: AppColor.done
-        case .options: AppColor.neutral
+        case .get: AppColor.methodGET
+        case .post: AppColor.methodPOST
+        case .put: AppColor.methodPUT
+        case .patch: AppColor.methodPATCH
+        case .delete: AppColor.methodDELETE
+        case .head: AppColor.methodGET
+        case .options: AppColor.methodOPTIONS
         case .query: AppColor.success
         }
     }
