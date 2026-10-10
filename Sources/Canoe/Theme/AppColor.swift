@@ -199,6 +199,14 @@ enum AppColor {
     /// surface now that its idle fill is clear.
     static let urlBarBorder = Color(red: 166 / 255, green: 166 / 255, blue: 166 / 255)
 
+    /// Key-value table grid (outer border plus row/column rules): renders
+    /// as #EDEDED on the light content surface. Translucent rather than a
+    /// fixed hex so it tints instead of covering where it overlaps a
+    /// hover/focus ring - the table outline paints above the rows, and an
+    /// opaque outline would erase the bottom edge of a last-row cell's
+    /// ring (the 1pt hover ring entirely, 1pt of the 2pt focus ring).
+    static let tableBorder: Color = Color.primary.opacity(0.07)
+
     /// Tab-strip fills. The selected tab is a hueless neutral gray one step
     /// stronger than hover, so selection never tints the method colors inside
     /// the tab and stays independent of the user's system accent color.

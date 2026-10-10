@@ -294,7 +294,7 @@ struct KeyValueEditor<T: KVItem>: View {
         .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                .strokeBorder(AppColor.border, lineWidth: AppLine.field)
+                .strokeBorder(AppColor.tableBorder, lineWidth: AppLine.field)
         )
     }
 
@@ -569,7 +569,7 @@ struct KeyValueEditor<T: KVItem>: View {
 
     private var verticalRule: some View {
         Rectangle()
-            .fill(AppColor.hairline)
+            .fill(AppColor.tableBorder)
             .frame(width: AppLine.hairline)
     }
 }
@@ -751,7 +751,7 @@ private struct KVRow: View {
         .background(alignment: .bottom) {
             if !isGhostRow {
                 Rectangle()
-                    .fill(AppColor.hairline)
+                    .fill(AppColor.tableBorder)
                     .frame(height: AppLine.hairline)
             }
         }
@@ -945,7 +945,7 @@ private struct KVRow: View {
 
     private var verticalRule: some View {
         Rectangle()
-            .fill(AppColor.hairline)
+            .fill(AppColor.tableBorder)
             .frame(width: AppLine.hairline)
     }
 }
@@ -988,7 +988,7 @@ private struct ReadOnlyKVRow: View {
             // Closest to the content: the opaque wash below must not cover
             // it, or the row separators vanish under the fill.
             Rectangle()
-                .fill(AppColor.hairline)
+                .fill(AppColor.tableBorder)
                 .frame(height: AppLine.hairline)
         }
         .background(isGenerated ? AppColor.tableHeaderBackground : .clear)
@@ -1045,7 +1045,7 @@ private struct ReadOnlyKVRow: View {
 
     private var verticalRule: some View {
         Rectangle()
-            .fill(AppColor.hairline)
+            .fill(AppColor.tableBorder)
             .frame(width: AppLine.hairline)
     }
 }
