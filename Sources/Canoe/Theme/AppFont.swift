@@ -77,6 +77,11 @@ enum AppFont {
     /// Canoe's own compact tag idiom (a 12pt tag would overflow the fixed
     /// history method column), so only the weight follows.
     static let methodTag = Font.system(size: 9, weight: .semibold)
+    /// Sidebar switcher glyphs. Postman draws these at 20px, but its line-art
+    /// SVGs sit small inside a 20px box; SF Symbols fill their em box far
+    /// more, so the same size reads heavy inside the 24pt item - hence 14,
+    /// sized to match how small its cube and clock actually read.
+    static let iconSwitcher = Font.system(size: 14)
     /// Protocol badge in the breadcrumb row.
     static let requestTypeBadge = Font.system(size: 10, weight: .bold)
     /// Completion-popup metadata.

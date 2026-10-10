@@ -65,6 +65,12 @@ enum AppSize {
     static let topBarControlHeight: CGFloat = 26
     /// Leading inset of the top bar clearing the inline traffic lights.
     static let trafficLightInset: CGFloat = 78
+    /// Sidebar switcher icon button: Postman's sidebar tab bar measures each
+    /// item 40x24 around a 20pt glyph, with hairline rules between them.
+    static let switcherItemWidth: CGFloat = 40
+    static let switcherItemHeight: CGFloat = 24
+    /// Height of the hairline rule between switcher items (Postman: 1x12).
+    static let switcherRuleHeight: CGFloat = 12
     /// Bottom status bar height.
     static let statusBarHeight: CGFloat = 26
     static let sidebarMinWidth: CGFloat = 240

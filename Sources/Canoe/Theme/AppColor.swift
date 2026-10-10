@@ -211,6 +211,12 @@ enum AppColor {
     static let border = dynamic(light: RGB(red: 237, green: 237, blue: 237), dark: RGB(red: 48, green: 48, blue: 48))
     static let hairline: Color = Color.primary.opacity(0.08)
 
+    /// Sidebar switcher fills (Postman's sidebar tab bar): hover lifts one
+    /// step toward white / toward grey, the active tab sits one further.
+    /// Both are flat greys, matching that lift direction in each appearance.
+    static let switcherHoverBackground = dynamic(light: RGB(red: 237, green: 237, blue: 237), dark: RGB(red: 48, green: 48, blue: 48))
+    static let switcherActiveBackground = dynamic(light: RGB(red: 230, green: 230, blue: 230), dark: RGB(red: 59, green: 59, blue: 59))
+
     /// URL bar rest outline: Postman's live input border in both appearances
     /// (#C0C0C0 light / #525252 dark) - `--input-border-color-default`.
     /// The bar sits on the content surface, so it borrows the input token

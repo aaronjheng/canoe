@@ -21,30 +21,31 @@ enum InspectorTab: String, CaseIterable, Identifiable {
 
 /// Icon-only switcher shared by both right-edge inspector headers. The two
 /// panels are mutually exclusive, so the selection derives from which one
-/// is visible.
+/// is visible. Hand-drawn (see `IconSwitcher`): the system segmented picker
+/// gives no per-segment hover feedback on macOS.
 struct InspectorSwitcher: View {
     @Environment(AppStore.self) private var store
 
     var body: some View {
-        Picker(
-            "Inspector",
-            selection: Binding(
-                get: { store.showVariablesSidebar ? InspectorTab.variables : .code },
+        IconSwitcher(
+            selectedIndex: Binding(
+                get: { store.showVariablesSidebar ? 0 : 1 },
                 set: {
-                    store.showVariablesSidebar = $0 == .variables
-                    store.showCodeSnippetSidebar = $0 == .code
+                    store.showVariablesSidebar = $0 == 0
+                    store.showCodeSnippetSidebar = $0 == 1
                 }
-            )
-        ) {
-            ForEach(InspectorTab.allCases) { tab in
-                Label(tab.rawValue, systemImage: tab.systemImage).tag(tab)
-            }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .labelStyle(.iconOnly)
-        .fixedSize()
-        .help("Switch inspector panel")
+            ),
+            items: [
+                IconSwitcher.Item(
+                    systemImage: InspectorTab.variables.systemImage,
+                    help: InspectorTab.variables.rawValue
+                ),
+                IconSwitcher.Item(
+                    systemImage: InspectorTab.code.systemImage,
+                    help: InspectorTab.code.rawValue
+                ),
+            ]
+        )
     }
 }
 

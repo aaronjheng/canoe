@@ -10,17 +10,20 @@ struct SidebarView: View {
     var body: some View {
         @Bindable var store = store
         VStack(spacing: 0) {
-            Picker("Sidebar", selection: $store.sidebarTab) {
-                ForEach(SidebarTab.allCases) { tab in
-                    Label(tab.rawValue, systemImage: tab.systemImage).tag(tab)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .labelStyle(.iconOnly)
-            .help("Switch sidebar view")
-            // macOS segmented pickers greedily fill the offered width - pin
-            // to content size so the switcher hugs the leading edge.
+            // Hand-drawn icon switcher (see IconSwitcher): the system
+            // `.segmented` picker gives no per-segment hover feedback on
+            // macOS. `fixedSize` keeps it hugging the leading edge the same
+            // way the picker did.
+            IconSwitcher(
+                selectedIndex: Binding(
+                    get: { store.sidebarTab == .items ? 0 : 1 },
+                    set: { store.sidebarTab = SidebarTab.allCases[$0] }
+                ),
+                items: [
+                    IconSwitcher.Item(systemImage: SidebarTab.items.systemImage, help: SidebarTab.items.rawValue),
+                    IconSwitcher.Item(systemImage: SidebarTab.history.systemImage, help: SidebarTab.history.rawValue),
+                ]
+            )
             .fixedSize()
             .padding(.horizontal, AppSpacing.medium)
             .padding(.vertical, AppSpacing.xSmall)

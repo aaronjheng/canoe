@@ -292,6 +292,67 @@ struct LinkButtonStyle: ButtonStyle {
     }
 }
 
+/// Icon-only switcher shared by the two sidebar headers. The system
+/// `.segmented` picker gives no per-segment hover feedback on macOS, so
+/// this hand-rolls it in Postman's sidebar tab-bar language: 40x24 items
+/// around 20pt glyphs, hairline rules between them, a grey fill only on
+/// hover (one step) and on the active tab (one further), and the glyph
+/// taking content-secondary when idle and content-primary when active.
+struct IconSwitcher: View {
+    struct Item {
+        let systemImage: String
+        let help: String
+    }
+
+    @Binding var selectedIndex: Int
+    let items: [Item]
+    @State private var hoveredIndex: Int?
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(items.indices, id: \.self) { index in
+                if index > 0 {
+                    Rectangle()
+                        .fill(AppColor.hairline)
+                        .frame(
+                            width: AppLine.hairline,
+                            height: AppSize.switcherRuleHeight
+                        )
+                }
+                Button {
+                    selectedIndex = index
+                } label: {
+                    Image(systemName: items[index].systemImage)
+                        .font(AppFont.iconSwitcher)
+                        .foregroundStyle(
+                            index == selectedIndex ? AppColor.textPrimary : AppColor.textSecondary
+                        )
+                        .frame(
+                            width: AppSize.switcherItemWidth,
+                            height: AppSize.switcherItemHeight
+                        )
+                        .background(
+                            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                                .fill(
+                                    index == selectedIndex
+                                        ? AppColor.switcherActiveBackground
+                                        : (hoveredIndex == index ? AppColor.switcherHoverBackground : .clear)
+                                )
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(items[index].help)
+                .clickCursor()
+                .onHover { hovering in
+                    hoveredIndex = hovering ? index : nil
+                }
+                .animation(AppMotion.quick, value: hoveredIndex)
+            }
+        }
+    }
+}
+
 // MARK: - File panel
 
 /// Single-file open panel shared by the binary body editor and form-data
