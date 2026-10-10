@@ -66,7 +66,11 @@ struct InspectorHeader: View {
                     Spacer(minLength: 0)
                     Button("Hide", systemImage: "xmark", action: onClose)
                         .labelStyle(.iconOnly)
-                        .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
+                        // Toolbar-grade, not dense: this header is already
+                        // `toolbarHeight` (32pt), so the standard 26pt pill
+                        // fits without inflating the row - `inset: 0` would
+                        // leave the hover target bare around the glyph.
+                        .buttonStyle(IconButtonStyle(iconSquare: true))
                         .foregroundStyle(AppColor.textSecondary)
                         .help(closeHelp)
                 }
