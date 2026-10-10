@@ -971,7 +971,7 @@ struct RequestEditorView: View {
 }
 
 /// Rest outline for the spliced URL bar (method picker | divider | URL
-/// field): one continuous `borderStrong` outline while neither half owns
+/// field): one continuous `urlBarBorder` outline while neither half owns
 /// focus, retreating to the *other* half when one does. The focused half
 /// draws its own accent ring, and this overlay paints last - left in place
 /// over a focused half, its outer pixel would cover the accent. Masking the
@@ -985,7 +985,7 @@ private struct SplicedBarRestOutline: ViewModifier {
 
     private var outline: some View {
         RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-            .strokeBorder(AppColor.borderStrong, lineWidth: AppLine.field)
+            .strokeBorder(AppColor.urlBarBorder, lineWidth: AppLine.field)
     }
 
     func body(content: Content) -> some View {

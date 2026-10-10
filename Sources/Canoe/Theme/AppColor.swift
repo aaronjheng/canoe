@@ -194,6 +194,11 @@ enum AppColor {
     static let border: Color = Color.primary.opacity(0.12)
     static let hairline: Color = Color.primary.opacity(0.08)
 
+    /// URL bar rest outline: fixed #A6A6A6 in both appearances, stronger
+    /// than `borderStrong` so the bar reads as one unit on the content
+    /// surface now that its idle fill is clear.
+    static let urlBarBorder = Color(red: 166 / 255, green: 166 / 255, blue: 166 / 255)
+
     /// Tab-strip fills. The selected tab is a hueless neutral gray one step
     /// stronger than hover, so selection never tints the method colors inside
     /// the tab and stays independent of the user's system accent color.
