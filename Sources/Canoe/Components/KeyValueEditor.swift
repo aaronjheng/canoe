@@ -198,7 +198,13 @@ struct KeyValueEditor<T: KVItem>: View {
     private var table: some View {
         VStack(spacing: 0) {
             headerRow
-            Divider()
+            // The header's bottom rule is drawn on the table's own border
+            // token, not the stock `Divider()`: the system separator color
+            // is a different grey from `tableBorder`, so the header's bottom
+            // edge read darker than the grid it terminates.
+            Rectangle()
+                .fill(AppColor.tableBorder)
+                .frame(height: AppLine.hairline)
             ForEach(readOnlyItems) { item in
                 ReadOnlyKVRow(
                     key: item.key,
