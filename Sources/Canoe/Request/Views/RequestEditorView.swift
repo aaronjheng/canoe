@@ -835,14 +835,15 @@ struct RequestEditorView: View {
         )
         .padding(.horizontal, AppSpacing.compact)
         .padding(.vertical, 3)
-        // Background tiers mirror the method picker: idle wash at rest,
-        // brighter hover fill, brightest focus fill. Only the focus accent is
-        // drawn here (the rest outline comes from SplicedBarRestOutline), and
-        // it stays on the editor so it follows the wrapped expansion.
+        // Background tiers mirror the method picker: clear at rest so the bar
+        // sits on the underlying surface, brighter hover/focus fill. Only
+        // the focus accent is drawn here (the rest outline comes from
+        // SplicedBarRestOutline), and it stays on the editor so it follows
+        // the wrapped expansion.
         .background(
             urlFieldFocused == .url
                 ? AppColor.fieldFocusBackground
-                : (isURLBarHovered ? AppColor.fieldHoverBackground : AppColor.fieldBackground),
+                : (isURLBarHovered ? AppColor.fieldHoverBackground : .clear),
             in: shape
         )
         .overlay {
@@ -1068,13 +1069,14 @@ private struct MethodPicker: View {
         .help("HTTP method")
         .padding(.horizontal, AppSpacing.compact)
         .padding(.vertical, 3)
-        // Rest is a faint wash; hover/focus lift one step brighter - same
-        // tiers as the URL bar. Only the focus accent is drawn here; the rest
-        // outline comes from the container (see SplicedBarRestOutline).
+        // Rest is clear so the bar sits on the underlying surface;
+        // hover/expanded lift one step brighter - same tiers as the URL half.
+        // Only the focus accent is drawn here; the rest outline comes from
+        // the container (see SplicedBarRestOutline).
         .background(
             isExpanded
                 ? AppColor.fieldFocusBackground
-                : (isHovering ? AppColor.fieldHoverBackground : AppColor.fieldBackground),
+                : (isHovering ? AppColor.fieldHoverBackground : .clear),
             in: shape
         )
         .overlay {

@@ -11,9 +11,11 @@ struct FilterField: View {
     @Binding var text: String
     var placeholder: String
     var verticalPadding: CGFloat = AppSpacing.xSmall
-    /// Boxed presentation: a four-sided hairline border and a raised fill,
-    /// floating inside the parent's padding (the workspace sidebar's
-    /// filter). The default stays borderless for the other call sites.
+    /// Boxed presentation: a four-sided hairline border floating inside the
+    /// parent's padding (the workspace sidebar's filter). Idle is clear so
+    /// the field takes the underlying surface instead of a wash fill; hover
+    /// and focus lift to a fill. The default stays borderless for the other
+    /// call sites.
     var isBoxed = false
     /// Inner padding between the boxed border and the field's own bounds.
     /// The default keeps the box floating inside a padded container; a call
@@ -51,8 +53,9 @@ struct FilterField: View {
         .padding(.vertical, verticalPadding)
         .frame(minHeight: minHeight)
         .background {
-            // Boxed always paints; unboxed only on hover/focus (rest is clear).
-            if isBoxed || isFocused || isHovered {
+            // Idle is clear (boxed included) so the field sits on the
+            // underlying surface; only hover/focus lift to a fill.
+            if isFocused || isHovered {
                 RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
                     .fill(boxBackground)
             }
@@ -78,13 +81,13 @@ struct FilterField: View {
         .onDisappear { removeBlurMonitor() }
     }
 
-    /// Fill tiers: boxed idle field wash; hover/focus lift one
-    /// luminance step (`fieldHoverBackground` / `fieldFocusBackground`).
-    /// Unboxed rest is clear - only hover/focus paint (see body).
+    /// Fill tiers: idle is clear so the field shows the underlying surface;
+    /// hover/focus lift one luminance step (`fieldHoverBackground` /
+    /// `fieldFocusBackground`).
     private var boxBackground: Color {
         if isFocused { return AppColor.fieldFocusBackground }
         if isHovered { return AppColor.fieldHoverBackground }
-        return isBoxed ? AppColor.fieldBackground : AppColor.controlBackground
+        return .clear
     }
 
     /// Border tiers: idle `borderStrong`, brighter hover, focused accent.
