@@ -870,15 +870,21 @@ private struct TabPill: View {
                     // text underneath. An opaque primaryBackground base
                     // under the tint reproduces the pill's resolved color
                     // while blocking the label completely.
-                    // The hover fill has to be a step ABOVE both pill fills
-                    // (`pillFill` is the selected 8% or the hovered 5%), not
-                    // another 5% wash: that matched the unselected pill exactly
-                    // (no feedback at all) and sat *under* the selected one, so
-                    // the × read as a hole punched in the pill - and in dark
-                    // mode neither step was visible.
+                    //
+                    // The hover fill must sit clearly ABOVE both pill fills,
+                    // and it has to do so in BOTH appearances. `AppColor.border`
+                    // was the previous pick and became a trap once the border
+                    // tokens turned into flat values: as a solid #EDEDED it
+                    // lands exactly on the selected pill's resolved fill (8%
+                    // black over the #F9F9F9 chrome) and 2 steps off the
+                    // hovered pill's (5%) - indistinguishable in light, and
+                    // #303030 sits between the two dark pills (#313131 /
+                    // #373737) the same way. `selectionHoverBackground` is one
+                    // tier up in each appearance: #DCDCDC over light pills at
+                    // #EDEDED/#EFEFEF, #565656 over dark ones at #313131/#373737.
                     .background {
                         RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                            .fill(isHoveringClose ? AppColor.border : pillFill)
+                            .fill(isHoveringClose ? AppColor.selectionHoverBackground : pillFill)
                             .background(
                                 AppColor.primaryBackground,
                                 in: RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
