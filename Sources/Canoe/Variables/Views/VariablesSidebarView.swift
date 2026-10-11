@@ -552,7 +552,7 @@ private struct VariableRow: View {
                         onUpdate(updating(isEnabled: !variable.isEnabled))
                         onCommit?(variable.id)
                     } label: {
-                        Image(systemName: variable.isEnabled ? "checkmark.square" : "square")
+                        hoverGlyph(variable.isEnabled ? "checkmark.square" : "square")
                     }
                     .buttonStyle(IconButtonStyle(inset: 0))
                     .foregroundStyle(AppColor.textSecondary)
@@ -568,7 +568,7 @@ private struct VariableRow: View {
                             revealedSecrets.insert(variable.id)
                         }
                     } label: {
-                        Image(systemName: isRevealed ? "eye.slash" : "eye")
+                        hoverGlyph(isRevealed ? "eye.slash" : "eye")
                     }
                     .buttonStyle(IconButtonStyle(inset: 0))
                     .foregroundStyle(AppColor.textSecondary)
@@ -588,7 +588,7 @@ private struct VariableRow: View {
                         didCopy = false
                     }
                 } label: {
-                    Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+                    hoverGlyph(didCopy ? "checkmark" : "doc.on.doc")
                 }
                 .buttonStyle(IconButtonStyle(inset: 0))
                 .foregroundStyle(didCopy ? AppColor.success : AppColor.textSecondary)
@@ -614,6 +614,18 @@ private struct VariableRow: View {
         .onChange(of: shownValue) { _, _ in
             didCopy = false
         }
+    }
+
+    /// Optically uniform glyph for the row's hover actions: at one shared
+    /// font size the SF Symbols still draw at different heights (the copy
+    /// glyph's stacked sheets tower over the checkbox square), which reads
+    /// as mismatched buttons. Every action glyph is fit into one shared
+    /// square instead, centered in the icon button's glyph box.
+    private func hoverGlyph(_ systemName: String) -> some View {
+        Image(systemName: systemName)
+            .resizable()
+            .scaledToFit()
+            .frame(width: AppSize.hoverGlyphSide, height: AppSize.hoverGlyphSide)
     }
 
     private var keyText: some View {

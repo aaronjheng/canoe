@@ -123,6 +123,10 @@ enum AppSize {
     static let tabSearchWidth: CGFloat = 360
     /// Default dropdown panel width (custom menus, see Dropdown.swift).
     static let dropdownDefaultWidth: CGFloat = 180
+    /// Square the variable row's hover action glyphs are fit into (see
+    /// VariablesSidebarView's `hoverGlyph`): one shared footprint so the
+    /// checkbox, eye, and copy glyphs read as the same-size buttons.
+    static let hoverGlyphSide: CGFloat = 12
     /// Disclosure-chevron column in sidebar tree rows - the 16px codicon box
     /// VS Code uses for its tree twisties.
     static let treeChevronWidth: CGFloat = 16
