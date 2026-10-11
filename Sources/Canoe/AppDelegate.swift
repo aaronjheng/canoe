@@ -249,6 +249,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    @objc func openHelp() {
+        guard let url = URL(string: "https://github.com/aaronjheng/canoe") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     private func openLicense() {
         openUtilityWindow(
             .license,
@@ -672,6 +677,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Hands the menu to AppKit: it lists the open windows below (main,
         // Settings, About, License) and checkmarks the key window.
         NSApp.windowsMenu = windowMenu
+
+        let helpMenuItem = NSMenuItem()
+        mainMenu.addItem(helpMenuItem)
+        let helpMenu = NSMenu(title: "Help")
+        let helpItem = NSMenuItem(title: "Canoe Help", action: #selector(openHelp), keyEquivalent: "?")
+        helpItem.keyEquivalentModifierMask = [.command]
+        helpItem.target = self
+        helpMenu.addItem(helpItem)
+        helpMenuItem.submenu = helpMenu
+        NSApp.helpMenu = helpMenu
 
         NSApp.mainMenu = mainMenu
     }
