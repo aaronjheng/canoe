@@ -6,8 +6,8 @@ enum RequestBodyType: String, Codable, CaseIterable, Identifiable, Sendable {
     case none
     case formData
     case urlEncoded
-    case raw
     case binary
+    case raw
 
     var id: String { rawValue }
 
