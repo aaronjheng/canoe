@@ -148,6 +148,7 @@ struct CollectionDetailView: View {
                     suggestions: suggestions,
                     keyHeader: "Variable",
                     valueHeader: "Value",
+                    headerBackground: nil,
                     secretKeyPath: \.isSecret
                 )
                 .id(draft.id)
