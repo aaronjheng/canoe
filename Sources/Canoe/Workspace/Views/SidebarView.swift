@@ -377,7 +377,7 @@ private struct HistoryView: View {
                         showClearConfirm = true
                     }
                     .labelStyle(.iconOnly)
-                    .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
+                    .buttonStyle(IconButtonStyle())
                     .foregroundStyle(AppColor.textSecondary)
                     .help("Clear history")
                     .confirmationDialog(
@@ -1373,7 +1373,7 @@ private struct HistoryRow: View {
                         .font(AppFont.iconRow)
                         .foregroundStyle(AppColor.textSecondary)
                 }
-                .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
+                .buttonStyle(IconButtonStyle(inset: 0))
                 .help("Remove from history")
                 .padding(.trailing, AppSpacing.xSmall)
             }
