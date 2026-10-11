@@ -1,9 +1,12 @@
 import AppKit
 import SwiftUI
 
-/// Semantic color tokens used across the app, aligned with the GitHub Primer
-/// visual language: a blue accent, Primer status/method colors, and scale-
-/// based fills that adapt between light and dark appearances.
+/// Theme palette mechanism adopted from runlet: surface colors resolve
+/// from `Palette.systemLight` / `Palette.neutralDark`. Brand/status/syntax
+/// colors stay as fixed Primer pairs for compatibility with the existing
+/// token surface (`AppColor.accent`, `methodGET`, etc.). When the registry
+/// arrives, the `Palette` instances here are the only change needed on
+/// the theme side — no token or call site changes.
 ///
 /// Light/dark correspondence
 /// =========================

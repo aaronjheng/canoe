@@ -1,5 +1,11 @@
 import AppKit
 
+/// The appearance axis of theming: follow the system, or force light/dark.
+///
+/// Appearance is one of two independent theming axes — it decides *which side
+/// is active*; the `Palette` for that side (see `Theme/Palette.swift`) decides
+/// what it looks like. Today the palettes are fixed; when selectable themes
+/// land, this type keeps its role unchanged.
 enum AppAppearance: Int, CaseIterable {
     case system = 0
     case light = 1
