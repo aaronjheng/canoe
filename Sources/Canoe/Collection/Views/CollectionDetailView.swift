@@ -152,6 +152,11 @@ struct CollectionDetailView: View {
                     secretKeyPath: \.isSecret
                 )
                 .id(draft.id)
+                // The section divider must not sit flush on the header row:
+                // the other sections (Overview / Authorization) carry their
+                // own padding below the same divider, the bare table has
+                // none.
+                .padding(.top, AppSpacing.small)
             }
         }
     }
