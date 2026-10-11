@@ -8,6 +8,10 @@ struct Badge: View {
     var systemImage: String?
     var foregroundColor: Color = AppColor.textSecondary
     var backgroundColor: Color = AppColor.subtleBackground
+    /// Drops the vertical padding so the pill stays one text line tall:
+    /// for badges inline with a text run, where the default pill would
+    /// stretch the whole line (and, in a fixed-pitch list, the row).
+    var isCompact = false
 
     var body: some View {
         HStack(spacing: AppSpacing.xxSmall) {
@@ -20,7 +24,7 @@ struct Badge: View {
         .lineLimit(1)
         .foregroundStyle(foregroundColor)
         .padding(.horizontal, AppSpacing.compact)
-        .padding(.vertical, AppSpacing.xxSmall)
+        .padding(.vertical, isCompact ? 0 : AppSpacing.xxSmall)
         .background(backgroundColor)
         .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
         .fixedSize(horizontal: true, vertical: false)

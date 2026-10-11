@@ -526,7 +526,10 @@ private struct VariableRow: View {
                 HStack(spacing: AppSpacing.xSmall) {
                     keyText
                     if !variable.isEnabled {
-                        Badge(text: "Disabled")
+                        // Compact: the default pill's vertical padding makes
+                        // the key line - and with it the whole row - taller
+                        // than its neighbors the moment it appears.
+                        Badge(text: "Disabled", isCompact: true)
                     }
                     if let source {
                         Image(systemName: source.systemImage)
