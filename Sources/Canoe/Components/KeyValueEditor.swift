@@ -141,7 +141,9 @@ struct KeyValueEditor<T: KVItem>: View {
     private let toggleColumnWidth: CGFloat = 32
     private let gripGlyphWidth: CGFloat = 14
     private let deleteColumnWidth: CGFloat = 26
-    private let kindMenuWidth: CGFloat = 72
+    // Wide enough for the checkmark gutter plus "File" at the small size,
+    // so the dropdown never truncates its own label.
+    private let kindMenuWidth: CGFloat = 84
     private var secretColumnWidth: CGFloat { secretKeyPath == nil ? 0 : 26 }
     private var showsKindMenu: Bool { kindKeyPath != nil }
     private var leadingColumnWidth: CGFloat {
@@ -850,23 +852,40 @@ private struct KVRow: View {
     }
 
     /// Type menu inside the key cell: Text/File (form-data only). The ghost
-    /// row's picker materializes the row via `kind`.
+    /// row's menu materializes the row via `kind`. The presentation id is
+    /// derived from the row's focus identity, so two kind menus on different
+    /// rows never share an anchor.
     private var kindMenu: some View {
         Group {
             if let kind {
-                Picker("Kind", selection: kind) {
-                    ForEach(FormFieldKind.allCases, id: \.self) { kind in
-                        Text(kind == .text ? "Text" : "File").tag(kind)
+                DropdownFieldButton(
+                    id: "kv.kind.\(kindID)",
+                    label: kind.wrappedValue == .text ? "Text" : "File",
+                    width: kindMenuWidth,
+                    isDisabled: !isEnabled
+                ) {
+                    FormFieldKind.allCases.map { pickedKind in
+                        DropdownRow.action(
+                            pickedKind == .text ? "Text" : "File",
+                            isSelected: pickedKind == kind.wrappedValue
+                        ) {
+                            kind.wrappedValue = pickedKind
+                        }
                     }
                 }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .controlSize(.small)
-                .disabled(!isEnabled)
-                .opacity(isEnabled ? 1 : AppOpacity.disabled)
             }
         }
         .frame(width: kindMenuWidth)
+    }
+
+    /// Stable per-row identity for the kind menu's presentation id (see
+    /// `kindMenu`): the focus tag carries the row's item id; the ghost row
+    /// is unique by construction.
+    private var kindID: String {
+        switch keyFocus {
+        case .key(let id): id.uuidString
+        default: "ghost"
+        }
     }
 
     /// Value cell for a File row: filename + Browse, writing the path into

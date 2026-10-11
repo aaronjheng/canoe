@@ -399,39 +399,33 @@ private struct ScopeSection: View {
     }
 }
 
-/// Underlined menu link that switches the active environment, Postman's
-/// "Select environment" action.
+/// Underlined link that switches the active environment, Postman's
+/// "Select environment" action - opening the shared dropdown panel.
 private struct SelectEnvironmentMenu: View {
     @Environment(AppStore.self) private var store
 
     var body: some View {
-        Menu {
-            Button("No Environment") { store.setActiveEnvironment(nil) }
+        DropdownLinkButton(
+            id: "variables.selectEnvironment",
+            label: "Select Environment",
+            width: 220,
+            help: "Switch the active environment"
+        ) {
+            var rows: [DropdownRow] = [
+                DropdownRow.action("No Environment", isSelected: store.activeEnvironment == nil) {
+                    store.setActiveEnvironment(nil)
+                }
+            ]
             if !store.activeWorkspaceEnvironments.isEmpty {
-                Divider()
+                rows.append(.divider())
             }
-            ForEach(store.activeWorkspaceEnvironments) { env in
-                Button {
+            rows += store.activeWorkspaceEnvironments.map { env in
+                DropdownRow.action(env.name, isSelected: store.activeEnvironment?.id == env.id) {
                     store.setActiveEnvironment(env.id)
-                } label: {
-                    if store.activeEnvironment?.id == env.id {
-                        Label(env.name, systemImage: "checkmark")
-                    } else {
-                        Text(env.name)
-                    }
                 }
             }
-        } label: {
-            Text("Select Environment")
-                .font(AppFont.small.weight(.medium))
-                .foregroundStyle(AppColor.accent)
-                .underline()
+            return rows
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .clickCursor()
-        .help("Switch the active environment")
     }
 }
 

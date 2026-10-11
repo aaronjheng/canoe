@@ -88,23 +88,23 @@ struct TopBarView: View {
     }
 }
 
-/// Compact workspace menu: icon + name + chevron, mirroring Postman's
-/// workspace pill in the top bar. Switch, create, and variables live here;
-/// deletion stays in the workspaces manager so a slip in this always-visible
-/// menu can't wipe a whole workspace. Hovering the pill dwells a moment, then
-/// drops the workspace's info card (`WorkspaceInfoCard`) - the local stand-in
-/// for Postman's cards.
+/// Compact workspace menu: icon + name, mirroring Postman's workspace pill
+/// in the top bar. Switch, create, and variables live here; deletion stays
+/// in the workspaces manager so a slip in this always-visible menu can't
+/// wipe a whole workspace. Hovering the pill dwells a moment, then drops
+/// the workspace's info card (`WorkspaceInfoCard`) - the local stand-in for
+/// Postman's cards. The menu itself is the shared custom dropdown panel
+/// (see Dropdown.swift), hanging left off the pill like the env picker.
 private struct WorkspaceSwitcher: View {
     @Environment(AppStore.self) private var store
+    @Environment(DropdownCoordinator.self) private var dropdown
     @State private var isHoveringPill = false
     /// Pointer over the info card. The card floats below the pill, so without
     /// this the card would vanish the moment the pointer left for it.
     @State private var isHoveringCard = false
     @State private var isCardShown = false
-    /// The switcher's own menu popup tracks the mouse in a nested session on
-    /// top of the bar. A card sitting behind the open menu only reads as a
-    /// glitch, so it stays hidden for as long as a menu tracks.
-    @State private var isMenuTracking = false
+
+    private let menuID = "topbar.workspace"
 
     /// Finder-style name order, matching the workspaces manager's default
     /// sort - the menu otherwise follows vault insertion order, which drifts
@@ -115,12 +115,62 @@ private struct WorkspaceSwitcher: View {
         }
     }
 
+    /// The workspace menu's rows: one checkmarked row per workspace, then
+    /// the overview / variables shortcuts (dead without an active
+    /// workspace), then the manager.
+    private var menuRows: [DropdownRow] {
+        var rows: [DropdownRow] = sortedWorkspaces.map { workspace in
+            DropdownRow.action(
+                workspace.name,
+                isSelected: store.activeWorkspace?.id == workspace.id
+            ) {
+                store.setActiveWorkspace(workspace.id)
+            }
+        }
+        rows.append(.divider())
+        rows.append(
+            DropdownRow.action(
+                "Overview",
+                systemImage: "square.stack.3d.up",
+                isDisabled: store.activeWorkspace == nil,
+                help: "Open the active workspace overview"
+            ) {
+                if let active = store.activeWorkspace {
+                    store.openWorkspace(active.id)
+                }
+            }
+        )
+        rows.append(
+            DropdownRow.action(
+                "Variables",
+                systemImage: "curlybraces.square",
+                isDisabled: store.activeWorkspace == nil,
+                help: "Edit the active workspace's variables"
+            ) {
+                if let active = store.activeWorkspace {
+                    store.openWorkspaceVariables(active.id)
+                }
+            }
+        )
+        rows.append(.divider())
+        rows.append(
+            DropdownRow.action("View all workspaces", systemImage: "square.stack.3d.up") {
+                store.enterWorkspacesManager()
+            }
+        )
+        return rows
+    }
+
     /// Coalesced hover of the pill and the card: the card stays up while
     /// either one is hovered.
     private var wantsCard: Bool { isHoveringPill || isHoveringCard }
 
     private var showsCard: Bool {
-        isCardShown && !isMenuTracking && store.activeWorkspace != nil
+        // A card sitting behind the open menu only reads as a glitch, so it
+        // hides for as long as the menu is open (and once the menu closes
+        // the card must not pop back out from under a pointer that never
+        // left the pill - it returns on the next hover, like Postman's).
+        isCardShown && dropdown.active?.id != menuID && store.activeWorkspace != nil
     }
 
     var body: some View {
@@ -144,7 +194,7 @@ private struct WorkspaceSwitcher: View {
             .task(id: wantsCard) {
                 if wantsCard {
                     try? await Task.sleep(for: .milliseconds(280))
-                    guard !Task.isCancelled, !isMenuTracking else { return }
+                    guard !Task.isCancelled, dropdown.active?.id != menuID else { return }
                     isCardShown = true
                 } else {
                     try? await Task.sleep(for: .milliseconds(140))
@@ -152,73 +202,34 @@ private struct WorkspaceSwitcher: View {
                     isCardShown = false
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
-                isMenuTracking = true
-                // Dropped, not just hidden: once the menu closes the card must
-                // not pop back out from under a pointer that never left the
-                // pill - it returns on the next hover, like Postman's.
-                isCardShown = false
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)) { _ in
-                isMenuTracking = false
-            }
     }
 
-    /// The pill itself: the menu plus its hover fill. The fill is wrapped
-    /// around the menu from the OUTSIDE, because the borderless menu style
-    /// sizes its label itself - padding applied inside the label never grew
-    /// the fill, which hugged the glyphs and the chevron.
+    /// The pill itself: the workspace name plus its hover fill; tapping it
+    /// opens the shared dropdown panel (see `menuRows`).
     private var pill: some View {
-        Menu {
-            ForEach(sortedWorkspaces) { workspace in
-                Toggle(
-                    workspace.name,
-                    isOn: Binding(
-                        get: { store.activeWorkspace?.id == workspace.id },
-                        set: { isSelected in
-                            if isSelected {
-                                store.setActiveWorkspace(workspace.id)
-                            }
-                        }
-                    )
-                )
-            }
-            Divider()
-            Button("Overview", systemImage: "square.stack.3d.up") {
-                if let active = store.activeWorkspace {
-                    store.openWorkspace(active.id)
-                }
-            }
-            .disabled(store.activeWorkspace == nil)
-            .help("Open the active workspace overview")
-            Button("Variables", systemImage: "curlybraces.square") {
-                if let active = store.activeWorkspace {
-                    store.openWorkspaceVariables(active.id)
-                }
-            }
-            .disabled(store.activeWorkspace == nil)
-            .help("Edit the active workspace's variables")
-            Divider()
-            Button("View all workspaces", systemImage: "square.stack.3d.up") {
-                store.enterWorkspacesManager()
-            }
-        } label: {
-            HStack(spacing: AppSpacing.compact) {
-                // Menu labels render images as monochrome templates, so this
-                // icon stays a quiet gray - same as Postman's workspace icon.
-                Image(systemName: "square.stack.3d.up.fill")
-                    .font(AppFont.small)
-                Text(store.activeWorkspace?.name ?? "No Workspace")
-                    .font(AppFont.sidebarRow)
-                    .lineLimit(1)
-            }
+        HStack(spacing: AppSpacing.compact) {
+            // Monochrome template, a quiet gray - same as Postman's
+            // workspace icon.
+            Image(systemName: "square.stack.3d.up.fill")
+                .font(AppFont.small)
+            Text(store.activeWorkspace?.name ?? "No Workspace")
+                .font(AppFont.sidebarRow)
+                .lineLimit(1)
         }
-        .menuStyle(.borderlessButton)
-        .buttonStyle(.plain)
-        .fixedSize()
         .padding(.horizontal, AppSpacing.xSmall)
         .frame(height: AppSize.topBarControlHeight)
         .contentShape(Rectangle())
+        .onTapGesture {
+            dropdown.toggle(
+                id: menuID,
+                showsSelection: true,
+                width: 260,
+                alignment: .trailing
+            ) {
+                menuRows
+            }
+        }
+        .dropdownAnchor(id: menuID)
         .clickCursor()
         .background(
             RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
@@ -233,6 +244,9 @@ private struct WorkspaceSwitcher: View {
         )
         .onHover { isHoveringPill = $0 }
         .help("Switch workspace")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Workspace: \(store.activeWorkspace?.name ?? "none")")
+        .accessibilityAddTraits(.isButton)
     }
 }
 

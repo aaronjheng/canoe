@@ -101,14 +101,16 @@ struct AuthorizationForm: View {
         VStack(alignment: .leading, spacing: AppSpacing.small) {
             Text("Authorization Type")
                 .font(AppFont.sectionTitle)
-            Picker("Authorization Type", selection: $type) {
-                ForEach(availableTypes) { type in
-                    Text(type.label).tag(type)
+            DropdownFieldButton(id: "auth.type", label: type.label, width: 200) {
+                availableTypes.map { pickedType in
+                    DropdownRow.action(
+                        pickedType.label,
+                        isSelected: pickedType == type
+                    ) {
+                        type = pickedType
+                    }
                 }
             }
-            .pickerStyle(.menu)
-            .labelsHidden()
-            .fixedSize()
             Text("The Authorization header will be automatically generated when you send the request.")
                 .font(AppFont.emptyStateBody)
                 .foregroundStyle(AppColor.textSecondary)

@@ -121,6 +121,8 @@ enum AppSize {
     static let contentDot: CGFloat = 6
     /// Tab-switcher search popup width (matches the sidebar max width).
     static let tabSearchWidth: CGFloat = 360
+    /// Default dropdown panel width (custom menus, see Dropdown.swift).
+    static let dropdownDefaultWidth: CGFloat = 180
     /// Disclosure-chevron column in sidebar tree rows - the 16px codicon box
     /// VS Code uses for its tree twisties.
     static let treeChevronWidth: CGFloat = 16

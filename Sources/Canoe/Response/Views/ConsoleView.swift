@@ -70,13 +70,16 @@ struct ConsoleView: View {
                 )
             }
             Spacer(minLength: 0)
-            Picker("Filter", selection: $errorsOnly) {
-                Text("All Logs").tag(false)
-                Text("Errors").tag(true)
+            DropdownFieldButton(
+                id: "console.filter",
+                label: errorsOnly ? "Errors" : "All Logs",
+                width: 120
+            ) {
+                [
+                    DropdownRow.action("All Logs", isSelected: !errorsOnly) { errorsOnly = false },
+                    DropdownRow.action("Errors", isSelected: errorsOnly) { errorsOnly = true },
+                ]
             }
-            .pickerStyle(.menu)
-            .labelsHidden()
-            .fixedSize()
             // An eraser, not a trash can: `trash` is this app's language for
             // deleting a thing (a request, a collection, a history entry),
             // while this wipes the log view and leaves nothing behind. It
@@ -93,10 +96,17 @@ struct ConsoleView: View {
             .disabled(visibleEntries.isEmpty)
             .help("Clear console")
             // Overflow menu for the panel's display options (the ones that
-            // do not deserve a permanent icon). The shared ellipsis menu, so
-            // it looks like every other overflow menu in the app.
-            RowActionsMenu(matchesIconButtons: true) {
-                Toggle("Show Timestamps", isOn: $showTimestamps)
+            // do not deserve a permanent icon). The shared ellipsis trigger,
+            // so it looks like every other overflow menu in the app.
+            DropdownOverflowButton(id: "console.display", matchesIconButtons: true) {
+                [
+                    DropdownRow.action(
+                        "Show Timestamps",
+                        isSelected: showTimestamps
+                    ) {
+                        showTimestamps.toggle()
+                    }
+                ]
             }
             // Same close affordance the right-hand inspector panels carry
             // (see InspectorHeader), so a docked panel can always be put

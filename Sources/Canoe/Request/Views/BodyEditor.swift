@@ -37,14 +37,20 @@ struct BodyEditor: View {
             }
             Spacer(minLength: 0)
             if request.requestBodyType == .raw {
-                Picker("Format", selection: rawKindBinding) {
-                    ForEach(RawBodyKind.allCases) { kind in
-                        Text(kind.label).tag(kind)
+                DropdownFieldButton(
+                    id: "body.rawKind",
+                    label: rawKindBinding.wrappedValue.label,
+                    width: AppSize.methodPickerWidth
+                ) {
+                    RawBodyKind.allCases.map { kind in
+                        DropdownRow.action(
+                            kind.label,
+                            isSelected: kind == rawKindBinding.wrappedValue
+                        ) {
+                            rawKindBinding.wrappedValue = kind
+                        }
                     }
                 }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .frame(width: AppSize.methodPickerWidth)
                 .help("Raw body format (sets the Content-Type)")
             }
         }

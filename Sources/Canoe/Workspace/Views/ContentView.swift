@@ -21,6 +21,16 @@ struct ContentView: View {
     /// Pick from the window-level method dropdown, handed down to the
     /// editor's draft (the panel can't reach the draft itself).
     @State private var pendingMethodPick: HTTPMethod?
+    /// The shared custom dropdowns (see Dropdown.swift): the open panel plus
+    /// every mounted trigger's anchor. One panel at a time, window-level so
+    /// scroll views and pane boundaries never clip it.
+    @State private var dropdown = DropdownCoordinator()
+    @State private var dropdownAnchors: [String: Anchor<CGRect>] = [:]
+    /// Measured panel height, tagged with the presentation it belongs to: a
+    /// different panel opening (different row count) must not inherit the
+    /// previous panel's height for its first placement frame.
+    @State private var dropdownPanelHeight: CGFloat = 0
+    @State private var dropdownPanelHeightID: String?
     /// Keeps the splash up long enough to perceive even when the vault
     /// loads instantly from the local disk.
     @State private var splashElapsed = false
@@ -97,9 +107,12 @@ struct ContentView: View {
         .overlay { tabDrawerOverlay }
         .overlay { envPickerOverlay }
         .overlay { methodMenuOverlay }
+        .overlay { dropdownOverlay }
         .onPreferenceChange(EnvPickerAnchorKey.self) { envPickerAnchor = $0 }
         .onPreferenceChange(TabDrawerAnchorKey.self) { tabDrawerAnchor = $0 }
         .onPreferenceChange(MethodMenuAnchorKey.self) { methodMenuAnchor = $0 }
+        .onPreferenceChange(DropdownAnchorKey.self) { dropdownAnchors = $0 }
+        .environment(dropdown)
     }
 
     /// Postman-style environment dropdown: no popover bubble or arrow, just
@@ -198,6 +211,62 @@ struct ContentView: View {
                         )
                         .offset(x: row.minX, y: row.maxY + AppSpacing.xSmall)
                     }
+                }
+            }
+        }
+    }
+
+    /// The shared custom dropdown panel (see Dropdown.swift): a bordered
+    /// card below the trigger, flipped above it when it would overflow the
+    /// window bottom. Window-level so nothing clips it.
+    private var dropdownOverlay: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                // Anchor guard keeps a stale "open" flag from leaving an
+                // invisible backdrop swallowing clicks after the trigger has
+                // unmounted and cleared the preference.
+                if let presentation = dropdown.active, let anchor = dropdownAnchors[presentation.id] {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { dropdown.dismiss() }
+                    Button("Close Dropdown Menu") { dropdown.dismiss() }
+                        .keyboardShortcut(.cancelAction)
+                        .frame(width: 0, height: 0)
+                        .opacity(0)
+                        .accessibilityHidden(true)
+                    let trigger = proxy[anchor]
+                    let gap = AppSpacing.xSmall
+                    // Drop below the trigger; flip above when the card would
+                    // overflow the window bottom (a picker on a low sidebar
+                    // row, a console row near the pane's foot).
+                    let droppedY = trigger.maxY + gap
+                    let measuredHeight = dropdownPanelHeightID == presentation.id ? dropdownPanelHeight : 0
+                    let panelY =
+                        droppedY + measuredHeight > proxy.size.height
+                        ? max(trigger.minY - measuredHeight - gap, 0)
+                        : droppedY
+                    let panelX: CGFloat = {
+                        switch presentation.alignment {
+                        case .leading: return trigger.minX
+                        case .trailing: return trigger.maxX - presentation.width
+                        }
+                    }()
+                    // Clamp into the window so a trailing-aligned card on a
+                    // narrow window still shows its labels.
+                    let clampedX = min(max(panelX, 0), max(proxy.size.width - presentation.width, 0))
+                    DropdownMenuPanel(
+                        rows: presentation.rows,
+                        showsSelection: presentation.showsSelection,
+                        onDismiss: { dropdown.dismiss() }
+                    )
+                    .frame(width: presentation.width)
+                    .onGeometryChange(for: CGFloat.self) { proxy in
+                        proxy.size.height
+                    } action: {
+                        dropdownPanelHeight = $0
+                        dropdownPanelHeightID = presentation.id
+                    }
+                    .offset(x: clampedX, y: panelY)
                 }
             }
         }

@@ -45,13 +45,16 @@ struct CodeSnippetSidebarView: View {
 
     private var pickerBar: some View {
         HStack(spacing: AppSpacing.xSmall) {
-            Picker("Language", selection: $languageRaw) {
-                ForEach(CodeSnippetLanguage.allCases) { language in
-                    Text(language.rawValue).tag(language.rawValue)
+            DropdownFieldButton(id: "snippet.language", label: languageRaw, width: 160) {
+                CodeSnippetLanguage.allCases.map { language in
+                    DropdownRow.action(
+                        language.rawValue,
+                        isSelected: language.rawValue == languageRaw
+                    ) {
+                        languageRaw = language.rawValue
+                    }
                 }
             }
-            .pickerStyle(.menu)
-            .labelsHidden()
             .help("Snippet language")
             Spacer(minLength: 0)
             copyButton

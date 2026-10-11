@@ -251,12 +251,15 @@ private struct GroupDivider: View {
 
 private struct EnvironmentRow: View {
     @Environment(AppStore.self) private var store
+    @Environment(DropdownCoordinator.self) private var dropdown
     let env: EnvironmentProfile
     @State private var isHovering = false
     @State private var showDeleteConfirm = false
-    /// A menu popup tracks the mouse in its own session, and the pointer sits
-    /// in the popup window while it does - see the row's body.
-    @State private var isMenuTracking = false
+
+    /// The row's overflow menu id: also how the row learns its menu is open
+    /// (the panel floats at window level, so the row must keep its hover
+    /// actions mounted while the pointer is inside the panel).
+    private var overflowID: String { "sidebar.environment.\(env.id)" }
 
     private var isActive: Bool { store.activeEnvironment?.id == env.id }
     private var isSelected: Bool { store.selectedTab == .environment(env.id) }
@@ -264,16 +267,17 @@ private struct EnvironmentRow: View {
     /// Hover chrome for the row and for its actions. The actions have to
     /// outlive the pointer leaving the row for their own open menu, or the
     /// menu would be torn down from under the pointer.
-    private var showsActions: Bool { isHovering || isMenuTracking }
+    private var showsActions: Bool { isHovering || dropdown.active?.id == overflowID }
 
     /// The row's actions in one place: the hover overflow menu and the
     /// right-click menu both render these, so the two never drift apart.
-    @ViewBuilder
-    private var environmentActions: some View {
-        Button("Set Active") { store.setActiveEnvironment(env.id) }
-        Button("Duplicate") { store.duplicateEnvironment(env.id) }
-        Divider()
-        Button("Delete", role: .destructive) { showDeleteConfirm = true }
+    private var environmentActions: [DropdownRow] {
+        [
+            DropdownRow.action("Set Active") { store.setActiveEnvironment(env.id) },
+            DropdownRow.action("Duplicate") { store.duplicateEnvironment(env.id) },
+            .divider(),
+            DropdownRow.action("Delete", isDestructive: true) { showDeleteConfirm = true },
+        ]
     }
 
     /// Trailing hover actions, same chrome as the collection and folder rows:
@@ -281,7 +285,7 @@ private struct EnvironmentRow: View {
     private var hoverActions: some View {
         Group {
             if showsActions {
-                RowActionsMenu { environmentActions }
+                DropdownOverflowButton(id: overflowID, width: 160) { environmentActions }
                     .padding(.trailing, AppSpacing.xSmall)
                     .background(
                         RowActionBackground(tint: isSelected ? AppColor.selectionBackground : AppColor.subtleBackground)
@@ -329,7 +333,7 @@ private struct EnvironmentRow: View {
         .simultaneousGesture(
             TapGesture(count: 2).onEnded { store.pin(.environment(env.id)) }
         )
-        .contextMenu { environmentActions }
+        .contextMenu { DropdownMenuContent(rows: environmentActions) }
         .overlay(alignment: .trailing) { hoverActions }
         .help(isActive ? "\(env.name) (active environment)" : "Edit \(env.name)")
         .confirmationDialog(
@@ -342,16 +346,10 @@ private struct EnvironmentRow: View {
         } message: {
             Text("Its variables will be permanently deleted.")
         }
-        // The row's actions are a menu now: keep them mounted while their popup
-        // tracks the mouse - the pointer has left the row for the popup window
-        // by then - and only for the row that opened it.
-        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
-            guard isHovering else { return }
-            isMenuTracking = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)) { _ in
-            isMenuTracking = false
-        }
+        // The row's actions are a dropdown now: the coordinator's open id
+        // keeps them mounted while the pointer is inside the panel - the
+        // panel floats at window level, so the pointer has left the row by
+        // then (see `showsActions`).
     }
 }
 
@@ -678,13 +676,15 @@ private struct RowActionBackground: View {
 
 private struct CollectionTree: View {
     @Environment(AppStore.self) private var store
+    @Environment(DropdownCoordinator.self) private var dropdown
     let collection: Collection
     @State private var isHoveringHeader = false
     @State private var isRenaming = false
     @State private var showDeleteConfirm = false
-    /// A menu popup tracks the mouse in its own session, and the pointer sits
-    /// in the popup window while it does - see the row's body.
-    @State private var isMenuTracking = false
+    /// The header's overflow menu id: also how the header learns its menu
+    /// is open (the panel floats at window level, so the header must keep
+    /// its hover actions mounted while the pointer is inside the panel).
+    private var overflowID: String { "sidebar.collection.\(collection.id)" }
     /// Expansion is remembered across launches in the store (VS Code-style
     /// view state): unrecorded nodes render collapsed, and while the sidebar
     /// filter is active the store forces expansion so matches stay visible.
@@ -700,7 +700,7 @@ private struct CollectionTree: View {
     /// Hover chrome for the row and for its actions. The actions have to
     /// outlive the pointer leaving the row for their own open menu, or the
     /// menu would be torn down from under the pointer.
-    private var showsActions: Bool { isHoveringHeader || isMenuTracking }
+    private var showsActions: Bool { isHoveringHeader || dropdown.active?.id == overflowID }
 
     private var visibleFolders: [Folder] {
         let folders = store.childFolders(of: nil, in: collection)
@@ -762,23 +762,24 @@ private struct CollectionTree: View {
     /// carries everything else. The context menu renders this same list after
     /// its own Add Request entry, which is what keeps the two entry points
     /// from drifting apart.
-    @ViewBuilder
-    private var collectionActions: some View {
-        Button("Add Folder", systemImage: "folder.badge.plus") {
-            store.addFolder(in: collection.id, parentFolderID: nil)
-            store.setSidebarNodeExpanded(collection.id, true)
-        }
-        Divider()
-        Button("Edit", systemImage: "folder.badge.gearshape") {
-            store.openTab(.collection(collection.id))
-        }
-        Button("Rename") {
-            isRenaming = true
-        }
-        Divider()
-        Button("Delete", role: .destructive) {
-            showDeleteConfirm = true
-        }
+    private var collectionActionsRows: [DropdownRow] {
+        [
+            DropdownRow.action("Add Folder", systemImage: "folder.badge.plus") {
+                store.addFolder(in: collection.id, parentFolderID: nil)
+                store.setSidebarNodeExpanded(collection.id, true)
+            },
+            .divider(),
+            DropdownRow.action("Edit", systemImage: "folder.badge.gearshape") {
+                store.openTab(.collection(collection.id))
+            },
+            DropdownRow.action("Rename") {
+                isRenaming = true
+            },
+            .divider(),
+            DropdownRow.action("Delete", isDestructive: true) {
+                showDeleteConfirm = true
+            },
+        ]
     }
 
     /// VS Code explorer-style hover actions on the row's trailing edge: the
@@ -792,7 +793,7 @@ private struct CollectionTree: View {
                     InlineActionButton(systemImage: "plus", help: "Add Request") {
                         addRequest()
                     }
-                    RowActionsMenu { collectionActions }
+                    DropdownOverflowButton(id: overflowID, width: 180) { collectionActionsRows }
                 }
                 .padding(.trailing, AppSpacing.xSmall)
                 .background(
@@ -868,10 +869,10 @@ private struct CollectionTree: View {
                     }
                 )
                 .contextMenu {
-                    Button("Add Request", systemImage: "plus") {
-                        addRequest()
-                    }
-                    collectionActions
+                    DropdownMenuContent(
+                        rows: [DropdownRow.action("Add Request", systemImage: "plus") { addRequest() }]
+                            + collectionActionsRows
+                    )
                 }
                 .overlay(alignment: .trailing) { hoverActions }
             }
@@ -896,16 +897,10 @@ private struct CollectionTree: View {
         } message: {
             Text("Its folders and requests will be permanently deleted.")
         }
-        // The row's actions are a menu now: keep them mounted while their popup
-        // tracks the mouse - the pointer has left the row for the popup window
-        // by then - and only for the row that opened it.
-        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
-            guard isHoveringHeader else { return }
-            isMenuTracking = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)) { _ in
-            isMenuTracking = false
-        }
+        // The header's actions are a dropdown now: the coordinator's open id
+        // keeps them mounted while the pointer is inside the panel - the
+        // panel floats at window level, so the pointer has left the header by
+        // then (see `showsActions`).
     }
 }
 
@@ -913,15 +908,17 @@ private struct CollectionTree: View {
 
 private struct FolderTree: View {
     @Environment(AppStore.self) private var store
+    @Environment(DropdownCoordinator.self) private var dropdown
     let folder: Folder
     let collection: Collection
     let depth: Int
     @State private var isHoveringHeader = false
     @State private var isRenaming = false
     @State private var showDeleteConfirm = false
-    /// A menu popup tracks the mouse in its own session, and the pointer sits
-    /// in the popup window while it does - see the row's body.
-    @State private var isMenuTracking = false
+    /// The header's overflow menu id: also how the header learns its menu
+    /// is open (the panel floats at window level, so the header must keep
+    /// its hover actions mounted while the pointer is inside the panel).
+    private var overflowID: String { "sidebar.folder.\(folder.id)" }
 
     /// Remembered expansion, same as collections (see above).
     private var isExpanded: Bool { store.isSidebarNodeExpanded(folder.id) }
@@ -929,7 +926,7 @@ private struct FolderTree: View {
     /// Hover chrome for the row and for its actions. The actions have to
     /// outlive the pointer leaving the row for their own open menu, or the
     /// menu would be torn down from under the pointer.
-    private var showsActions: Bool { isHoveringHeader || isMenuTracking }
+    private var showsActions: Bool { isHoveringHeader || dropdown.active?.id == overflowID }
 
     /// Whether this folder's page is the selected tab - the same selection
     /// mark the collection row carries, so the sidebar shows which folder the
@@ -1002,23 +999,24 @@ private struct FolderTree: View {
     /// carries everything else. The context menu renders this same list after
     /// its own Add Request entry, which is what keeps the two entry points
     /// from drifting apart.
-    @ViewBuilder
-    private var folderActions: some View {
-        Button("Add Subfolder", systemImage: "folder.badge.plus") {
-            store.addFolder(in: collection.id, parentFolderID: folder.id)
-            store.setSidebarNodeExpanded(folder.id, true)
-        }
-        Divider()
-        Button("Edit", systemImage: "folder.badge.gearshape") {
-            store.openTab(.folder(folder.id))
-        }
-        Button("Rename") {
-            isRenaming = true
-        }
-        Divider()
-        Button("Delete", role: .destructive) {
-            showDeleteConfirm = true
-        }
+    private var folderActionsRows: [DropdownRow] {
+        [
+            DropdownRow.action("Add Subfolder", systemImage: "folder.badge.plus") {
+                store.addFolder(in: collection.id, parentFolderID: folder.id)
+                store.setSidebarNodeExpanded(folder.id, true)
+            },
+            .divider(),
+            DropdownRow.action("Edit", systemImage: "folder.badge.gearshape") {
+                store.openTab(.folder(folder.id))
+            },
+            DropdownRow.action("Rename") {
+                isRenaming = true
+            },
+            .divider(),
+            DropdownRow.action("Delete", isDestructive: true) {
+                showDeleteConfirm = true
+            },
+        ]
     }
 
     /// Same trailing-edge actions as the collection row: the one action worth
@@ -1030,7 +1028,7 @@ private struct FolderTree: View {
                     InlineActionButton(systemImage: "plus", help: "Add Request") {
                         addRequest()
                     }
-                    RowActionsMenu { folderActions }
+                    DropdownOverflowButton(id: overflowID, width: 180) { folderActionsRows }
                 }
                 .padding(.trailing, AppSpacing.xSmall)
                 .background(RowActionBackground(tint: AppColor.subtleBackground))
@@ -1114,10 +1112,10 @@ private struct FolderTree: View {
                     }
                 )
                 .contextMenu {
-                    Button("Add Request", systemImage: "plus") {
-                        addRequest()
-                    }
-                    folderActions
+                    DropdownMenuContent(
+                        rows: [DropdownRow.action("Add Request", systemImage: "plus") { addRequest() }]
+                            + folderActionsRows
+                    )
                 }
                 .overlay(alignment: .trailing) { hoverActions }
             }
@@ -1142,16 +1140,10 @@ private struct FolderTree: View {
         } message: {
             Text("Requests inside move to the collection root; the folder itself is permanently deleted.")
         }
-        // The row's actions are a menu now: keep them mounted while their popup
-        // tracks the mouse - the pointer has left the row for the popup window
-        // by then - and only for the row that opened it.
-        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
-            guard isHoveringHeader else { return }
-            isMenuTracking = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)) { _ in
-            isMenuTracking = false
-        }
+        // The header's actions are a dropdown now: the coordinator's open id
+        // keeps them mounted while the pointer is inside the panel - the
+        // panel floats at window level, so the pointer has left the header by
+        // then (see `showsActions`).
     }
 }
 
@@ -1159,21 +1151,23 @@ private struct FolderTree: View {
 
 private struct RequestRow: View {
     @Environment(AppStore.self) private var store
+    @Environment(DropdownCoordinator.self) private var dropdown
     let request: Request
     let depth: Int
     @State private var isHovering = false
     @State private var isRenaming = false
     @State private var showDeleteConfirm = false
-    /// A menu popup tracks the mouse in its own session, and the pointer sits
-    /// in the popup window while it does - see the row's body.
-    @State private var isMenuTracking = false
-
-    private var isSelected: Bool { store.selectedTab == .request(request.id) }
+    /// The row's overflow menu id: also how the row learns its menu is open
+    /// (the panel floats at window level, so the row must keep its hover
+    /// actions mounted while the pointer is inside the panel).
+    private var overflowID: String { "sidebar.request.\(request.id)" }
 
     /// Hover chrome for the row and for its actions. The actions have to
     /// outlive the pointer leaving the row for their own open menu, or the
     /// menu would be torn down from under the pointer.
-    private var showsActions: Bool { isHovering || isMenuTracking }
+    private var showsActions: Bool { isHovering || dropdown.active?.id == overflowID }
+
+    private var isSelected: Bool { store.selectedTab == .request(request.id) }
 
     /// Inline rename via the hover/context action.
     private var isRenamingNode: Bool { isRenaming }
@@ -1215,18 +1209,19 @@ private struct RequestRow: View {
 
     /// The row's actions in one place: the hover overflow menu and the
     /// right-click menu both render these, so the two never drift apart.
-    @ViewBuilder
-    private var rowActions: some View {
-        Button("Rename") {
-            isRenaming = true
-        }
-        Button("Duplicate") {
-            store.duplicateRequest(request.id)
-        }
-        Divider()
-        Button("Delete", role: .destructive) {
-            showDeleteConfirm = true
-        }
+    private var rowActions: [DropdownRow] {
+        [
+            DropdownRow.action("Rename") {
+                isRenaming = true
+            },
+            DropdownRow.action("Duplicate") {
+                store.duplicateRequest(request.id)
+            },
+            .divider(),
+            DropdownRow.action("Delete", isDestructive: true) {
+                showDeleteConfirm = true
+            },
+        ]
     }
 
     /// One hover-revealed overflow menu instead of a bank of icon buttons:
@@ -1235,7 +1230,7 @@ private struct RequestRow: View {
     private var hoverActions: some View {
         Group {
             if showsActions {
-                RowActionsMenu { rowActions }
+                DropdownOverflowButton(id: overflowID, width: 160) { rowActions }
                     .padding(.trailing, AppSpacing.xSmall)
                     .background(
                         RowActionBackground(tint: isSelected ? AppColor.selectionBackground : AppColor.subtleBackground)
@@ -1293,7 +1288,7 @@ private struct RequestRow: View {
                 .simultaneousGesture(
                     TapGesture(count: 2).onEnded { store.pinRequest(request.id) }
                 )
-                .contextMenu { rowActions }
+                .contextMenu { DropdownMenuContent(rows: rowActions) }
                 .overlay(alignment: .trailing) { hoverActions }
                 .help(request.name)
                 .confirmationDialog(
@@ -1308,16 +1303,10 @@ private struct RequestRow: View {
                 }
             }
         }
-        // The row's actions are a menu now: keep them mounted while their popup
-        // tracks the mouse - the pointer has left the row for the popup window
-        // by then - and only for the row that opened it.
-        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
-            guard isHovering else { return }
-            isMenuTracking = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)) { _ in
-            isMenuTracking = false
-        }
+        // The row's actions are a dropdown now: the coordinator's open id
+        // keeps them mounted while the pointer is inside the panel - the
+        // panel floats at window level, so the pointer has left the row by
+        // then (see `showsActions`).
     }
 }
 
