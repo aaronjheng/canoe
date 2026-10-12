@@ -799,7 +799,7 @@ struct ResponseViewerView: View {
             // crossing the scroll threshold never shifts the content.
             .overlay(alignment: .top) {
                 if isBodyScrolledPastTop {
-                    BodyToolbarEdgeShadow()
+                    ScrolledUnderEdgeShadow()
                 }
             }
             // The find widget overlays the body area itself (below the
@@ -1086,28 +1086,6 @@ struct ResponseViewerView: View {
         if mime.contains("html") { return "html" }
         if mime.hasPrefix("text/") { return "txt" }
         return "bin"
-    }
-}
-
-/// Postman-style scrolled-under affordance for the body toolbar: a hairline
-/// at the content's top edge plus a short shadow fading downward, so the
-/// body reads as sliding under the toolbar once it scrolls. Pure overlay -
-/// no layout impact, no hit testing.
-private struct BodyToolbarEdgeShadow: View {
-    var body: some View {
-        VStack(spacing: 0) {
-            Divider()
-            LinearGradient(
-                stops: [
-                    .init(color: Color.primary.opacity(0.12), location: 0),
-                    .init(color: Color.primary.opacity(0), location: 1),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 7)
-        }
-        .allowsHitTesting(false)
     }
 }
 

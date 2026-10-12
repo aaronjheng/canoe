@@ -16,6 +16,9 @@ struct ConsoleView: View {
     /// option in the overflow menu). Display-only, like the error filter -
     /// the expanded entry always spells its own time out.
     @State private var showTimestamps = false
+    /// Whether the log is scrolled past its top, so the toolbar seam shows
+    /// the same scrolled-under shadow the response body carries.
+    @State private var isListScrolledPastTop = false
     /// Clear wipes the whole log (see the button), so it asks first - the
     /// session log has no undo.
     @State private var showClearConfirm = false
@@ -175,6 +178,21 @@ struct ConsoleView: View {
                         .id("console-bottom")
                         .onAppear { isAtBottom = true }
                         .onDisappear { isAtBottom = false }
+                }
+            }
+            // Scroll state for the seam shadow above: visible once the log
+            // has moved under the toolbar, hidden at the top (a 1pt threshold
+            // ignores float noise; bounce above the top stays hidden).
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y + geometry.contentInsets.top > 1
+            } action: { _, isPastTop in
+                isListScrolledPastTop = isPastTop
+            }
+            // Same Postman-style scrolled-under shadow the response body
+            // carries, so both seams read as one affordance.
+            .overlay(alignment: .top) {
+                if isListScrolledPastTop {
+                    ScrolledUnderEdgeShadow()
                 }
             }
             .onChange(of: store.consoleEntries.count) { _, _ in

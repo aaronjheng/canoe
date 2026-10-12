@@ -269,6 +269,29 @@ struct FocusRingBorderModifier: ViewModifier {
     }
 }
 
+/// Postman-style scrolled-under affordance for any toolbar/content seam: a
+/// hairline at the content's top edge plus a short shadow fading downward,
+/// so the content reads as sliding under the toolbar once it scrolls. Pure
+/// overlay - no layout impact, no hit testing. Shared by the response body
+/// and the docked console, so both seams read identically.
+struct ScrolledUnderEdgeShadow: View {
+    var body: some View {
+        VStack(spacing: 0) {
+            Divider()
+            LinearGradient(
+                stops: [
+                    .init(color: Color.primary.opacity(0.12), location: 0),
+                    .init(color: Color.primary.opacity(0), location: 1),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 7)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 /// Chrome for fields with no border at rest: hover/focus add a brighter
 /// fill and the standard field border (`AppLine.field`) - accent when
 /// focused, `fieldHoverBorder` on hover.

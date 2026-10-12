@@ -13,6 +13,9 @@ struct CodeSnippetSidebarView: View {
     @Environment(AppStore.self) private var store
     @AppStorage("codeSnippetLanguage") private var languageRaw = CodeSnippetLanguage.curl.rawValue
     @State private var copied = false
+    /// Whether the snippet is scrolled past its top, so the picker bar seam
+    /// shows the scrolled-under shadow.
+    @State private var isCodeScrolledPastTop = false
 
     private var language: CodeSnippetLanguage {
         CodeSnippetLanguage(rawValue: languageRaw) ?? .curl
@@ -139,6 +142,21 @@ struct CodeSnippetSidebarView: View {
                 }
             }
             .padding(AppSpacing.medium)
+        }
+        // Scroll state for the seam shadow above: visible once the snippet
+        // has moved under the picker bar, hidden at the top (a 1pt threshold
+        // ignores float noise; bounce above the top stays hidden).
+        .onScrollGeometryChange(for: Bool.self) { geometry in
+            geometry.contentOffset.y + geometry.contentInsets.top > 1
+        } action: { _, isPastTop in
+            isCodeScrolledPastTop = isPastTop
+        }
+        // Same Postman-style scrolled-under shadow the response body and the
+        // console carry, so every toolbar/content seam reads as one control.
+        .overlay(alignment: .top) {
+            if isCodeScrolledPastTop {
+                ScrolledUnderEdgeShadow()
+            }
         }
     }
 
