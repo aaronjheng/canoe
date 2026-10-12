@@ -194,7 +194,23 @@ extension AppStore {
         if history.count > Self.responseHistoryLimit {
             history.removeLast(history.count - Self.responseHistoryLimit)
         }
+        // Keep the newest entry whatever its size - it is the response the
+        // tab is showing - and drop whole older entries oldest-first until
+        // the retained bodies fit the budget.
+        var retained = history.reduce(0) { $0 + $1.bodySize }
+        var dropped = false
+        while history.count > 1, retained > Self.responseHistoryByteLimit {
+            retained -= history[history.count - 1].bodySize
+            history.removeLast()
+            dropped = true
+        }
         responseHistoryByTab[tab] = history
+        // An index picked against the longer array no longer names the entry
+        // it was chosen for; fall back to the latest instead of quietly
+        // showing a different response.
+        if dropped, viewingHistoryIndexByTab[tab] != nil {
+            viewingHistoryIndexByTab[tab] = nil
+        }
     }
 
     /// Records a completed send in the history. The URL is the request's
@@ -231,11 +247,18 @@ extension AppStore {
     }
 
     /// Appends a network activity entry to the console log, trimming the
-    /// oldest entries past the cap.
+    /// oldest entries past the cap - by entry count and by retained body
+    /// bytes, so a session of large payloads cannot pin hundreds of
+    /// megabytes of triage log.
     func recordConsoleEntry(_ entry: ConsoleEntry) {
         consoleEntries.append(entry)
         if consoleEntries.count > Self.consoleEntryLimit {
             consoleEntries.removeFirst(consoleEntries.count - Self.consoleEntryLimit)
+        }
+        var retained = consoleEntries.reduce(0) { $0 + $1.retainedBodyBytes }
+        while consoleEntries.count > 1, retained > Self.consoleBodyByteLimit {
+            retained -= consoleEntries[0].retainedBodyBytes
+            consoleEntries.removeFirst()
         }
     }
 

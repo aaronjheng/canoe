@@ -194,9 +194,20 @@ final class AppStore {
     @ObservationIgnored var persistedFolderAuthorizationBaselines: [UUID: Authorization] = [:]
     let historyLimit = 100
     static let responseHistoryLimit = 20
+    /// Total bytes of response bodies one tab's response history may keep;
+    /// the oldest entries drop out once it is passed. The entry count alone
+    /// is not a memory bound: 20 full responses per tab, each up to
+    /// `HTTPClient.maxResponseBytes`, reach a gigabyte. Bodies are the whole
+    /// cost of an entry, so the budget is counted in bytes.
+    static let responseHistoryByteLimit = 16 * 1024 * 1024
     /// Console (network log) entries, newest last; session-scoped and capped.
     var consoleEntries: [ConsoleEntry] = []
     static let consoleEntryLimit = 200
+    /// Total bytes of request+response bodies the console keeps across all
+    /// entries. `ConsoleEntry.bodyLimit` caps a single body; this caps the
+    /// log itself - 200 entries at two 512 KB bodies each would otherwise
+    /// reach 200 MB.
+    static let consoleBodyByteLimit = 16 * 1024 * 1024
     /// Whether the console panel is docked below the Response pane.
     var showConsole = false
     var selectedTab: OpenTab?

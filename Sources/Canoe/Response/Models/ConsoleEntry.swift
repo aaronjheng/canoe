@@ -174,9 +174,23 @@ struct ConsoleEntry: Identifiable, Sendable {
 
     /// Caps stored bodies so a huge payload cannot balloon the log; the flag
     /// lets the UI say so.
+    ///
+    /// The kept bytes must land in a buffer of their own: `Data.prefix`
+    /// returns a slice that shares the parent's storage, so holding 512 KB of
+    /// a 50 MB response would pin all 50 MB for as long as the entry lives
+    /// (measured: a 512 KB slice of a released 200 MB `Data` still holds the
+    /// whole 200 MB). A copy is the entire point of this cap, so it has to be
+    /// a real one - `Data(slice)` and `Data(slice as NSData)` are both still
+    /// copy-on-write views of the same storage.
     static func capped(_ data: Data?) -> (data: Data?, truncated: Bool) {
         guard let data, data.count > bodyLimit else { return (data, false) }
-        return (data.prefix(bodyLimit), true)
+        return (data.prefix(bodyLimit).withUnsafeBytes { Data($0) }, true)
+    }
+
+    /// Bytes this entry keeps in memory (both bodies), for the store's
+    /// session-wide console budget.
+    var retainedBodyBytes: Int {
+        (requestBody?.count ?? 0) + (responseBody?.count ?? 0)
     }
 
     /// Masks the secret part of an Authorization value: the scheme stays, the

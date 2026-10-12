@@ -187,11 +187,17 @@ struct ResponseViewerView: View {
     // MARK: - Response detail (Headers | Body tab bar)
 
     private func responseDetail(_ response: ResponseModel) -> some View {
-        let key = "\(response.id)-\(bodyMode)"  // Cache hit: reuse the rendered Text. Miss (a fresh response or mode
-        // switch): compute synchronously for this frame so the first paint is
-        // correct; the task below warms the cache so later renders
-        // (header-filter keystrokes, tab switches) reuse it. State is only
-        // written from the task, never during view evaluation.
+        // Pretty-printing and tree-sitter highlighting a large body costs
+        // hundreds of ms (measured ~80ms + ~90ms at 2MB, plus layout of the
+        // resulting Text). Redoing it on every render - header-filter
+        // keystrokes, switching tabs back and forth - is the visible lag, so
+        // each response+mode renders once and reuses the result: a hit (this
+        // frame's key matches) reuses the stored render, a miss (a fresh
+        // response or a mode switch) computes synchronously so the first
+        // paint is correct, and the task below publishes it for later
+        // frames. State is only written from the task, never during view
+        // evaluation.
+        let key = "\(response.id)-\(bodyMode)"
         let display: BodyDisplay = key == bodyRenderKey ? bodyRenderDisplay : bodyDisplay(response)
         let rendered: Text = key == bodyRenderKey ? bodyRenderText : renderedText(for: display)
         let renderedAttributed =
@@ -211,7 +217,16 @@ struct ResponseViewerView: View {
             }
         }
         .task(id: key) {
-            updateBodyRenderCache(response, key: key)
+            // Publish what this frame computed; never recompute it. The body
+            // is decoded and pretty-printed once per key, and a second pass
+            // here would pay for values already in hand. A task cancelled
+            // before it first ran still executes its body, so the stale ones
+            // (the id moved on) must not land in the cache.
+            guard !Task.isCancelled, key != bodyRenderKey else { return }
+            bodyRenderDisplay = display
+            bodyRenderText = rendered
+            bodyRenderAttributed = renderedAttributed
+            bodyRenderKey = key
         }
         .onChange(of: response.id) { _, _ in
             saveError = nil
@@ -287,23 +302,6 @@ struct ResponseViewerView: View {
         timeMetricHovered = false
         hoveredPanel = nil
         visiblePanel = nil
-    }
-
-    /// Pretty-printing and tree-sitter highlighting a large body costs
-    /// hundreds of ms (measured ~80ms + ~90ms at 2MB, plus layout of the
-    /// resulting Text). Redoing it on every render - header-filter
-    /// keystrokes, switching tabs back and forth - is the visible lag, so
-    /// each response+mode renders once and reuses the result.
-    private func updateBodyRenderCache(_ response: ResponseModel, key: String) {
-        guard key != bodyRenderKey else { return }
-        let display = bodyDisplay(response)
-        bodyRenderDisplay = display
-        bodyRenderText = renderedText(for: display)
-        bodyRenderAttributed =
-            display.isJSON
-            ? SyntaxHighlight.attributedText(display.text)
-            : AttributedString(display.text)
-        bodyRenderKey = key
     }
 
     private func renderedText(for display: BodyDisplay) -> Text {
@@ -775,7 +773,7 @@ struct ResponseViewerView: View {
                 Divider()
             }
             ScrollView(wordWrap ? .vertical : [.vertical, .horizontal]) {
-                // Cached render (see updateBodyRenderCache) - never rebuild
+                // Cached render (see responseDetail) - never rebuild
                 // the highlighted Text here.
                 rendered
                     .font(AppFont.monoSubheadline)
@@ -950,19 +948,20 @@ struct ResponseViewerView: View {
         let isJSON: Bool
     }
 
-    /// Computes the display text once per render (the pretty-print is the
-    /// expensive part for large JSON bodies).
+    /// The body as this pane shows it: the current mode's text, capped at
+    /// `bodyDisplayLimit` characters.
     private func bodyDisplay(_ response: ResponseModel) -> BodyDisplay {
-        let isJSON = bodyMode == .pretty && response.isJSONBody
-        let full =
-            switch bodyMode {
-            case .pretty: response.prettyBodyString
-            case .raw: response.bodyString
-            }
-        guard full.count > Self.bodyDisplayLimit else {
-            return BodyDisplay(text: full, totalCount: nil, isJSON: isJSON)
+        // One decode answers both questions the pane has - whether the body is
+        // JSON and what its text looks like - so they come from one parse.
+        let decoded = response.bodyText(prettify: bodyMode == .pretty)
+        guard decoded.text.count > Self.bodyDisplayLimit else {
+            return BodyDisplay(text: decoded.text, totalCount: nil, isJSON: decoded.isJSON)
         }
-        return BodyDisplay(text: String(full.prefix(Self.bodyDisplayLimit)), totalCount: full.count, isJSON: isJSON)
+        return BodyDisplay(
+            text: String(decoded.text.prefix(Self.bodyDisplayLimit)),
+            totalCount: decoded.text.count,
+            isJSON: decoded.isJSON
+        )
     }
 
     // MARK: - Headers
@@ -1048,10 +1047,7 @@ struct ResponseViewerView: View {
     /// Copy and Save both act on everything the server returned.
     private func fullBodyText(_ response: ResponseModel, display: BodyDisplay) -> String {
         if display.totalCount == nil { return display.text }
-        switch bodyMode {
-        case .pretty: return response.prettyBodyString
-        case .raw: return response.bodyString
-        }
+        return response.bodyText(prettify: bodyMode == .pretty).text
     }
 
     /// Saves the response body to a file, like Postman's "Save Response".

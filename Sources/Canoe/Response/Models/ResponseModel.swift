@@ -70,30 +70,46 @@ struct ResponseModel: Identifiable, Sendable {
         String(data: body, encoding: .utf8) ?? "<binary data, \(body.count) bytes>"
     }
 
-    /// The response body, pretty-printed when it is JSON.
-    var prettyBodyString: String {
-        // Skip the JSON round-trip for very large bodies - it blocks the main
-        // thread and the raw text is shown (truncated) instead.
-        guard body.count <= 2_000_000 else { return bodyString }
-        let trimmed = bodyString.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.first == "{" || trimmed.first == "[" else { return bodyString }
+    /// The body decoded for display, plus the JSON decision the viewer's
+    /// highlighting needs. Both answers come from one parse, which is why
+    /// they travel together: the viewer used to ask `isJSONBody` and then
+    /// `prettyBodyString`, decoding and pretty-printing the same body twice
+    /// per render (measured: a 1.8 MB body allocates ~14 MB of copies while
+    /// that runs).
+    struct BodyText {
+        /// The text to show: pretty-printed when the body is JSON and the
+        /// caller asked for it, verbatim otherwise.
+        let text: String
+        let isJSON: Bool
+    }
 
-        guard let object = try? JSONSerialization.jsonObject(with: body, options: .allowFragments) else { return bodyString }
+    /// Bodies above this skip the JSON round-trip: it blocks the main thread
+    /// and allocates several times the body's own size, so a huge body is
+    /// shown as the raw text (truncated) instead.
+    private static let maxDecodedBodyBytes = 2_000_000
+
+    /// Decodes the body once. `prettify` is the pretty mode's request -
+    /// parsing and re-serializing is the expensive half, so raw mode (and any
+    /// caller that only wants the text) never pays it.
+    func bodyText(prettify: Bool) -> BodyText {
+        let raw = bodyString
+        guard prettify, body.count <= Self.maxDecodedBodyBytes else { return BodyText(text: raw, isJSON: false) }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.first == "{" || trimmed.first == "[" else { return BodyText(text: raw, isJSON: false) }
+        guard let object = try? JSONSerialization.jsonObject(with: body, options: .allowFragments) else {
+            return BodyText(text: raw, isJSON: false)
+        }
         guard
             let pretty = try? JSONSerialization.data(
                 withJSONObject: object,
                 options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
             )
-        else { return bodyString }
-        return String(data: pretty, encoding: .utf8) ?? bodyString
-    }
-
-    /// Whether the body is JSON (and small enough to pretty-print/highlight).
-    var isJSONBody: Bool {
-        guard body.count <= 2_000_000 else { return false }
-        let trimmed = bodyString.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.first == "{" || trimmed.first == "[" else { return false }
-        return (try? JSONSerialization.jsonObject(with: body, options: .allowFragments)) != nil
+        else {
+            // Parsed as JSON but would not re-serialize: still JSON for
+            // highlighting, shown exactly as it arrived.
+            return BodyText(text: raw, isJSON: true)
+        }
+        return BodyText(text: String(data: pretty, encoding: .utf8) ?? raw, isJSON: true)
     }
 
     var isSuccess: Bool { (200..<300).contains(statusCode) }
