@@ -111,8 +111,8 @@ final class DropdownCoordinator {
 enum DropdownAlignment {
     /// Panel's leading edge meets the trigger's leading edge.
     case leading
-    /// Panel hangs left off the trigger's trailing edge (top-bar pills,
-    /// sidebar ellipsis buttons).
+    /// Panel hangs left off the trigger's trailing edge (sidebar ellipsis
+    /// buttons, the tab strip's environment picker).
     case trailing
 }
 

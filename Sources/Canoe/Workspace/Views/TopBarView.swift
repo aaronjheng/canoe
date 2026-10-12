@@ -205,7 +205,10 @@ private struct WorkspaceSwitcher: View {
     }
 
     /// The pill itself: the workspace name plus its hover fill; tapping it
-    /// opens the shared dropdown panel (see `menuRows`).
+    /// opens the shared dropdown panel (see `menuRows`). The trailing
+    /// chevron marks the pill as a menu trigger (Postman's switcher keeps
+    /// one too) - it was lost when the native menu moved to the shared
+    /// dropdown panel, which draws no chevron of its own.
     private var pill: some View {
         HStack(spacing: AppSpacing.compact) {
             // Monochrome template, a quiet gray - same as Postman's
@@ -215,6 +218,8 @@ private struct WorkspaceSwitcher: View {
             Text(store.activeWorkspace?.name ?? "No Workspace")
                 .font(AppFont.sidebarRow)
                 .lineLimit(1)
+            Image(systemName: "chevron.down")
+                .font(AppFont.small.weight(.medium))
         }
         .padding(.horizontal, AppSpacing.xSmall)
         .frame(height: AppSize.topBarControlHeight)
@@ -224,7 +229,12 @@ private struct WorkspaceSwitcher: View {
                 id: menuID,
                 showsSelection: true,
                 width: 260,
-                alignment: .trailing
+                // Leading, not trailing: the pill sits at the window's left
+                // edge (right of the traffic lights), and a trailing-hung
+                // 260pt panel would reach left past the pill - the panel's
+                // left edge must line up with the pill's, like Postman's
+                // switcher.
+                alignment: .leading
             ) {
                 menuRows
             }
