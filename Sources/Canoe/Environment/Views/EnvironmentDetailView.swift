@@ -34,6 +34,7 @@ struct EnvironmentDetailView: View {
                 suggestions: suggestions,
                 keyHeader: "Variable",
                 valueHeader: "Value",
+                headerBackground: nil,
                 secretKeyPath: \.isSecret,
                 // Manual order (Postman-style): rows resolve and display in
                 // this order, so no auto-sort may rewrite it.
