@@ -27,6 +27,15 @@ struct SidebarView: View {
             .fixedSize()
             .padding(.horizontal, AppSpacing.medium)
             .padding(.vertical, AppSpacing.xSmall)
+
+            // Title for the current sidebar tab, matching the right sidebar's header.
+            Text(store.sidebarTab.rawValue)
+                .font(AppFont.panelTitle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, AppSpacing.medium)
+                .padding(.top, AppSpacing.xSmall)
+                .padding(.bottom, AppSpacing.small)
+
             if store.sidebarTab == .items {
                 ItemsView()
             } else {
