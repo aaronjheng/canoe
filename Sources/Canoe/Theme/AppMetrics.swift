@@ -49,6 +49,10 @@ enum AppSize {
     /// Minimum size of the License window; it stays resizable from there.
     static let licensePanelWidth: CGFloat = 460
     static let licensePanelHeight: CGFloat = 420
+    /// Minimum size of the Keyboard Shortcuts window (Help ▸ Keyboard
+    /// Shortcuts, ⌘/); it stays resizable from there.
+    static let shortcutsPanelWidth: CGFloat = 460
+    static let shortcutsPanelHeight: CGFloat = 560
     /// Height of the transparent full-size titlebar the About and License
     /// windows draw their content under. Both reserve it at the top so the
     /// window title never overlaps the content.

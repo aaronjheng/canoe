@@ -224,6 +224,13 @@ final class AppStore {
     /// entry on appear, so the request applies exactly once.
     var detailSectionRequests: [UUID: DetailSection] = [:]
     var pendingClose: PendingClose?
+    /// Postman's ⌘L ("Jump to request URL"): a monotonic token bumped by
+    /// the View menu's Jump to Request URL command. The selected request's
+    /// editor (see RequestEditorView) watches it and claims the URL field.
+    /// A token, not a flag: a second press while the field is already
+    /// focused still re-fires (the value changes), and nothing can go stale
+    /// when editors unmount.
+    var urlFocusToken = 0
     // MARK: - Derived
 
     var activeWorkspace: Workspace? { vault.activeWorkspace }

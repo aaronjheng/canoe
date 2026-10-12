@@ -54,6 +54,17 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>A70F1001A1B1000000000011</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>KeyboardShortcutsView.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>A70F1001A1B1000000000003</key>
 		<dict>
 			<key>isa</key>
@@ -75,6 +86,13 @@
 			<string>LICENSE</string>
 			<key>sourceTree</key>
 			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>A70F1002A1B1000000000011</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>A70F1001A1B1000000000011</string>
 		</dict>
 		<key>A70F1002A1B1000000000001</key>
 		<dict>
@@ -103,6 +121,32 @@
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>A70F1001A1B1000000000004</string>
+		</dict>
+		<key>A70F1003A1B1000000000011</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>children</key>
+			<array>
+				<string>A70F1003A1B1000000000012</string>
+			</array>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+			<key>path</key>
+			<string>Help</string>
+		</dict>
+		<key>A70F1003A1B1000000000012</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>children</key>
+			<array>
+				<string>A70F1001A1B1000000000011</string>
+			</array>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+			<key>path</key>
+			<string>Views</string>
 		</dict>
 		<key>A70F1003A1B1000000000001</key>
 		<dict>
@@ -163,6 +207,7 @@
 			<key>children</key>
 			<array>
 				<string>A70F1003A1B1000000000001</string>
+				<string>A70F1003A1B1000000000011</string>
 				<string>2A767C42CD45596B2753DBCF</string>
 				<string>D2B1493FB2A0B1D7B4E3F83B</string>
 				<string>A8AC410F27BA79869B801A32</string>
@@ -2135,6 +2180,7 @@
 				<string>A70F1002A1B1000000000001</string>
 				<string>A70F1002A1B1000000000002</string>
 				<string>A70F1002A1B1000000000003</string>
+				<string>A70F1002A1B1000000000011</string>
 		</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>

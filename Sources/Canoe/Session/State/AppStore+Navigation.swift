@@ -104,6 +104,14 @@ extension AppStore {
         }
     }
 
+    /// ⌘L: focuses the URL bar of the selected request's editor. No-op
+    /// unless a request tab is selected. The token lives on the store
+    /// (stored properties cannot sit in extensions).
+    func focusRequestURL() {
+        guard selectedTab?.requestID != nil else { return }
+        urlFocusToken += 1
+    }
+
     /// Open tabs whose content still exists (requests/collections/workspaces/
     /// environments can be deleted while their tab is open).
     /// Display-only - use `pruneDanglingTabs()` to fix the model.

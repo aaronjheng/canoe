@@ -406,6 +406,14 @@ struct RequestEditorView: View {
             draft = request
             urlText = composedURLText(base: request.urlString, params: request.params)
         }
+        .onChange(of: store.urlFocusToken) { _, _ in
+            // View ▸ Jump to Request URL (⌘L, Postman "Jump to request URL"):
+            // this editor is mounted only while its request is selected, so a
+            // token bump always targets it. Claiming the URL field also ends
+            // name editing and closes the method menu (see the
+            // urlFieldFocused observer below).
+            urlFieldFocused = .url
+        }
         .onChange(of: urlFieldFocused) { _, focused in
             // The URL bar (and the method dropdown over it) are AppKit-owned
             // fields: claiming them must visibly end name editing even when

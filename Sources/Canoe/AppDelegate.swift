@@ -7,6 +7,7 @@ import SwiftUI
 private enum UtilityPanel: Hashable {
     case about
     case license
+    case shortcuts
 }
 
 @MainActor
@@ -29,6 +30,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var newCollectionMenuItem: NSMenuItem?
     private var newEnvironmentMenuItem: NSMenuItem?
     private var saveMenuItem: NSMenuItem?
+    // Menu items whose enabled state tracks the selected tab (see
+    // refreshTabBoundMenuItems): duplicating, closing around, or focusing
+    // the URL of a request only makes sense with one on screen.
+    private var newTabMenuItem: NSMenuItem?
+    private var duplicateRequestMenuItem: NSMenuItem?
+    private var closeOtherTabsMenuItem: NSMenuItem?
+    private var focusURLMenuItem: NSMenuItem?
+    private var rightSidebarMenuItem: NSMenuItem?
 
     /// Currently selected appearance, for windows created or reopened after a
     /// menu-driven theme change - and for the top bar's theme shortcut,
@@ -90,9 +99,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             .applyToWindow(mainWindow)
         window = mainWindow
         refreshWorkspaceMenuItems()
+        refreshTabBoundMenuItems()
         observeEnvironmentChanges()
         observeSettingsChanges()
         observeWorkspaceChanges()
+        observeTabChanges()
         observeFullScreenChanges()
 
         Task {
@@ -120,6 +131,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc func newRequest() {
         guard !isSettingsWindowKey else { return }
         appStore.addRequest()
+    }
+
+    /// ⌘T: a new tab is a new request in Canoe, exactly what Postman opens
+    /// on ⌘T (an untitled request tab). Same action as New Request (⌘N);
+    /// both shortcuts stay live so Postman muscle memory keeps working.
+    @objc func newTab() {
+        guard !isSettingsWindowKey else { return }
+        appStore.addRequest()
+    }
+
+    /// ⌘D (Postman "Duplicate"): duplicates the selected tab's request and
+    /// opens the copy.
+    @objc func duplicateSelectedRequest() {
+        guard !isSettingsWindowKey else { return }
+        guard case .request(let id)? = appStore.selectedTab else { return }
+        appStore.duplicateRequest(id)
+    }
+
+    /// ⌘⌥W: close-others (Postman's close-others lives only in the tab's
+    /// context menu; here it gets the ⌘⌥W slot). Dirty tabs confirm like
+    /// the context-menu flow.
+    @objc func closeOtherTabs() {
+        guard !isSettingsWindowKey else { return }
+        guard let tab = appStore.selectedTab else { return }
+        appStore.requestCloseOtherTabs(except: tab)
+    }
+
+    /// ⌘L (Postman "Jump to request URL"): focuses the selected request's
+    /// URL bar. The menu cannot reach the editor directly; the store's
+    /// token bridges the two (see AppStore.focusRequestURL).
+    @objc func focusRequestURL() {
+        guard !isSettingsWindowKey else { return }
+        appStore.focusRequestURL()
+    }
+
+    /// ⌘⌥\ (Postman "Toggle right sidebar"): shows/hides whichever right
+    /// inspector was last open (variables or code snippet).
+    @objc func toggleRightSidebar() {
+        guard !isSettingsWindowKey else { return }
+        appStore.toggleRightSidebar()
     }
 
     @objc func selectNextTab() {
@@ -254,6 +305,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSWorkspace.shared.open(url)
     }
 
+    /// ⌘/: the Postman-style cheat sheet of every shortcut the app ships.
+    @objc func openKeyboardShortcuts() {
+        openUtilityWindow(
+            .shortcuts,
+            title: "Keyboard Shortcuts",
+            contentSize: NSSize(
+                width: AppSize.shortcutsPanelWidth,
+                height: AppSize.shortcutsPanelHeight
+            ),
+            resizable: true
+        ) {
+            KeyboardShortcutsView()
+        }
+    }
+
     private func openLicense() {
         openUtilityWindow(
             .license,
@@ -362,8 +428,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     /// Shows/hides the left sidebar. The status-bar button is the only
     /// pointer affordance; without this command the panel is unreachable
-    /// from the keyboard, and a shortcut is the platform convention
-    /// (⌃⌘S) for a sidebar toggle.
+    /// from the keyboard. ⌘\ is Postman's shortcut for the same toggle.
     @objc func toggleSidebar() {
         guard !isSettingsWindowKey else { return }
         appStore.showSidebar.toggle()
@@ -375,6 +440,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func observeEnvironmentChanges() {
         withObservationTracking {
             _ = appStore.showVariablesSidebar
+            _ = appStore.showCodeSnippetSidebar
             _ = appStore.showConsole
             _ = appStore.showSidebar
         } onChange: { [weak self] in
@@ -385,6 +451,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     self?.appStore.showConsole == true ? .on : .off
                 self?.sidebarMenuItem?.state =
                     self?.appStore.showSidebar == true ? .on : .off
+                // The right-edge inspector hosts one panel at a time; either
+                // one showing means the "Right Sidebar" item is on.
+                self?.rightSidebarMenuItem?.state =
+                    self?.appStore.showVariablesSidebar == true
+                        || self?.appStore.showCodeSnippetSidebar == true ? .on : .off
                 self?.observeEnvironmentChanges()
             }
         }
@@ -445,9 +516,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func refreshWorkspaceMenuItems() {
         let enabled = appStore.activeWorkspace != nil
         newRequestMenuItem?.isEnabled = enabled
+        newTabMenuItem?.isEnabled = enabled
         newCollectionMenuItem?.isEnabled = enabled
         newEnvironmentMenuItem?.isEnabled = enabled
         saveMenuItem?.isEnabled = enabled
+    }
+
+    /// File/View items that act on the selected tab: Duplicate Request (⌘D)
+    /// and Jump to Request URL (⌘L) want a request tab; Close Other Tabs
+    /// (⌘⌥W) wants any tab. Disabled on the welcome screen and the
+    /// workspaces manager, and when a collection/folder/environment tab is
+    /// up (those have no URL to jump to and no request to duplicate).
+    private func refreshTabBoundMenuItems() {
+        guard let tab = appStore.selectedTab else {
+            duplicateRequestMenuItem?.isEnabled = false
+            closeOtherTabsMenuItem?.isEnabled = false
+            focusURLMenuItem?.isEnabled = false
+            return
+        }
+        let isRequestTab = tab.requestID != nil
+        duplicateRequestMenuItem?.isEnabled = isRequestTab
+        focusURLMenuItem?.isEnabled = isRequestTab
+        closeOtherTabsMenuItem?.isEnabled = true
+    }
+
+    private func observeTabChanges() {
+        withObservationTracking {
+            _ = appStore.selectedTab
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.refreshTabBoundMenuItems()
+                self?.observeTabChanges()
+            }
+        }
     }
 
     private func observeWorkspaceChanges() {
@@ -519,6 +620,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             keyEquivalent: "n")
         newRequestMenuItem = newRequestItem
         fileMenu.addItem(newRequestItem)
+        let newTabItem = NSMenuItem(
+            title: "New Tab",
+            action: #selector(newTab),
+            keyEquivalent: "t")
+        newTabMenuItem = newTabItem
+        fileMenu.addItem(newTabItem)
         let newCollectionItem = NSMenuItem(
             title: "New Collection",
             action: #selector(newCollection),
@@ -535,6 +642,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             keyEquivalent: "e")
         newEnvironmentMenuItem = newEnvironmentItem
         fileMenu.addItem(newEnvironmentItem)
+        fileMenu.addItem(.separator())
+        // Tab-bound editor actions: enabled only while a request tab is up
+        // (see refreshTabBoundMenuItems).
+        let duplicateRequestItem = NSMenuItem(
+            title: "Duplicate Request",
+            action: #selector(duplicateSelectedRequest),
+            keyEquivalent: "d")
+        duplicateRequestMenuItem = duplicateRequestItem
+        fileMenu.addItem(duplicateRequestItem)
         let saveItem = NSMenuItem(
             title: "Save",
             action: #selector(saveRequest),
@@ -563,6 +679,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             withTitle: "Close Tab",
             action: #selector(closeTab),
             keyEquivalent: "w")
+        let closeOtherTabsItem = NSMenuItem(
+            title: "Close Other Tabs",
+            action: #selector(closeOtherTabs),
+            keyEquivalent: "w")
+        closeOtherTabsItem.keyEquivalentModifierMask = [.command, .option]
+        closeOtherTabsMenuItem = closeOtherTabsItem
+        fileMenu.addItem(closeOtherTabsItem)
         fileMenu.addItem(.separator())
         fileMenu.addItem(
             withTitle: "Reveal Vault in Finder",
@@ -590,6 +713,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let viewMenuItem = NSMenuItem()
         mainMenu.addItem(viewMenuItem)
         let viewMenu = NSMenu(title: "View")
+        // ⌘L (Postman "Jump to request URL"): drops the keyboard into the
+        // selected request's URL bar - the fastest path to type-and-send.
+        let focusURLItem = NSMenuItem(
+            title: "Jump to Request URL",
+            action: #selector(focusRequestURL),
+            keyEquivalent: "l")
+        focusURLMenuItem = focusURLItem
+        viewMenu.addItem(focusURLItem)
+        viewMenu.addItem(.separator())
         let fullScreenItem = NSMenuItem(
             title: "Enter Full Screen",
             action: #selector(toggleFullScreen),
@@ -600,12 +732,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         viewMenu.addItem(fullScreenItem)
         viewMenu.addItem(.separator())
         // The left sidebar: the status-bar toggle is pointer-only without
-        // this, and ⌃⌘S is what every other Mac app uses for it.
+        // this, and ⌘\ is Postman's shortcut for the same toggle.
         let sidebarItem = NSMenuItem(
             title: "Sidebar",
             action: #selector(toggleSidebar),
-            keyEquivalent: "s")
-        sidebarItem.keyEquivalentModifierMask = [.command, .control]
+            keyEquivalent: "\\")
+        sidebarItem.keyEquivalentModifierMask = [.command]
         sidebarItem.target = self
         sidebarItem.state = appStore.showSidebar ? .on : .off
         sidebarMenuItem = sidebarItem
@@ -619,6 +751,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         variablesItem.state = appStore.showVariablesSidebar ? .on : .off
         variablesMenuItem = variablesItem
         viewMenu.addItem(variablesItem)
+        // ⌘⌥\ (Postman "Toggle right sidebar"): the right edge hosts one
+        // inspector at a time - whichever was last open comes back.
+        let rightSidebarItem = NSMenuItem(
+            title: "Right Sidebar",
+            action: #selector(toggleRightSidebar),
+            keyEquivalent: "\\")
+        rightSidebarItem.keyEquivalentModifierMask = [.command, .option]
+        rightSidebarItem.target = self
+        rightSidebarItem.state = appStore.isRightSidebarVisible ? .on : .off
+        rightSidebarMenuItem = rightSidebarItem
+        viewMenu.addItem(rightSidebarItem)
         viewMenu.addItem(.separator())
         let consoleItem = NSMenuItem(
             title: "Console",
@@ -681,6 +824,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let helpMenuItem = NSMenuItem()
         mainMenu.addItem(helpMenuItem)
         let helpMenu = NSMenu(title: "Help")
+        let shortcutsItem = NSMenuItem(
+            title: "Keyboard Shortcuts",
+            action: #selector(openKeyboardShortcuts),
+            keyEquivalent: "/")
+        shortcutsItem.keyEquivalentModifierMask = [.command]
+        shortcutsItem.target = self
+        helpMenu.addItem(shortcutsItem)
+        helpMenu.addItem(.separator())
         let helpItem = NSMenuItem(title: "Canoe Help", action: #selector(openHelp), keyEquivalent: "?")
         helpItem.keyEquivalentModifierMask = [.command]
         helpItem.target = self
