@@ -93,33 +93,42 @@ extension AppStore {
     /// Overview tab. This is the only entry point to the Overview.
     func openWorkspace(_ id: UUID) {
         setActiveWorkspace(id)
-        openTab(.workspace(id))
+        // The Overview lands FIRST: it is the workspace's entry page, and
+        // scratch tabs that survived the switch trail it, so a manager
+        // round-trip never reshuffles the strip's reading order.
+        openTabs.removeAll { $0 == .workspace(id) }
+        openTabs.insert(.workspace(id), at: 0)
+        selectedTab = .workspace(id)
+        persistOpenTabs()
     }
 
-    /// Cancels every in-flight send and drops all tabs and their cached
-    /// responses (used when switching workspaces). Scratch (unfiled)
-    /// requests go with their tabs: they exist only as open tabs, and
-    /// keeping them would strand invisible drafts no tab ever reopens.
+    /// Cancels every in-flight send and drops the tabs of the workspace
+    /// being left, along with their cached responses (used when switching
+    /// workspaces). Scratch (unfiled) request tabs survive the switch: they
+    /// belong to no workspace, so there is nothing to leave behind - and
+    /// they stay out of the way of the next workspace's own tabs because
+    /// nothing else is kept.
     func closeAllTabs() {
         for task in sendTasks.values { task.cancel() }
         sendTasks = [:]
         sendTokens = [:]
         sendingTabs = []
-        responsesByTab = [:]
-        errorsByTab = [:]
-        responseHistoryByTab = [:]
-        viewingHistoryIndexByTab = [:]
-        for id in unfiledRequests.keys {
-            pendingRequestSnapshots[id] = nil
-            persistedRequestBaselines[id] = nil
+        let surviving = Set(
+            openTabs.filter { tab in
+                guard let id = tab.requestID else { return false }
+                return unfiledRequests[id] != nil
+            })
+        responsesByTab = responsesByTab.filter { surviving.contains($0.key) }
+        errorsByTab = errorsByTab.filter { surviving.contains($0.key) }
+        responseHistoryByTab = responseHistoryByTab.filter { surviving.contains($0.key) }
+        viewingHistoryIndexByTab = viewingHistoryIndexByTab.filter { surviving.contains($0.key) }
+        openTabs = openTabs.filter { surviving.contains($0) }
+        if let selected = selectedTab, !surviving.contains(selected) {
+            selectedTab = openTabs.last
         }
-        if !unfiledRequests.isEmpty {
-            unfiledRequests = [:]
-            scheduleDraftPersistence()
+        if let preview = previewTab, !surviving.contains(preview) {
+            previewTab = nil
         }
-        openTabs = []
-        selectedTab = nil
-        previewTab = nil
         persistOpenTabs()
     }
 
