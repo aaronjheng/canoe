@@ -235,6 +235,19 @@ final class AppStore {
     /// entry on appear, so the request applies exactly once.
     var detailSectionRequests: [UUID: DetailSection] = [:]
     var pendingClose: PendingClose?
+    /// Requests that exist only in the session: created without a collection
+    /// context (New Request / new tab with no target), they live here and in
+    /// drafts.json's `unfiledRequests` mirror until an explicit save gives
+    /// them a home (the Save Request sheet). Never in the sidebar or any
+    /// collection file - nothing is written until the user picks a location.
+    var unfiledRequests: [UUID: Request] = [:]
+    /// The unfiled request staged for the Save Request sheet (nil = closed).
+    /// Identifiable so ContentView hosts the sheet with `.sheet(item:)`.
+    var requestSaveContext: RequestSaveContext?
+    /// A close confirmation waiting on the staged Save Request sheet: the
+    /// Save branch of a dirty close must not discard a scratch request, so
+    /// the sheet runs first and this close re-resolves (saving) afterwards.
+    var closeAfterRequestSave: PendingClose?
     /// Postman's ⌘L ("Jump to request URL"): a monotonic token bumped by
     /// the View menu's Jump to Request URL command. The selected request's
     /// editor (see RequestEditorView) watches it and claims the URL field.
@@ -266,7 +279,8 @@ final class AppStore {
     var visibleCollections: [Collection] { vault.activeWorkspaceCollections }
 
     var selectedRequest: Request? {
-        vault.collections.flatMap(\.requests).first { $0.id == selectedRequestID }
+        guard let id = selectedRequestID else { return nil }
+        return request(withID: id)
     }
 
     /// The environment shown in the selected tab (nil unless an environment

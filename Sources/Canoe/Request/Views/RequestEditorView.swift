@@ -731,12 +731,13 @@ struct RequestEditorView: View {
     }
 
     /// Postman-style Save: shared chip, enabled while the request has
-    /// unsaved changes.
+    /// unsaved changes. A scratch (unfiled) request stages the Save Request
+    /// sheet - the store routes that from the active tab.
     private var saveButton: some View {
         SaveChipButton(isDirty: isDirty, help: "Save Request (⌘S)") {
             urlFieldFocused = nil
             isNameFieldFocused = false
-            store.savePendingChanges(scope: .activeTab)
+            store.saveActiveTab()
         }
     }
 

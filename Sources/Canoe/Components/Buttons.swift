@@ -65,8 +65,11 @@ typealias PrimaryButtonStyle = SendButtonStyle
 
 /// Standard secondary button (Cancel, Select File): bordered neutral fill so
 /// it never drifts from the app accent via the system `.bordered` style.
+/// `isAccented` keeps the same chrome but reads the label in the accent
+/// color (the Save Request sheet's inline Create next to its Cancel).
 struct SecondaryButtonStyle: ButtonStyle {
     var isDestructive = false
+    var isAccented = false
     var minHeight: CGFloat?
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
@@ -74,7 +77,13 @@ struct SecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.body)
-            .foregroundStyle(isEnabled ? (isDestructive ? AppColor.error : AppColor.textPrimary) : AppColor.textSecondary)
+            .foregroundStyle(
+                isEnabled
+                    ? (isDestructive
+                        ? AppColor.error
+                        : (isAccented ? AppColor.accent : AppColor.textPrimary))
+                    : AppColor.textSecondary
+            )
             .padding(.horizontal, AppSpacing.medium)
             .padding(.vertical, AppSpacing.xSmall)
             .frame(minHeight: minHeight)

@@ -83,6 +83,11 @@ struct ContentView: View {
         .sheet(isPresented: $store.presentNewWorkspace) {
             NewWorkspaceView()
         }
+        // Save Request sheet: an unfiled request's explicit save (⌘S, Save
+        // chip, or the Save branch of a dirty close) stages a context here.
+        .sheet(item: $store.requestSaveContext) { context in
+            SaveRequestSheet(requestID: context.requestID)
+        }
         // File ▸ Clear History: same confirmation the sidebar's Clear button
         // stages. The menu command has no view of its own, so the dialog is
         // hosted here - outside the layout branches below, so it survives

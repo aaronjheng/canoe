@@ -811,7 +811,7 @@ private struct TabPill: View {
     private var tabHelp: String {
         switch tab {
         case .request(let id):
-            if let request = store.vault.collections.flatMap(\.requests).first(where: { $0.id == id }) {
+            if let request = store.request(withID: id) {
                 request.urlString.isEmpty ? request.name : "\(request.name)\n\(request.urlString)"
             } else {
                 "Request"
@@ -934,7 +934,7 @@ private struct TabPill: View {
     private var tabTitle: some View {
         switch tab {
         case .request(let id):
-            if let request = store.vault.collections.flatMap(\.requests).first(where: { $0.id == id }) {
+            if let request = store.request(withID: id) {
                 Text(request.name)
                     .font(AppFont.small)
                     .lineLimit(1)
@@ -1072,7 +1072,7 @@ private struct TabItemIcon: View {
     var body: some View {
         switch tab {
         case .request(let id):
-            if let request = store.vault.collections.flatMap(\.requests).first(where: { $0.id == id }) {
+            if let request = store.request(withID: id) {
                 MethodTag(method: request.httpMethod)
             } else {
                 Image(systemName: "doc.text")

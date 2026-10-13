@@ -10,6 +10,10 @@ struct VaultDrafts: Codable {
     var collectionVariables: [String: [Variable]] = [:]
     var collectionAuthorizations: [String: Authorization] = [:]
     var folderAuthorizations: [String: Authorization] = [:]
+    /// Scratch requests created without a collection context: they have no
+    /// entity file to hold an edit draft, so the whole request mirrors here
+    /// until an explicit save gives them a home (or the tab is discarded).
+    var unfiledRequests: [String: Request] = [:]
 
     /// Declared explicitly because the decoding initializer below would
     /// otherwise suppress the memberwise one.
@@ -19,7 +23,8 @@ struct VaultDrafts: Codable {
         workspaceVariables: [String: [Variable]] = [:],
         collectionVariables: [String: [Variable]] = [:],
         collectionAuthorizations: [String: Authorization] = [:],
-        folderAuthorizations: [String: Authorization] = [:]
+        folderAuthorizations: [String: Authorization] = [:],
+        unfiledRequests: [String: Request] = [:]
     ) {
         self.requests = requests
         self.environments = environments
@@ -27,12 +32,14 @@ struct VaultDrafts: Codable {
         self.collectionVariables = collectionVariables
         self.collectionAuthorizations = collectionAuthorizations
         self.folderAuthorizations = folderAuthorizations
+        self.unfiledRequests = unfiledRequests
     }
 
     var isEmpty: Bool {
         requests.isEmpty && environments.isEmpty
             && workspaceVariables.isEmpty && collectionVariables.isEmpty
             && collectionAuthorizations.isEmpty && folderAuthorizations.isEmpty
+            && unfiledRequests.isEmpty
     }
 
     enum CodingKeys: String, CodingKey {
@@ -42,13 +49,14 @@ struct VaultDrafts: Codable {
         case collectionVariables
         case collectionAuthorizations
         case folderAuthorizations
+        case unfiledRequests
     }
 
     /// Every kind is optional and every value is decoded leniently, on purpose:
     /// this file holds the user's UNSAVED work, so it is the last place a
     /// synthesized (all-keys-required) decoder can hurt. A file written before
     /// a kind existed must still load, and one unreadable draft must cost only
-    /// that draft - not the other five kinds.
+    /// that draft - not the other kinds.
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         requests = try container.decodeLossyMap(forKey: .requests)
@@ -65,6 +73,7 @@ struct VaultDrafts: Codable {
         folderAuthorizations =
             try container.decodeIfPresent(
                 [String: Authorization].self, forKey: .folderAuthorizations) ?? [:]
+        unfiledRequests = try container.decodeLossyMap(forKey: .unfiledRequests)
     }
 }
 

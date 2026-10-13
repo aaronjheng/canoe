@@ -151,21 +151,33 @@ extension AppStore {
 
     // MARK: - Collections
 
+    /// Creates a named collection in the active workspace and writes its
+    /// file. No reveal/rename flow - that is `addCollection()`'s create
+    /// experience on top; the Save Request sheet's "New Collection" needs
+    /// just the collection.
     @discardableResult
-    func addCollection() -> Collection? {
+    func createCollection(named name: String) -> Collection? {
         // New items always land in the ACTIVE workspace: the menu actions
         // are disabled without one, and a first-workspace fallback would
         // create invisible data in the manager - or, on the welcome screen,
         // workspaceless data no workspace can ever display.
         guard let workspaceID = activeWorkspace?.id else { return nil }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
         // Max + 1, not count (see addEnvironment): deletions leave gaps.
         let collection = Collection(
             workspaceID: workspaceID,
-            name: "New Collection",
+            name: trimmed,
             orderIndex: (visibleCollections.map(\.orderIndex).max() ?? -1) + 1
         )
         vault.collections.append(collection)
         Task { await vault.writeCollection(persistable(collection)) }
+        return collection
+    }
+
+    @discardableResult
+    func addCollection() -> Collection? {
+        guard let collection = createCollection(named: "New Collection") else { return nil }
         // VS Code-style create flow: reveal + inline-rename the new row. The
         // section must be expanded or the row never mounts and the pending
         // rename would fire on a much later expansion (persisted, like the

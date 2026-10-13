@@ -113,10 +113,11 @@ extension AppStore {
     }
 
     /// Open tabs whose content still exists (requests/collections/workspaces/
-    /// environments can be deleted while their tab is open).
+    /// environments can be deleted while their tab is open). Scratch
+    /// (unfiled) requests count as existing - their tab is all they have.
     /// Display-only - use `pruneDanglingTabs()` to fix the model.
     var visibleOpenTabs: [OpenTab] {
-        let requestIDs = Set(vault.collections.flatMap(\.requests).map(\.id))
+        let requestIDs = Set(vault.collections.flatMap(\.requests).map(\.id)).union(unfiledRequests.keys)
         let envIDs = Set(vault.environments.map(\.id))
         let collectionIDs = Set(vault.collections.map(\.id))
         let folderIDs = Set(vault.collections.flatMap(\.folders).map(\.id))
@@ -348,7 +349,9 @@ extension AppStore {
     func tabDisplayName(_ tab: OpenTab) -> String {
         switch tab {
         case .request(let id):
-            vault.collections.flatMap(\.requests).first { $0.id == id }?.name ?? "Request"
+            unfiledRequests[id]?.name
+                ?? vault.collections.flatMap(\.requests).first { $0.id == id }?.name
+                ?? "Request"
         case .environment(let id):
             vault.environments.first { $0.id == id }?.name ?? "Environment"
         case .collection(let id):
@@ -416,8 +419,18 @@ extension AppStore {
     /// Resolves the staged close confirmation. Saving persists everything
     /// first (the app saves all pending edits as one unit); the pending
     /// snapshots clear up front, so the close that follows never discards.
+    /// A scratch (unfiled) request has no home to save into: its Save branch
+    /// stages the Save Request sheet instead, and the close re-resolves
+    /// after the sheet commits (`closeAfterRequestSave`).
     func resolvePendingClose(saving: Bool) {
         guard let pending = pendingClose else { return }
+        if saving, let scratchTab = firstUnfiledRequestTab(in: pending) {
+            guard let id = scratchTab.requestID else { return }
+            pendingClose = nil
+            closeAfterRequestSave = pending
+            stageRequestSaveSheet(for: id)
+            return
+        }
         pendingClose = nil
         if saving {
             savePendingChanges(scope: .all)
@@ -429,6 +442,24 @@ extension AppStore {
             closeOtherTabs(except: except)
         case .right(of: let tab):
             closeTabsToTheRight(of: tab)
+        }
+    }
+
+    /// The first open tab in `pending`'s scope that edits a scratch
+    /// (unfiled) request - the one the Save Request sheet runs for first.
+    private func firstUnfiledRequestTab(in pending: PendingClose) -> OpenTab? {
+        let tabs: [OpenTab]
+        switch pending {
+        case .tab(let tab):
+            tabs = [tab]
+        case .others(let except):
+            tabs = openTabs.filter { $0 != except }
+        case .right(of: let anchor):
+            tabs = tabsToTheRight(of: anchor)
+        }
+        return tabs.first { tab in
+            guard let id = tab.requestID else { return false }
+            return unfiledRequests[id] != nil
         }
     }
 
@@ -453,6 +484,9 @@ extension AppStore {
                 }
                 pendingRequestSnapshots[id] = nil
                 persistedRequestBaselines[id] = nil
+                // A scratch request is ALL unsaved work: discarding its only
+                // edit drops the request itself.
+                unfiledRequests[id] = nil
                 dropped = true
             }
         case .environment(let id):
@@ -556,8 +590,10 @@ extension AppStore {
 
     /// Drops tabs whose request/collection/workspace/environment no longer
     /// exists (deleted here or vanished via sync) and repairs the selection.
+    /// Scratch (unfiled) requests never dangle: their tab is the only thing
+    /// referencing them and it keeps them alive.
     func pruneDanglingTabs() {
-        let requestIDs = Set(vault.collections.flatMap(\.requests).map(\.id))
+        let requestIDs = Set(vault.collections.flatMap(\.requests).map(\.id)).union(unfiledRequests.keys)
         let envIDs = Set(vault.environments.map(\.id))
         let collectionIDs = Set(vault.collections.map(\.id))
         let folderIDs = Set(vault.collections.flatMap(\.folders).map(\.id))

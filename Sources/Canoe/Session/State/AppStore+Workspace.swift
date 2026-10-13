@@ -97,7 +97,9 @@ extension AppStore {
     }
 
     /// Cancels every in-flight send and drops all tabs and their cached
-    /// responses (used when switching workspaces).
+    /// responses (used when switching workspaces). Scratch (unfiled)
+    /// requests go with their tabs: they exist only as open tabs, and
+    /// keeping them would strand invisible drafts no tab ever reopens.
     func closeAllTabs() {
         for task in sendTasks.values { task.cancel() }
         sendTasks = [:]
@@ -107,6 +109,14 @@ extension AppStore {
         errorsByTab = [:]
         responseHistoryByTab = [:]
         viewingHistoryIndexByTab = [:]
+        for id in unfiledRequests.keys {
+            pendingRequestSnapshots[id] = nil
+            persistedRequestBaselines[id] = nil
+        }
+        if !unfiledRequests.isEmpty {
+            unfiledRequests = [:]
+            scheduleDraftPersistence()
+        }
         openTabs = []
         selectedTab = nil
         previewTab = nil

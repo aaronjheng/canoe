@@ -10,20 +10,15 @@ struct NewWorkspaceView: View {
     @State private var isHovered = false
 
     var body: some View {
-        VStack(spacing: AppSpacing.large) {
-            HStack(spacing: AppSpacing.small) {
-                Image(systemName: "square.stack.3d.up.fill")
-                    .font(.title)
-                    .foregroundStyle(AppColor.accent)
-                Text("New Workspace")
-                    .font(AppFont.panelTitle)
-            }
+        VStack(alignment: .leading, spacing: AppSpacing.large) {
+            Text("New Workspace")
+                .font(AppFont.panelTitle)
 
             Text("Give your workspace a name to organize related collections and requests.")
                 .font(AppFont.emptyStateBody)
                 .foregroundStyle(AppColor.textSecondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 300)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
 
             TextField("Workspace Name", text: $name)
                 .font(AppFont.small)
@@ -37,9 +32,10 @@ struct NewWorkspaceView: View {
                 .onSubmit(create)
 
             HStack {
-                Button("Cancel", role: .cancel) { dismiss() }
-                    .keyboardShortcut(.cancelAction)
                 Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .keyboardShortcut(.cancelAction)
                 Button("Create", action: create)
                     // Standard sheet confirm, matching the folder editor's
                     // Save (hero buttons stay on the welcome/empty states).
@@ -52,7 +48,8 @@ struct NewWorkspaceView: View {
                     .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(AppSpacing.xLarge)
+        .padding(.horizontal, AppSpacing.xLarge)
+        .padding(.vertical, AppSpacing.large)
         .frame(width: 380)
         .sheetSurface()
         // Sheet is its own root: suppress SwiftUI focus chrome here too so

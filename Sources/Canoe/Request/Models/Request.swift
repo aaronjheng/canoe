@@ -9,7 +9,7 @@ import Foundation
 /// (`httpMethod`, `requestType`, …) are what new code uses.
 struct Request: Identifiable, Codable, Hashable, Sendable {
     var id: UUID = UUID()
-    var name: String = "New Request"
+    var name: String = "Untitled"
     var type: String = RequestType.http.rawValue
     var method: String = HTTPMethod.get.rawValue
     var urlString: String = ""
@@ -44,7 +44,7 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
 
     init(
         id: UUID = UUID(),
-        name: String = "New Request",
+        name: String = "Untitled",
         method: HTTPMethod = .get,
         urlString: String = "",
         folderID: UUID? = nil
@@ -69,7 +69,7 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
-        name = try container.decodeIfPresent(String.self, forKey: .name) ?? "New Request"
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Untitled"
         type = try container.decodeIfPresent(String.self, forKey: .type) ?? RequestType.http.rawValue
         method = try container.decodeIfPresent(String.self, forKey: .method) ?? HTTPMethod.get.rawValue
         urlString = try container.decodeIfPresent(String.self, forKey: .urlString) ?? ""

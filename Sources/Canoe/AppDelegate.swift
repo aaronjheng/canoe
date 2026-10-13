@@ -208,8 +208,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc func saveRequest() {
         guard !isSettingsWindowKey else { return }
         // Scoped to the selected tab: ⌘S saves what is on screen, not every
-        // dirty tab behind it.
-        appStore.savePendingChanges(scope: .activeTab)
+        // dirty tab behind it. A scratch (unfiled) request stages the Save
+        // Request sheet instead - it has no vault home to write to yet.
+        appStore.saveActiveTab()
     }
 
     @objc func closeTab() {

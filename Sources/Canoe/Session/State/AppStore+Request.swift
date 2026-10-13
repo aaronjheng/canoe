@@ -1,5 +1,12 @@
 import Foundation
 
+/// The unfiled request staged for the Save Request sheet. Identifiable so
+/// ContentView can host the sheet with `.sheet(item:)`.
+struct RequestSaveContext: Identifiable {
+    let requestID: UUID
+    var id: UUID { requestID }
+}
+
 /// AppStore request management: CRUD, ordering, and unsaved-draft tracking
 /// mirrored to drafts.json.
 @MainActor
@@ -10,6 +17,14 @@ extension AppStore {
         // Same active-workspace rule as addCollection: no silent first-
         // workspace fallback that would land requests where nobody looks.
         guard let workspaceID = activeWorkspace?.id else { return }
+        // No collection/folder context, no default home: the request opens
+        // as an unsaved scratch tab and gets its location from the explicit
+        // save (Save Request sheet) instead of silently landing in the first
+        // collection or a synthesized "My Collection".
+        guard collectionID != nil || folderID != nil else {
+            addUnfiledRequest()
+            return
+        }
         var collection: Collection
         let existing = collectionID.flatMap { id in vault.collections.first(where: { $0.id == id }) }
         if let existing {
@@ -39,7 +54,7 @@ extension AppStore {
         let resolvedFolderID =
             folderID.flatMap { fid in collection.folders.contains(where: { $0.id == fid }) ? fid : nil }
 
-        var request = Request(name: "New Request", method: .get, urlString: "", folderID: resolvedFolderID)
+        var request = Request(method: .get, urlString: "", folderID: resolvedFolderID)
         // Max + 1 among siblings, not count (see addEnvironment).
         request.orderIndex = (collection.requests.filter { $0.folderID == resolvedFolderID }.map(\.orderIndex).max() ?? -1) + 1
         collection.requests.append(request)
@@ -50,6 +65,18 @@ extension AppStore {
 
         let toSave = persistable(collection)
         Task { await vault.writeCollection(toSave) }
+        openRequest(request.id)
+    }
+
+    /// Creates a scratch request with no vault home: it exists only in the
+    /// `unfiledRequests` map (plus its drafts.json mirror) until the user
+    /// saves it somewhere explicit. Dirty from birth - no baseline exists,
+    /// so closing or quitting treats it as unsaved work.
+    private func addUnfiledRequest() {
+        let request = Request(method: .get, urlString: "")
+        unfiledRequests[request.id] = request
+        pendingRequestSnapshots[request.id] = request
+        scheduleDraftPersistence()
         openRequest(request.id)
     }
 
@@ -124,6 +151,18 @@ extension AppStore {
     /// Nothing is written to disk until Save (⌘S / Save button) or the
     /// "Save" branch of a leave-point confirmation.
     func updateRequest(_ request: Request) {
+        // A scratch request lives in the unfiled map, not the vault: update
+        // it there. Still never written to disk - only mirrored to drafts.json.
+        if unfiledRequests[request.id] != nil {
+            if let current = unfiledRequests[request.id], current.isContentEqual(to: request) { return }
+            unfiledRequests[request.id] = request
+            pendingRequestSnapshots[request.id] = request
+            // Editing pins a live preview tab: it now holds unsaved work and
+            // must survive the next previewed request.
+            if previewTab == .request(request.id) { previewTab = nil }
+            scheduleDraftPersistence()
+            return
+        }
         // Capture the last persisted content once per dirty request so the
         // dirty check ignores no-op edits (which would otherwise light up the
         // Save button for content identical to what is already on disk).
@@ -159,6 +198,7 @@ extension AppStore {
         await vault.prepare(location: iCloudSyncEnabled ? .iCloud : .local)
         let drafts = await vault.loadDrafts()
         applyRequestDrafts(drafts.requests)
+        applyUnfiledRequestDrafts(drafts.unfiledRequests)
         applyEnvironmentDrafts(drafts.environments)
         applyWorkspaceVariableDrafts(drafts.workspaceVariables)
         applyCollectionVariableDrafts(drafts.collectionVariables)
@@ -329,6 +369,9 @@ extension AppStore {
 
     func rebasePendingSnapshotsOntoLoadedVault() {
         for (id, snapshot) in pendingRequestSnapshots {
+            // Scratch requests have no vault entity to rebase onto: their
+            // pending entry is the storage itself and stays untouched.
+            guard unfiledRequests[id] == nil else { continue }
             guard
                 let ci = vault.collections.firstIndex(where: { $0.requests.contains { $0.id == id } }),
                 let ri = vault.collections[ci].requests.firstIndex(where: { $0.id == id })
@@ -408,6 +451,19 @@ extension AppStore {
             }
         }
         pendingRequestSnapshots = restored
+        scheduleDraftPersistence()
+    }
+
+    /// Re-applies the scratch-request drafts on top of the (empty for them)
+    /// loaded vault: the whole request is the draft. No baseline - they stay
+    /// dirty until an explicit save gives them a home.
+    func applyUnfiledRequestDrafts(_ drafts: [String: Request]) {
+        guard !drafts.isEmpty else { return }
+        for (key, request) in drafts {
+            guard let id = UUID(uuidString: key), unfiledRequests[id] == nil else { continue }
+            unfiledRequests[id] = request
+            pendingRequestSnapshots[id] = request
+        }
         scheduleDraftPersistence()
     }
 
@@ -499,11 +555,22 @@ extension AppStore {
         scheduleDraftPersistence()
     }
 
-    /// The draft mirror's current content, keyed for drafts.json.
+    /// The draft mirror's current content, keyed for drafts.json. Request
+    /// drafts split by residency: scratch requests mirror under
+    /// `unfiledRequests` (they have no entity file to hold an edit draft),
+    /// filed ones under `requests` as before.
     var currentDrafts: VaultDrafts {
-        VaultDrafts(
-            requests: Dictionary(
-                pendingRequestSnapshots.map { ($0.key.uuidString, $0.value) }, uniquingKeysWith: { first, _ in first }),
+        var filedRequests: [String: Request] = [:]
+        var unfiledDrafts: [String: Request] = [:]
+        for (id, request) in pendingRequestSnapshots {
+            if unfiledRequests[id] != nil {
+                unfiledDrafts[id.uuidString] = request
+            } else {
+                filedRequests[id.uuidString] = request
+            }
+        }
+        return VaultDrafts(
+            requests: filedRequests,
             environments: Dictionary(
                 pendingEnvironmentSnapshots.map { ($0.key.uuidString, $0.value) }, uniquingKeysWith: { first, _ in first }),
             workspaceVariables: Dictionary(
@@ -513,7 +580,8 @@ extension AppStore {
             collectionAuthorizations: Dictionary(
                 pendingCollectionAuthorizations.map { ($0.key.uuidString, $0.value) }, uniquingKeysWith: { first, _ in first }),
             folderAuthorizations: Dictionary(
-                pendingFolderAuthorizations.map { ($0.key.uuidString, $0.value) }, uniquingKeysWith: { first, _ in first })
+                pendingFolderAuthorizations.map { ($0.key.uuidString, $0.value) }, uniquingKeysWith: { first, _ in first }),
+            unfiledRequests: unfiledDrafts
         )
     }
 
@@ -565,11 +633,101 @@ extension AppStore {
     }
 
     /// Whether the request has unsaved modifications (drives the Save button
-    /// and the tab's dirty dot).
+    /// and the tab's dirty dot). A scratch request is dirty from birth: it
+    /// has a pending snapshot but no persisted baseline.
     func hasPendingChanges(for requestID: UUID) -> Bool {
         guard let snapshot = pendingRequestSnapshots[requestID] else { return false }
         guard let baseline = persistedRequestBaselines[requestID] else { return true }
         return !snapshot.isContentEqual(to: baseline)
+    }
+
+    /// The request with `id`, wherever it lives: a scratch (unfiled) request
+    /// or one inside a collection file. Every view-side lookup goes through
+    /// this so scratch tabs render like any other.
+    func request(withID id: UUID) -> Request? {
+        unfiledRequests[id]
+            ?? vault.collections.flatMap(\.requests).first { $0.id == id }
+    }
+
+    // MARK: - Explicit save (Save Request sheet)
+
+    /// ⌘S / Save chip for the active tab. A scratch (unfiled) request has no
+    /// vault home to write to: its explicit save stages the Save Request
+    /// sheet so the user picks the collection/folder - nothing is written
+    /// until they do.
+    func saveActiveTab() {
+        if case .request(let id) = selectedTab, unfiledRequests[id] != nil {
+            stageRequestSaveSheet(for: id)
+            return
+        }
+        savePendingChanges(scope: .activeTab)
+    }
+
+    /// Presents the Save Request sheet for a scratch request. The tab comes
+    /// forward first, so the modal always names what is on screen.
+    func stageRequestSaveSheet(for requestID: UUID) {
+        guard unfiledRequests[requestID] != nil else { return }
+        openRequest(requestID)
+        requestSaveContext = RequestSaveContext(requestID: requestID)
+    }
+
+    /// Files a scratch request into the chosen collection (and folder):
+    /// appends it, writes the collection file, clears the scratch state and
+    /// marks the request clean. The sheet's Save calls this; a close that
+    /// was waiting on the sheet resumes (saving) afterwards.
+    func commitRequestSave(_ requestID: UUID, name: String, collectionID: UUID, folderID: UUID?) {
+        guard var request = unfiledRequests[requestID] else { return }
+        guard let ci = vault.collections.firstIndex(where: { $0.id == collectionID }) else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { request.name = trimmed }
+        // A stale folderID (picker raced a deletion) must not orphan the
+        // request - only keep it when the target collection owns the folder.
+        let resolvedFolderID =
+            folderID.flatMap { fid in vault.collections[ci].folders.contains(where: { $0.id == fid }) ? fid : nil }
+        request.folderID = resolvedFolderID
+        // Max + 1 among siblings, not count (see addEnvironment).
+        request.orderIndex =
+            (vault.collections[ci].requests.filter { $0.folderID == resolvedFolderID }.map(\.orderIndex).max() ?? -1) + 1
+        request.updatedAt = Date()
+        vault.collections[ci].requests.append(request)
+
+        // The scratch state goes away and the request reads as saved: the
+        // baseline makes the dirty check clean, and the mirror write prunes
+        // the unfiled draft.
+        unfiledRequests[requestID] = nil
+        pendingRequestSnapshots[requestID] = nil
+        persistedRequestBaselines[requestID] = request
+        scheduleDraftPersistence()
+
+        // keepingRequestID: the request just landed in the collection; a
+        // rewind must not put a pre-save collection back on disk.
+        let toSave = persistable(vault.collections[ci], keepingRequestID: requestID)
+        Task { await vault.writeCollection(toSave) }
+        // Reveal the new row in the sidebar: expand the folder and every
+        // ancestor between it and the collection root, so a request saved
+        // into a nested folder is actually visible.
+        isCollectionsSectionExpanded = true
+        persistSidebarState()
+        var reveal: UUID? = resolvedFolderID ?? collectionID
+        while let id = reveal {
+            setSidebarNodeExpanded(id, true)
+            reveal = vault.collections[ci].folders.first { $0.id == id }?.parentFolderID
+        }
+
+        requestSaveContext = nil
+        if let resume = closeAfterRequestSave {
+            closeAfterRequestSave = nil
+            pendingClose = resume
+            resolvePendingClose(saving: true)
+        }
+    }
+
+    /// Dismisses the Save Request sheet without saving. A close that was
+    /// waiting on the sheet is abandoned (the tab stays open and dirty) -
+    /// Cancel means "don't close anything either".
+    func cancelRequestSaveSheet() {
+        requestSaveContext = nil
+        closeAfterRequestSave = nil
     }
 
     /// What one Save pass writes.
@@ -600,12 +758,14 @@ extension AppStore {
 
     /// The pending edits `scope` covers: everything for `.all`, only the
     /// selected tab's entity for `.activeTab` (the workspace Overview and an
-    /// empty detail area edit nothing).
+    /// empty detail area edit nothing). Scratch (unfiled) requests are
+    /// always excluded: they have no vault home to write to - their explicit
+    /// save goes through the Save Request sheet instead.
     private func pendingEdits(scope: SaveScope) -> PendingEdits {
         var edits = PendingEdits()
         switch scope {
         case .all:
-            edits.requests = pendingRequestSnapshots
+            edits.requests = pendingRequestSnapshots.filter { unfiledRequests[$0.key] == nil }
             edits.environments = pendingEnvironmentSnapshots
             edits.workspaceVariables = pendingWorkspaceVariables
             edits.collectionVariables = pendingCollectionVariables
@@ -614,7 +774,9 @@ extension AppStore {
         case .activeTab:
             switch selectedTab {
             case .request(let id):
-                edits.requests = pendingRequestSnapshots[id].map { [id: $0] } ?? [:]
+                if unfiledRequests[id] == nil {
+                    edits.requests = pendingRequestSnapshots[id].map { [id: $0] } ?? [:]
+                }
             case .environment(let id):
                 edits.environments = pendingEnvironmentSnapshots[id].map { [id: $0] } ?? [:]
             case .collection(let id):
