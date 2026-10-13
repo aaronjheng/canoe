@@ -144,7 +144,33 @@ extension AppStore {
             return true
         }
         vault.collections[at.collection].folders[at.folder].authorization = authorization
-        guard await vault.writeCollection(persistable(vault.collections[at.collection])) else { return false }
+        // The rewound copy: sibling request drafts must not leak into the
+        // file just because they live in the same in-memory collection.
+        let toSave = persistable(vault.collections[at.collection])
+        let collectionID = vault.collections[at.collection].id
+        var didWrite = true
+        await enqueueStructuralWrite { [weak self] in
+            guard let self else { return }
+            // Re-validate at execution time: the collection (and with it
+            // the folder) may have been deleted while this write waited in
+            // the queue.
+            guard
+                let current = self.vault.collections.firstIndex(where: { $0.id == collectionID }),
+                self.vault.collections[current].folders.contains(where: { $0.id == folderID })
+            else { return }
+            // writeCollection, not the upserting saveCollection - same rule
+            // as persistEnvironment (no clobber, no resurrection).
+            didWrite = await self.vault.writeCollection(toSave)
+        }
+        guard didWrite else { return false }
+        // Same delete-race correction as the other persist helpers.
+        if let current = vault.collections.firstIndex(where: { $0.id == collectionID }) {
+            if !vault.collections[current].folders.contains(where: { $0.id == folderID }) {
+                await vault.writeCollection(persistable(vault.collections[current]))
+            }
+        } else {
+            await vault.deleteCollection(collectionID)
+        }
         persistedFolderAuthorizationBaselines[folderID] = authorization
         return true
     }
@@ -171,7 +197,7 @@ extension AppStore {
             orderIndex: (visibleCollections.map(\.orderIndex).max() ?? -1) + 1
         )
         vault.collections.append(collection)
-        Task { await vault.writeCollection(persistable(collection)) }
+        enqueueStructuralWrite { await self.vault.writeCollection(self.persistable(collection)) }
         return collection
     }
 
@@ -217,7 +243,7 @@ extension AppStore {
         closeTab(.collection(id))
         vault.collections.removeAll { $0.id == id }
         clearSelectionIfMissing()
-        Task { await vault.deleteCollection(id) }
+        enqueueStructuralWrite { await self.vault.deleteCollection(id) }
     }
 
     /// Applies the collection edit to the in-memory vault and marks it
@@ -333,7 +359,7 @@ extension AppStore {
         // A rename is an edit: it pins a live preview like any other.
         if previewTab == .collection(id) { previewTab = nil }
         let updated = vault.collections[idx]
-        Task { await vault.writeCollection(persistable(updated)) }
+        enqueueStructuralWrite { await self.vault.writeCollection(self.persistable(updated)) }
     }
 
     // MARK: - Folders
@@ -354,7 +380,7 @@ extension AppStore {
         )
         collection.folders.append(folder)
         vault.collections[idx] = collection
-        Task { await vault.writeCollection(persistable(collection)) }
+        enqueueStructuralWrite { await self.vault.writeCollection(self.persistable(collection)) }
         // Same inline-rename create flow as collections: a filter matching
         // nothing would hide the new row, so clear it first.
         sidebarFilter = ""
@@ -394,7 +420,7 @@ extension AppStore {
         }
         vault.collections[idx] = collection
         let toSave = persistable(collection)
-        Task { await vault.writeCollection(toSave) }
+        enqueueStructuralWrite { await self.vault.writeCollection(toSave) }
     }
 
     /// Renames a folder inside a collection.
@@ -406,7 +432,7 @@ extension AppStore {
         guard vault.collections[idx].folders[folderIdx].name != trimmed else { return }
         vault.collections[idx].folders[folderIdx].name = trimmed
         let updated = vault.collections[idx]
-        Task { await vault.writeCollection(persistable(updated)) }
+        enqueueStructuralWrite { await self.vault.writeCollection(self.persistable(updated)) }
     }
 
 }

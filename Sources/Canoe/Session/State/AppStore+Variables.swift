@@ -44,7 +44,12 @@ extension AppStore {
     /// environment is active.
     func variableScopesForRequest(_ request: Request) -> [VariableScope] {
         let collection = collectionForRequest(request)
-        let workspace = collection?.workspaceID.flatMap { id in vault.workspaces.first { $0.id == id } }
+        // Scratch (unfiled) requests have no owning collection: they were
+        // created in the active workspace, so they resolve its variables
+        // (only the collection scope is genuinely absent for them).
+        let workspace =
+            collection?.workspaceID.flatMap { id in vault.workspaces.first { $0.id == id } }
+            ?? (collection == nil ? vault.activeWorkspace : nil)
         let environment = activeEnvironment
         return [
             VariableScope(

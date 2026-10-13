@@ -591,8 +591,11 @@ extension AppStore {
     /// Drops tabs whose request/collection/workspace/environment no longer
     /// exists (deleted here or vanished via sync) and repairs the selection.
     /// Scratch (unfiled) requests never dangle: their tab is the only thing
-    /// referencing them and it keeps them alive.
+    /// referencing them and it keeps them alive. Skipped on a failed load:
+    /// an empty in-memory vault would wipe the restored strip (and persist
+    /// the wipe) - retryVaultLoad re-prunes after a successful reload.
     func pruneDanglingTabs() {
+        guard vault.loadError == nil else { return }
         let requestIDs = Set(vault.collections.flatMap(\.requests).map(\.id)).union(unfiledRequests.keys)
         let envIDs = Set(vault.environments.map(\.id))
         let collectionIDs = Set(vault.collections.map(\.id))

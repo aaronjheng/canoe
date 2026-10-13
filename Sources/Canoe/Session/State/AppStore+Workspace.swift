@@ -22,7 +22,7 @@ extension AppStore {
             orderIndex: orderIndex
         )
         vault.workspaces.append(workspace)
-        Task { await vault.saveWorkspace(workspace) }
+        enqueueStructuralWrite { await self.vault.saveWorkspace(workspace) }
         setActiveWorkspace(workspace.id)
     }
 
@@ -52,7 +52,7 @@ extension AppStore {
             closeTab(.environment(environment.id))
         }
         vault.workspaces.removeAll { $0.id == id }
-        Task { [weak self] in
+        enqueueStructuralWrite { [weak self] in
             guard let self else { return }
             await self.vault.deleteWorkspace(id)
             self.pruneDanglingTabs()
@@ -160,7 +160,7 @@ extension AppStore {
         if let idx = vault.workspaces.firstIndex(where: { $0.id == workspace.id }) {
             vault.workspaces[idx] = workspace
         }
-        Task { await vault.saveWorkspace(workspace) }
+        enqueueStructuralWrite { await self.vault.saveWorkspace(workspace) }
     }
 
     /// Replaces a workspace's variables in memory and marks them dirty.

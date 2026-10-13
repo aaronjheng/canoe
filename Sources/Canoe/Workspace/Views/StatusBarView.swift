@@ -13,7 +13,9 @@ struct StatusBarView: View {
             ToolbarToggleButton(
                 systemImage: "sidebar.left",
                 isOn: store.showSidebar,
-                help: store.showSidebar ? "Hide Sidebar (⌃⌘S)" : "Show Sidebar (⌃⌘S)"
+                // Matches the View menu's actual binding (⌘\), not a
+                // shortcut the app does not have.
+                help: store.showSidebar ? "Hide Sidebar (⌘\\)" : "Show Sidebar (⌘\\)"
             ) {
                 store.showSidebar.toggle()
             }

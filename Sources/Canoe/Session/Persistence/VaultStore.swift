@@ -317,15 +317,19 @@ final class VaultStore {
 
             // One-time migration: environments gained their workspace scope
             // later, so legacy files carry no workspaceID. Attach them to the
-            // active (or first) workspace and re-save with the scope.
-            let legacyScopeTarget = config.activeWorkspaceID ?? workspaces.first?.id
-            var legacyEnvironments: [EnvironmentProfile] = []
-            for index in environments.indices where environments[index].workspaceID == nil {
-                environments[index].workspaceID = legacyScopeTarget
-                legacyEnvironments.append(environments[index])
-            }
-            for environment in legacyEnvironments {
-                await saveEnvironment(environment)
+            // active (or first) workspace and re-save with the scope. With no
+            // workspace to scope to there is nothing to migrate - and the
+            // nil-scoped files must be left alone, or they would match this
+            // filter again on every launch and rewrite each time.
+            if let legacyScopeTarget = config.activeWorkspaceID ?? workspaces.first?.id {
+                var legacyEnvironments: [EnvironmentProfile] = []
+                for index in environments.indices where environments[index].workspaceID == nil {
+                    environments[index].workspaceID = legacyScopeTarget
+                    legacyEnvironments.append(environments[index])
+                }
+                for environment in legacyEnvironments {
+                    await saveEnvironment(environment)
+                }
             }
 
             loadError = nil
@@ -573,6 +577,12 @@ final class VaultStore {
             return try JSONDecoder.iso.decode(VaultDrafts.self, from: data)
         } catch {
             AppLogger.error("Failed to load drafts: \(error)", category: "Vault")
+            // Back up the undecodable file before any later saveDrafts
+            // overwrites it, so a manual recovery stays possible instead of
+            // a silent loss (same rule as the corrupt vault.json backup).
+            let backup = draftsFileURL.deletingLastPathComponent()
+                .appendingPathComponent("drafts.json.corrupt-\(Int(Date().timeIntervalSince1970))")
+            try? data.write(to: backup, options: .atomic)
             return VaultDrafts()
         }
     }
@@ -596,15 +606,16 @@ final class VaultStore {
 
     /// Reads the request history persisted by a previous session, newest
     /// first, trimmed to the in-memory cap (in case an older build saved
-    /// more).
+    /// more). Per-element tolerant: one entry a newer build wrote with an
+    /// unknown field is skipped, not the whole file.
     func loadHistory(limit: Int) async -> [HistoryEntry] {
         guard let historyFileURL else { return [] }
         guard let data = try? await FileStore.readDataIfExists(at: historyFileURL), !data.isEmpty else {
             return []
         }
         do {
-            let entries = try JSONDecoder.iso.decode([HistoryEntry].self, from: data)
-            return Array(entries.prefix(limit))
+            let wrapped = try JSONDecoder.iso.decode([Lossy<HistoryEntry>].self, from: data)
+            return Array(wrapped.compactMap(\.value).prefix(limit))
         } catch {
             AppLogger.error("Failed to load history: \(error)", category: "Vault")
             return []

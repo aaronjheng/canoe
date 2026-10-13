@@ -20,7 +20,7 @@ extension AppStore {
         let orderIndex = (siblingMax ?? -1) + 1
         let env = EnvironmentProfile(name: "New Environment", orderIndex: orderIndex, workspaceID: workspaceID)
         vault.environments.append(env)
-        Task { await vault.saveEnvironment(env) }
+        enqueueStructuralWrite { await self.vault.saveEnvironment(env) }
         openEnvironment(env.id)
         return env
     }
@@ -49,11 +49,9 @@ extension AppStore {
             shifted.append(vault.environments[index])
         }
         vault.environments.insert(copy, at: sourceIndex + 1)
-        Task {
-            await vault.saveEnvironment(copy)
-            for environment in shifted {
-                await vault.saveEnvironment(environment)
-            }
+        enqueueStructuralWrite { await self.vault.saveEnvironment(copy) }
+        for environment in shifted {
+            enqueueStructuralWrite { await self.vault.saveEnvironment(environment) }
         }
         openEnvironment(copy.id)
     }
@@ -63,7 +61,7 @@ extension AppStore {
         vault.environments.removeAll { $0.id == id }
         pendingEnvironmentSnapshots[id] = nil
         persistedEnvironmentBaselines[id] = nil
-        Task { await vault.deleteEnvironment(id) }
+        enqueueStructuralWrite { await self.vault.deleteEnvironment(id) }
     }
 
     /// Applies the environment edit to the in-memory vault and marks it

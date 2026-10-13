@@ -414,7 +414,9 @@ struct ContentView: View {
                 // full text stays reachable on hover.
                 .help(message)
             Spacer(minLength: 0)
-            LinkButton("Reveal Vault") { store.vault.revealInFinder() }
+            // Same wording as the File menu item and the vault error view:
+            // one command, one name.
+            LinkButton("Reveal Vault in Finder") { store.vault.revealInFinder() }
         }
         .padding(.horizontal, AppSpacing.medium)
         .padding(.vertical, AppSpacing.small)

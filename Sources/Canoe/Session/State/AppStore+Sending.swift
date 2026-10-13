@@ -191,14 +191,25 @@ extension AppStore {
     func recordResponseHistory(_ response: ResponseModel, for tab: OpenTab) {
         var history = responseHistoryByTab[tab] ?? []
         history.insert(response, at: 0)
+        // A History entry picked while the send was in flight names the
+        // previously-latest response: shift the selection so it keeps
+        // pointing at the same entry (the drop reset below guards overflow).
+        if let index = viewingHistoryIndexByTab[tab] {
+            viewingHistoryIndexByTab[tab] = index + 1
+        }
+        var dropped = false
         if history.count > Self.responseHistoryLimit {
             history.removeLast(history.count - Self.responseHistoryLimit)
+            // The count cap drops the OLDEST entries too - without this flag
+            // a selection shifted onto an evicted index would stick out of
+            // bounds (isViewingLatestResponse then disagrees with what is
+            // shown until the next pick).
+            dropped = true
         }
         // Keep the newest entry whatever its size - it is the response the
         // tab is showing - and drop whole older entries oldest-first until
         // the retained bodies fit the budget.
         var retained = history.reduce(0) { $0 + $1.bodySize }
-        var dropped = false
         while history.count > 1, retained > Self.responseHistoryByteLimit {
             retained -= history[history.count - 1].bodySize
             history.removeLast()

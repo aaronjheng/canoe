@@ -64,8 +64,26 @@ extension AppStore {
         }
 
         let toSave = persistable(collection)
-        Task { await vault.writeCollection(toSave) }
+        enqueueStructuralWrite { await self.vault.writeCollection(toSave) }
         openRequest(request.id)
+    }
+
+    /// Serializes fire-and-forget structural writes (renames, adds, deletes,
+    /// commit-saves) so they land in issue order, and gives the quit path a
+    /// single task to wait for: as bare tasks, quitting right after a rename
+    /// could exit before the write landed, losing the change with no dirty
+    /// indicator anywhere. Returns the queued task so a caller can await its
+    /// own write (the save-pass writes join the same chain - unordered
+    /// atomic writes of one file would otherwise land in scheduler order).
+    @discardableResult
+    func enqueueStructuralWrite(_ operation: @escaping @MainActor () async -> Void) -> Task<Void, Never> {
+        let previous = structuralWriteTask
+        let task = Task {
+            await previous?.value
+            await operation()
+        }
+        structuralWriteTask = task
+        return task
     }
 
     /// Creates a scratch request with no vault home: it exists only in the
@@ -98,7 +116,7 @@ extension AppStore {
                 vault.collections[idx] = updated
             }
             let toSave = persistable(updated)
-            Task { await vault.writeCollection(toSave) }
+            enqueueStructuralWrite { await self.vault.writeCollection(toSave) }
             openRequest(copy.id)
             return
         }
@@ -127,7 +145,7 @@ extension AppStore {
             // before the next edit would restore the stale draft name.
             if pendingRequestSnapshots[id] != nil { scheduleDraftPersistence() }
             let toSave = persistable(updated)
-            Task { await vault.writeCollection(toSave) }
+            enqueueStructuralWrite { await self.vault.writeCollection(toSave) }
             return
         }
     }
@@ -142,7 +160,7 @@ extension AppStore {
             if let idx = vault.collections.firstIndex(where: { $0.id == collection.id }) {
                 vault.collections[idx] = updated
             }
-            Task { await vault.writeCollection(persistable(updated)) }
+            enqueueStructuralWrite { await self.vault.writeCollection(self.persistable(updated)) }
             break
         }
     }
@@ -197,16 +215,35 @@ extension AppStore {
         }
         await vault.prepare(location: iCloudSyncEnabled ? .iCloud : .local)
         let drafts = await vault.loadDrafts()
-        applyRequestDrafts(drafts.requests)
-        applyUnfiledRequestDrafts(drafts.unfiledRequests)
-        applyEnvironmentDrafts(drafts.environments)
-        applyWorkspaceVariableDrafts(drafts.workspaceVariables)
-        applyCollectionVariableDrafts(drafts.collectionVariables)
-        applyCollectionAuthorizationDrafts(drafts.collectionAuthorizations)
-        applyFolderAuthorizationDrafts(drafts.folderAuthorizations)
+        if vault.loadError != nil {
+            // Failed load: the in-memory vault is empty, so every entity-keyed
+            // draft would find no owner and be dropped here - and the mirror
+            // write the apply calls schedule would erase drafts.json for good
+            // (the same rule the guarded pruneSidebarExpansionState follows).
+            // Only scratch requests can apply: they have no vault owner to
+            // lose. retryVaultLoad re-applies everything after a successful
+            // reload; the mirror still holds every draft untouched.
+            for (key, request) in drafts.unfiledRequests {
+                guard let id = UUID(uuidString: key), unfiledRequests[id] == nil else { continue }
+                unfiledRequests[id] = request
+                pendingRequestSnapshots[id] = request
+            }
+        } else {
+            applyRequestDrafts(drafts.requests)
+            applyUnfiledRequestDrafts(drafts.unfiledRequests)
+            applyEnvironmentDrafts(drafts.environments)
+            applyWorkspaceVariableDrafts(drafts.workspaceVariables)
+            applyCollectionVariableDrafts(drafts.collectionVariables)
+            applyCollectionAuthorizationDrafts(drafts.collectionAuthorizations)
+            applyFolderAuthorizationDrafts(drafts.folderAuthorizations)
+        }
         // Restores the per-device request history mirrored by the last
         // session (machine-local, like the drafts above).
         history = await vault.loadHistory(limit: historyLimit)
+        // The one-time auth migration writes vault.json: it must not run on
+        // a failed load, where config is the default and persisting it would
+        // clobber the user's real vault.json (active workspace/environment).
+        guard vault.loadError == nil else { return }
         pruneSidebarExpansionState()
         // Drop restored tabs whose entities no longer exist (deleted here or
         // on another device) and persist the pruned set back.
@@ -291,6 +328,9 @@ extension AppStore {
     /// after this migration are left alone. Runs after drafts are applied so
     /// restored request drafts migrate too.
     func migrateRequestAuthInheritanceIfNeeded() async {
+        // The migration persists config: running it on a failed load would
+        // overwrite the user's vault.json with the default (no active ids).
+        guard vault.loadError == nil else { return }
         guard vault.config.migratedAuthInheritance != true else { return }
         vault.config.migratedAuthInheritance = true
 
@@ -338,14 +378,28 @@ extension AppStore {
     }
 
     /// Retries a failed vault load from the error screen (see ContentView):
-    /// reloads files, rebases drafts, and prunes dangling state, mirroring
-    /// the post-load steps of `prepare` without re-resolving the location.
+    /// reloads files, then runs the post-load steps the failed first load
+    /// had to skip - draft application, migration, pruning - mirroring the
+    /// successful path of `prepare` without re-resolving the location.
     func retryVaultLoad() async {
         await vault.loadAll()
         guard vault.loadError == nil else { return }
+        // The mirror was never touched while the load was broken, so it
+        // still holds every draft: re-read it and apply against the loaded
+        // vault. Scratch requests already applied at `prepare` are skipped
+        // inside the apply helper.
+        let drafts = await vault.loadDrafts()
+        applyRequestDrafts(drafts.requests)
+        applyUnfiledRequestDrafts(drafts.unfiledRequests)
+        applyEnvironmentDrafts(drafts.environments)
+        applyWorkspaceVariableDrafts(drafts.workspaceVariables)
+        applyCollectionVariableDrafts(drafts.collectionVariables)
+        applyCollectionAuthorizationDrafts(drafts.collectionAuthorizations)
+        applyFolderAuthorizationDrafts(drafts.folderAuthorizations)
         rebasePendingSnapshotsOntoLoadedVault()
         pruneSidebarExpansionState()
         pruneDanglingTabs()
+        await migrateRequestAuthInheritanceIfNeeded()
     }
 
     /// Reloads saved files changed on disk (another device via iCloud Drive)
@@ -359,6 +413,12 @@ extension AppStore {
         let task = Task { [weak self] in
             await previous?.value
             guard let self else { return }
+            // Never swap the vault arrays under an in-flight write: the
+            // save pass re-indexes them by position after its awaited write,
+            // and a queued structural write captured pre-reload content
+            // would clobber the freshly reloaded file.
+            await self.saveAllTask?.value
+            await self.structuralWriteTask?.value
             await self.vault.loadAll()
             self.rebasePendingSnapshotsOntoLoadedVault()
             self.pruneDanglingTabs()
@@ -433,7 +493,11 @@ extension AppStore {
 
     /// Re-applies request drafts on top of the loaded vault. Drafts whose
     /// request no longer exists are dropped (the next mirror write prunes
-    /// them from drafts.json).
+    /// them from drafts.json). Merges into the pending map instead of
+    /// replacing it: a retry after a failed load already holds scratch
+    /// pendings seeded by prepare's failed-load branch, and replacing the
+    /// map would drop them (the next mirror write would erase those drafts
+    /// for good).
     func applyRequestDrafts(_ drafts: [String: Request]) {
         guard !drafts.isEmpty else { return }
         var restored: [UUID: Request] = [:]
@@ -450,7 +514,9 @@ extension AppStore {
                 }
             }
         }
-        pendingRequestSnapshots = restored
+        for (id, draft) in restored {
+            pendingRequestSnapshots[id] = draft
+        }
         scheduleDraftPersistence()
     }
 
@@ -596,22 +662,10 @@ extension AppStore {
         }
     }
 
-    /// Writes the draft mirror immediately (quit path) and calls
-    /// `completion` once the write has landed.
-    func flushPendingDraftWrites(completion: (() -> Void)? = nil) {
-        draftSaveTask?.cancel()
-        draftSaveTask = nil
-        let drafts = currentDrafts
-        Task { [weak self] in
-            await self?.vault.saveDrafts(drafts)
-            completion?()
-        }
-    }
-
-    /// Quit path: waits for an in-flight Save pass to land, then flushes the
-    /// draft mirror and the history mirror and calls `completion`. Drafts are
-    /// flushed last so the mirror reflects the post-save state (empty when
-    /// everything saved).
+    /// Quit path: waits for the in-flight Save pass AND every serialized
+    /// structural write to land, then flushes the draft mirror and the
+    /// history mirror and calls `completion`. Drafts are flushed last so the
+    /// mirror reflects the post-save state (empty when everything saved).
     /// (Sidebar expansion state needs no flush: it is written through to
     /// UserDefaults on every toggle.)
     func flushAllWritesForQuit(completion: @escaping () -> Void) {
@@ -626,8 +680,15 @@ extension AppStore {
                 completion()
                 return
             }
+            await self.structuralWriteTask?.value
             await self.vault.saveHistory(self.history)
-            await self.vault.saveDrafts(self.currentDrafts)
+            // A failed load leaves the pending maps holding only PART of the
+            // drafts (the filed sections were never applied): writing the
+            // mirror now would erase the unapplied sections for good. The
+            // on-disk mirror is the best recovery point - leave it alone.
+            if self.vault.loadError == nil {
+                await self.vault.saveDrafts(self.currentDrafts)
+            }
             completion()
         }
     }
@@ -689,20 +750,48 @@ extension AppStore {
         request.orderIndex =
             (vault.collections[ci].requests.filter { $0.folderID == resolvedFolderID }.map(\.orderIndex).max() ?? -1) + 1
         request.updatedAt = Date()
+        // Idempotent: a failed write reverted an earlier commit to scratch -
+        // or an edit during that write left a dual-resident copy - so
+        // re-committing must replace the old copy wherever it sits, not
+        // append a duplicate into a second collection.
+        for index in vault.collections.indices {
+            vault.collections[index].requests.removeAll { $0.id == requestID }
+        }
         vault.collections[ci].requests.append(request)
 
-        // The scratch state goes away and the request reads as saved: the
-        // baseline makes the dirty check clean, and the mirror write prunes
-        // the unfiled draft.
+        let toSave = persistable(vault.collections[ci], keepingRequestID: requestID)
+        // The request reads as saved from here: the baseline makes the dirty
+        // check clean, the mirror write prunes the unfiled draft, and the
+        // close-after-save resume below relies on the scratch state being
+        // gone (otherwise it would re-stage the sheet for a saved request).
+        // A failed write in the queued task reverts all of this.
         unfiledRequests[requestID] = nil
         pendingRequestSnapshots[requestID] = nil
         persistedRequestBaselines[requestID] = request
         scheduleDraftPersistence()
-
-        // keepingRequestID: the request just landed in the collection; a
-        // rewind must not put a pre-save collection back on disk.
-        let toSave = persistable(vault.collections[ci], keepingRequestID: requestID)
-        Task { await vault.writeCollection(toSave) }
+        enqueueStructuralWrite { [weak self] in
+            guard let self else { return }
+            guard await self.vault.writeCollection(toSave) else {
+                // The file never landed: revert to scratch so the request
+                // stays visible, dirty, and retryable (re-running the Save
+                // Request sheet) instead of silently clean with no disk copy
+                // - the save-failure banner explains the same thing. An edit
+                // typed during the write re-routed through the filed path
+                // and is picked up as `current` here.
+                let current = self.pendingRequestSnapshots[requestID] ?? request
+                for index in self.vault.collections.indices {
+                    self.vault.collections[index].requests.removeAll { $0.id == requestID }
+                }
+                self.unfiledRequests[requestID] = current
+                self.pendingRequestSnapshots[requestID] = current
+                self.persistedRequestBaselines[requestID] = nil
+                if !self.openTabs.contains(.request(requestID)) {
+                    self.openRequest(requestID)
+                }
+                self.scheduleDraftPersistence()
+                return
+            }
+        }
         // Reveal the new row in the sidebar: expand the folder and every
         // ancestor between it and the collection root, so a request saved
         // into a nested folder is actually visible.
@@ -814,9 +903,18 @@ extension AppStore {
         let previousSave = saveAllTask
         // Identifies this pass, so a restore that finds a NEWER pass in
         // flight can stand down: that pass owns the entity now and captured
-        // its own (newer) snapshot.
+        // its own (newer) snapshot. Tracked per entity, not globally: an
+        // unrelated ⌘S in another tab must not suppress this pass's
+        // failed-write restore (that is how a failed save became a silently
+        // clean edit).
         savePassGeneration += 1
         let pass = savePassGeneration
+        for id in captured.requests.keys { capturedSavePasses[id] = pass }
+        for id in captured.environments.keys { capturedSavePasses[id] = pass }
+        for id in captured.workspaceVariables.keys { capturedSavePasses[id] = pass }
+        for id in captured.collectionVariables.keys { capturedSavePasses[id] = pass }
+        for id in captured.collectionAuthorizations.keys { capturedSavePasses[id] = pass }
+        for id in captured.folderAuthorizations.keys { capturedSavePasses[id] = pass }
         saveAllTask = Task { [weak self] in
             // Serialize overlapping saves: a second ⌘S (or quit) never
             // persists older snapshots after newer ones.
@@ -912,10 +1010,11 @@ extension AppStore {
 
     /// Re-marks a request dirty after its save failed.
     private func restorePendingRequest(pass: Int, _ snapshot: Request, baseline: Request?) {
-        guard mayRestorePending(pass: pass) else { return }
+        guard mayRestorePending(pass: pass, id: snapshot.id) else { return }
         guard isStalePending(pendingRequestSnapshots[snapshot.id], against: snapshot) else { return }
         pendingRequestSnapshots[snapshot.id] = snapshot
         persistedRequestBaselines[snapshot.id] = baseline
+        capturedSavePasses[snapshot.id] = nil
         scheduleDraftPersistence()
     }
 
@@ -927,84 +1026,95 @@ extension AppStore {
             pending.isContentEqual(to: snapshot)
         else { return }
         pendingRequestSnapshots[snapshot.id] = nil
+        capturedSavePasses[snapshot.id] = nil
         scheduleDraftPersistence()
     }
 
     private func restorePendingEnvironment(pass: Int, _ snapshot: EnvironmentProfile, baseline: EnvironmentProfile?) {
-        guard mayRestorePending(pass: pass) else { return }
+        guard mayRestorePending(pass: pass, id: snapshot.id) else { return }
         guard isStalePending(pendingEnvironmentSnapshots[snapshot.id], against: snapshot) else { return }
         pendingEnvironmentSnapshots[snapshot.id] = snapshot
         persistedEnvironmentBaselines[snapshot.id] = baseline
+        capturedSavePasses[snapshot.id] = nil
         scheduleDraftPersistence()
     }
 
     private func clearPersistedEnvironment(_ snapshot: EnvironmentProfile) {
         guard let pending = pendingEnvironmentSnapshots[snapshot.id], pending == snapshot else { return }
         pendingEnvironmentSnapshots[snapshot.id] = nil
+        capturedSavePasses[snapshot.id] = nil
         scheduleDraftPersistence()
     }
 
     private func restorePendingWorkspaceVariables(
         pass: Int, _ id: UUID, _ variables: [Variable], baseline: [Variable]?
     ) {
-        guard mayRestorePending(pass: pass) else { return }
+        guard mayRestorePending(pass: pass, id: id) else { return }
         guard isStalePending(pendingWorkspaceVariables[id], against: variables) else { return }
         pendingWorkspaceVariables[id] = variables
         persistedWorkspaceVariableBaselines[id] = baseline
+        capturedSavePasses[id] = nil
         scheduleDraftPersistence()
     }
 
     private func clearPersistedWorkspaceVariables(_ id: UUID, _ variables: [Variable]) {
         guard let pending = pendingWorkspaceVariables[id], pending == variables else { return }
         pendingWorkspaceVariables[id] = nil
+        capturedSavePasses[id] = nil
         scheduleDraftPersistence()
     }
 
     private func restorePendingCollectionVariables(
         pass: Int, _ id: UUID, _ variables: [Variable], baseline: [Variable]?
     ) {
-        guard mayRestorePending(pass: pass) else { return }
+        guard mayRestorePending(pass: pass, id: id) else { return }
         guard isStalePending(pendingCollectionVariables[id], against: variables) else { return }
         pendingCollectionVariables[id] = variables
         persistedCollectionVariableBaselines[id] = baseline
+        capturedSavePasses[id] = nil
         scheduleDraftPersistence()
     }
 
     private func clearPersistedCollectionVariables(_ id: UUID, _ variables: [Variable]) {
         guard let pending = pendingCollectionVariables[id], pending == variables else { return }
         pendingCollectionVariables[id] = nil
+        capturedSavePasses[id] = nil
         scheduleDraftPersistence()
     }
 
     private func restorePendingCollectionAuthorization(
         pass: Int, _ id: UUID, _ authorization: Authorization, baseline: Authorization?
     ) {
-        guard mayRestorePending(pass: pass) else { return }
+        guard mayRestorePending(pass: pass, id: id) else { return }
         guard isStalePending(pendingCollectionAuthorizations[id], against: authorization) else { return }
         pendingCollectionAuthorizations[id] = authorization
         persistedCollectionAuthorizationBaselines[id] = baseline
+        capturedSavePasses[id] = nil
         scheduleDraftPersistence()
     }
 
     private func clearPersistedCollectionAuthorization(_ id: UUID, _ authorization: Authorization) {
         guard let pending = pendingCollectionAuthorizations[id], pending == authorization else { return }
         pendingCollectionAuthorizations[id] = nil
+        capturedSavePasses[id] = nil
         scheduleDraftPersistence()
     }
 
     private func restorePendingFolderAuthorization(
         pass: Int, _ id: UUID, _ authorization: Authorization, baseline: Authorization?
     ) {
-        guard mayRestorePending(pass: pass) else { return }
+        guard mayRestorePending(pass: pass, id: id) else { return }
         guard isStalePending(pendingFolderAuthorizations[id], against: authorization) else { return }
         pendingFolderAuthorizations[id] = authorization
         persistedFolderAuthorizationBaselines[id] = baseline
+        capturedSavePasses[id] = nil
         scheduleDraftPersistence()
     }
 
     private func clearPersistedFolderAuthorization(_ id: UUID, _ authorization: Authorization) {
         guard let pending = pendingFolderAuthorizations[id], pending == authorization else { return }
         pendingFolderAuthorizations[id] = nil
+        capturedSavePasses[id] = nil
         scheduleDraftPersistence()
     }
 
@@ -1021,9 +1131,10 @@ extension AppStore {
     /// A newer pass has already captured its own (newer) snapshot for that
     /// entity and will restore or clear it; reinstating this pass's older
     /// snapshot would overwrite it - which is how a third save could regress
-    /// the file to an edit the user had already superseded.
-    private func mayRestorePending(pass: Int) -> Bool {
-        pass == savePassGeneration
+    /// the file to an edit the user had already superseded. Checked per
+    /// entity: only a newer capture of the SAME entity stands a restore down.
+    private func mayRestorePending(pass: Int, id: UUID) -> Bool {
+        capturedSavePasses[id] == pass
     }
 
     /// Persists one request. @return whether the change reached disk - a
@@ -1057,11 +1168,40 @@ extension AppStore {
             // Memory syncs to the persisted copy in place; the file write is
             // rewound to the baselines so in-flight variable/Authorization
             // drafts are not persisted by a request save.
+            let collectionID = vault.collections[ci].id
             vault.collections[ci].requests[ri] = copy
-            // The baseline only advances once the bytes are on disk - it is
-            // the reference both the dirty check and the draft rewind trust.
-            guard await vault.writeCollection(persistable(vault.collections[ci], keepingRequestID: request.id))
-            else { return false }
+            let toSave = persistable(vault.collections[ci], keepingRequestID: request.id)
+            // Join the structural write queue: a rename or delete of the same
+            // collection queued before this save must land first, and one
+            // queued after must win - unordered atomic writes of one file
+            // land in whichever order the schedulers choose, which is how a
+            // stale rename could overwrite a fresh save.
+            // A queue skip (entity vanished at execution time) reads as
+            // saved, like the vanished-entity paths below; a failed write
+            // must propagate so the caller restores the pending edit.
+            var didWrite = true
+            await enqueueStructuralWrite { [weak self] in
+                guard let self else { return }
+                // Re-validate at execution time: the request or its whole
+                // collection may have been deleted while this write waited
+                // in the queue - writing then would resurrect them.
+                guard
+                    self.vault.collections.firstIndex(where: { $0.id == collectionID }) != nil,
+                    self.vault.collections.contains(where: { $0.requests.contains { $0.id == request.id } })
+                else { return }
+                didWrite = await self.vault.writeCollection(toSave)
+            }
+            guard didWrite else { return false }
+            // The write may also have raced a delete that landed AFTER it:
+            // correct the vault so the just-landed file cannot resurrect the
+            // request (or its whole collection) on the next load.
+            if let fresh = vault.collections.firstIndex(where: { $0.id == collectionID }) {
+                if !vault.collections[fresh].requests.contains(where: { $0.id == request.id }) {
+                    await vault.writeCollection(persistable(vault.collections[fresh]))
+                }
+            } else {
+                await vault.deleteCollection(collectionID)
+            }
             persistedRequestBaselines[request.id] = copy
             return true
         }
@@ -1083,7 +1223,25 @@ extension AppStore {
             persistedEnvironmentBaselines[environment.id] = environment
             return true
         }
-        guard await vault.saveEnvironment(environment) else { return false }
+        let environmentID = environment.id
+        var didWrite = true
+        await enqueueStructuralWrite { [weak self] in
+            guard let self else { return }
+            // Re-validate at execution time: the environment may have been
+            // deleted while this write waited in the queue.
+            guard self.vault.environments.contains(where: { $0.id == environmentID }) else { return }
+            // writeCollection/writeEnvironment, NOT the upserting save
+            // variants: memory is already authoritative here, and an upsert
+            // would (a) revert newer in-memory drafts, (b) resurrect a
+            // deleted environment and defeat the post-write correction.
+            didWrite = await self.vault.writeEnvironment(environment)
+        }
+        guard didWrite else { return false }
+        // Same delete-race correction as persistRequest: a delete landing
+        // before this write would otherwise be resurrected by it.
+        if !vault.environments.contains(where: { $0.id == environmentID }) {
+            await vault.deleteEnvironment(environmentID)
+        }
         persistedEnvironmentBaselines[environment.id] = environment
         return true
     }
@@ -1102,7 +1260,23 @@ extension AppStore {
             return true
         }
         vault.workspaces[idx].variables = variables
-        guard await vault.saveWorkspace(vault.workspaces[idx]) else { return false }
+        let toSave = vault.workspaces[idx]
+        var didWrite = true
+        await enqueueStructuralWrite { [weak self] in
+            guard let self else { return }
+            // Re-validate at execution time: the workspace may have been
+            // deleted while this write waited in the queue.
+            guard self.vault.workspaces.contains(where: { $0.id == id }) else { return }
+            // writeWorkspace, not the upserting saveWorkspace - same rule
+            // as persistEnvironment (no clobber, no resurrection).
+            didWrite = await self.vault.writeWorkspace(toSave)
+        }
+        guard didWrite else { return false }
+        // Same delete-race correction as persistEnvironment: a delete
+        // landing before this write would otherwise be resurrected by it.
+        if !vault.workspaces.contains(where: { $0.id == id }) {
+            await vault.deleteWorkspace(id)
+        }
         persistedWorkspaceVariableBaselines[id] = variables
         return true
     }
@@ -1121,7 +1295,23 @@ extension AppStore {
             return true
         }
         vault.collections[idx].authorization = authorization
-        guard await vault.saveCollection(vault.collections[idx]) else { return false }
+        // The rewound copy: sibling request/folder drafts must not leak into
+        // the file just because they live in the same in-memory collection.
+        let toSave = persistable(vault.collections[idx])
+        var didWrite = true
+        await enqueueStructuralWrite { [weak self] in
+            guard let self else { return }
+            // Re-validate at execution time (see persistRequest): the
+            // collection may have been deleted while this write waited.
+            guard self.vault.collections.contains(where: { $0.id == id }) else { return }
+            // writeCollection, NOT the upserting saveCollection - same rule
+            // as persistEnvironment (no clobber, no resurrection).
+            didWrite = await self.vault.writeCollection(toSave)
+        }
+        guard didWrite else { return false }
+        if !vault.collections.contains(where: { $0.id == id }) {
+            await vault.deleteCollection(id)
+        }
         persistedCollectionAuthorizationBaselines[id] = authorization
         return true
     }
@@ -1140,7 +1330,22 @@ extension AppStore {
             return true
         }
         vault.collections[idx].variables = variables
-        guard await vault.saveCollection(vault.collections[idx]) else { return false }
+        // The rewound copy: sibling request/folder drafts must not leak into
+        // the file just because they live in the same in-memory collection.
+        let toSave = persistable(vault.collections[idx])
+        var didWrite = true
+        await enqueueStructuralWrite { [weak self] in
+            guard let self else { return }
+            // Re-validate at execution time (see persistRequest).
+            guard self.vault.collections.contains(where: { $0.id == id }) else { return }
+            // writeCollection, NOT the upserting saveCollection - same rule
+            // as persistEnvironment (no clobber, no resurrection).
+            didWrite = await self.vault.writeCollection(toSave)
+        }
+        guard didWrite else { return false }
+        if !vault.collections.contains(where: { $0.id == id }) {
+            await vault.deleteCollection(id)
+        }
         persistedCollectionVariableBaselines[id] = variables
         return true
     }

@@ -162,10 +162,18 @@ final class AppStore {
     /// observation system so the Save button and tab dirty dots update live.
     var pendingRequestSnapshots: [UUID: Request] = [:]
     /// Monotonic id of the newest Save pass. A pass that failed to write
-    /// only puts its entity back into the dirty set while it is still the
-    /// newest pass - a later pass has captured its own (newer) snapshot for
-    /// that entity and owns the outcome.
+    /// only puts its entity back into the dirty set while it still owns that
+    /// entity - see `capturedSavePasses`.
     var savePassGeneration = 0
+    /// The Save pass that captured each entity's pending entry, keyed by
+    /// entity id. A failed write's restore stands down only when a NEWER
+    /// pass captured the SAME entity - an unrelated pass on another tab
+    /// must not turn a failed save into a silently clean edit.
+    @ObservationIgnored var capturedSavePasses: [UUID: Int] = [:]
+    /// In-flight serialized structural write (renames, adds, deletes,
+    /// commit-saves): every fire-and-forget vault write chains onto it, so
+    /// the writes land in issue order and the quit path can wait for them.
+    @ObservationIgnored var structuralWriteTask: Task<Void, Never>?
     /// Unsaved environment edits - same model as the request snapshots.
     var pendingEnvironmentSnapshots: [UUID: EnvironmentProfile] = [:]
     /// Unsaved workspace/collection variable edits - same draft model.

@@ -75,7 +75,9 @@ struct CodeSnippetSidebarView: View {
                 .foregroundStyle(copied ? AppColor.success : AppColor.textSecondary)
         }
         .buttonStyle(IconButtonStyle())
-        .disabled(copied)
+        // Deliberately not disabled while `copied`: disabling dims the
+        // checkmark to 45% opacity, washing out the feedback it exists to
+        // show - and re-copying during the brief window is harmless.
         .help("Copy snippet to the clipboard")
     }
 

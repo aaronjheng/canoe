@@ -125,6 +125,7 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
     func isContentEqual(to other: Request) -> Bool {
         id == other.id
             && name == other.name
+            && type == other.type
             && method == other.method
             && urlString == other.urlString
             && bodyText == other.bodyText

@@ -129,11 +129,17 @@ struct TabBarView: View {
                                 }
                             }
                             // Global frame registry for the double-click
-                            // monitor (empty-strip hit test).
+                            // monitor (empty-strip hit test). Pruned on
+                            // unmount: a closed tab's stale frame would
+                            // resurrect it on a double-click in the freed
+                            // spot (or shadow a live pill under it).
                             .onGeometryChange(for: CGRect.self) { proxy in
                                 proxy.frame(in: .global)
                             } action: { frame in
                                 stripGeometry.pillFrames[tab] = frame
+                            }
+                            .onDisappear {
+                                stripGeometry.pillFrames[tab] = nil
                             }
                             // Postman-style hairline between neighboring
                             // tabs; it vanishes once either side becomes
@@ -436,7 +442,11 @@ struct TabBarView: View {
     /// interval, which read as a huge lag on tab switching. The point must
     /// land inside the strip but outside every pill.
     private func handleDoubleClick(_ event: NSEvent) -> Bool {
-        guard event.clickCount == 2, event.window === NSApp.mainWindow,
+        // Compare against the CAPTURED hosting window, not NSApp.mainWindow:
+        // a titled window that is key (Settings, About, License) is also
+        // main, so the old filter let a double-click in an overlapping
+        // utility window mutate this strip's state.
+        guard event.clickCount == 2, event.window === stripGeometry.window,
             let window = event.window
         else { return false }
         // NSEvent lives in window-base (bottom-left) space; the registry
@@ -453,8 +463,9 @@ struct TabBarView: View {
             store.pin(hit.key)
             return true
         }
-        guard stripGeometry.stripFrame.contains(point) else { return false }
-        guard !stripGeometry.pillFrames.values.contains(where: { $0.contains(point) }),
+        guard stripGeometry.stripFrame.contains(point),
+            // The inline "+" is not a pill: a double-click there must not
+            // mint a second request (its own handler handles it).
             !stripGeometry.plusButtonFrame.contains(point)
         else { return false }
         store.addRequest()

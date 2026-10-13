@@ -6,6 +6,10 @@ import SwiftUI
 struct EnvironmentDetailView: View {
     @Environment(AppStore.self) private var store
     @State private var draft: EnvironmentProfile
+    /// Guards vault-side name adoption: an external reload landing while
+    /// the title is focused (but before the first keystroke) must not
+    /// rewrite the field under the caret - same guard as the folder page.
+    @FocusState private var isTitleFocused: Bool
 
     init(environment: EnvironmentProfile) {
         _draft = State(initialValue: environment)
@@ -21,7 +25,12 @@ struct EnvironmentDetailView: View {
             HStack(spacing: AppSpacing.small) {
                 Image(systemName: "globe")
                     .foregroundStyle(AppColor.accent)
-                InlineNameField(text: $draft.name, placeholder: "Environment Name", font: AppFont.panelTitle)
+                InlineNameField(
+                    text: $draft.name,
+                    placeholder: "Environment Name",
+                    font: AppFont.panelTitle,
+                    focus: $isTitleFocused
+                )
                 Spacer(minLength: AppSpacing.medium)
                 saveButton
             }
@@ -55,7 +64,14 @@ struct EnvironmentDetailView: View {
             guard let newEnvironment, !store.hasPendingEnvironmentChanges(for: draft.id),
                 newEnvironment != draft
             else { return }
-            draft = newEnvironment
+            // While the title is focused only the NAME must not be adopted
+            // (the caret owns it); variables ride along whenever the names
+            // still match. If the external change also renamed, the whole
+            // adoption waits for blur - the same caret-protecting tradeoff
+            // the folder page makes.
+            if !isTitleFocused || newEnvironment.name == draft.name {
+                draft = newEnvironment
+            }
         }
     }
 

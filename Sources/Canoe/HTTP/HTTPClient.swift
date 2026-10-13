@@ -187,6 +187,13 @@ enum HTTPClient {
 
         func finishBody(response: URLResponse?, error: Error?) {
             state.withLock {
+                // Flush the held-back UTF-8 tail: it exists only when the
+                // stream ended between appends, and for non-UTF-8 (binary)
+                // bodies those are real bytes the character heuristic held
+                // back - without this, the last 1-3 bytes of every binary
+                // body are silently missing from the retained data.
+                $0.data.append($0.pendingTail)
+                $0.pendingTail = Data()
                 $0.bodySettled = true
                 $0.error = error
                 if let http = response as? HTTPURLResponse {
@@ -488,14 +495,31 @@ enum HTTPClient {
         // they only add noise).
         var hasContentType = false
         var hasAuthorization = false
+        // Combined values per repeated user row: `setValue` replaces, but
+        // duplicate names are valid HTTP (RFC 9110 list semantics) - curl and
+        // Postman send both rows. Tracked per lowercased name so a user row
+        // replaces the generated User-Agent (last-wins intent) instead of
+        // joining it.
+        var userHeaderValues: [String: String] = [:]
         for header in request.headers where header.isEnabled {
             let key = VariableResolver.resolve(header.key, variables: variables)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard !key.isEmpty else { continue }
             let value = VariableResolver.resolve(header.value, variables: variables)
-            urlRequest.setValue(value, forHTTPHeaderField: key)
-            if key.lowercased() == "content-type" { hasContentType = true }
-            if key.lowercased() == "authorization" { hasAuthorization = true }
+            let normalized = key.lowercased()
+            if let existing = userHeaderValues[normalized] {
+                // Cookie keeps its separator; every other name joins with a
+                // list comma.
+                let separator = normalized == "cookie" ? "; " : ", "
+                let combined = existing + separator + value
+                urlRequest.setValue(combined, forHTTPHeaderField: key)
+                userHeaderValues[normalized] = combined
+            } else {
+                urlRequest.setValue(value, forHTTPHeaderField: key)
+                userHeaderValues[normalized] = value
+            }
+            if normalized == "content-type" { hasContentType = true }
+            if normalized == "authorization" { hasAuthorization = true }
         }
 
         // Authorization helper (a manually set Authorization header always
@@ -526,9 +550,7 @@ enum HTTPClient {
         let built = try buildBody(for: request, variables: variables)
         if let built, !built.data.isEmpty {
             urlRequest.httpBody = built.data
-            if !hasContentType, let contentType = built.contentType,
-                !disabledGenerated.contains("content-type")
-            {
+            if !hasContentType, let contentType = built.contentType, !disabledGenerated.contains("content-type") {
                 urlRequest.setValue(contentType, forHTTPHeaderField: "Content-Type")
             }
         }

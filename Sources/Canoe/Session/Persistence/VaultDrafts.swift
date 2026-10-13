@@ -61,18 +61,13 @@ struct VaultDrafts: Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         requests = try container.decodeLossyMap(forKey: .requests)
         environments = try container.decodeLossyMap(forKey: .environments)
-        workspaceVariables =
-            try container.decodeIfPresent(
-                [String: [Variable]].self, forKey: .workspaceVariables) ?? [:]
-        collectionVariables =
-            try container.decodeIfPresent(
-                [String: [Variable]].self, forKey: .collectionVariables) ?? [:]
-        collectionAuthorizations =
-            try container.decodeIfPresent(
-                [String: Authorization].self, forKey: .collectionAuthorizations) ?? [:]
-        folderAuthorizations =
-            try container.decodeIfPresent(
-                [String: Authorization].self, forKey: .folderAuthorizations) ?? [:]
+        // Every kind decodes lossily - a single malformed Variable or
+        // Authorization row must drop only its own entry, never throw away
+        // the whole file (the next mirror write would make that permanent).
+        workspaceVariables = try container.decodeLossyMap(forKey: .workspaceVariables)
+        collectionVariables = try container.decodeLossyMap(forKey: .collectionVariables)
+        collectionAuthorizations = try container.decodeLossyMap(forKey: .collectionAuthorizations)
+        folderAuthorizations = try container.decodeLossyMap(forKey: .folderAuthorizations)
         unfiledRequests = try container.decodeLossyMap(forKey: .unfiledRequests)
     }
 }

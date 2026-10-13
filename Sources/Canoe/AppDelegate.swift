@@ -200,6 +200,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc func clearHistory() {
         guard !isSettingsWindowKey else { return }
+        // The confirmation stages on the main window's ContentView: with a
+        // utility panel (About / License / ⌘/) frontmost it would present
+        // into a background window and never be seen - bring the main
+        // window forward first, like every other workspace action's
+        // isSettingsWindowKey guard does for Settings. A miniaturized
+        // window orders front without un-minimizing, so deminiaturize too.
+        if let window, window.isMiniaturized {
+            window.deminiaturize(nil)
+        }
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate()
         // Confirms in the window (ContentView), same dialog the sidebar's
         // Clear button stages - history has no undo to fall back on.
         appStore.presentClearHistoryConfirm = true
@@ -218,6 +229,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // workspace tab behind it - both windows share one mainMenu.
         if isSettingsWindowKey {
             settingsWindow?.performClose(nil)
+            return
+        }
+        // Same rule for the About / License / Keyboard Shortcuts panels:
+        // they share the main menu, and an untargeted "Close Tab" falls
+        // through the responder chain to the delegate - closing the main
+        // window's selected tab while the user means to close the panel.
+        if let keyWindow = NSApp.keyWindow, utilityWindows.values.contains(where: { $0 === keyWindow }) {
+            keyWindow.performClose(nil)
             return
         }
         appStore.closeSelectedTab()
@@ -276,10 +295,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 780, height: 520)
         window.setContentSize(NSSize(width: 780, height: 520))
+        // Center BEFORE the autosave name: setFrameAutosaveName restores the
+        // saved frame immediately, and a later center() would discard the
+        // remembered position on every launch (the main window uses the
+        // same order).
+        window.center()
+        // Remember the frame across launches (AppKit-managed UI state, like
+        // the main window's autosave): a user who enlarges the resizable
+        // Settings window is not reset to 780x520 every launch.
+        window.setFrameAutosaveName("Canoe Settings Window")
         let toolbarController = SettingsToolbarController(navigation: navigation)
         toolbarController.install(in: window)
         settingsToolbarController = toolbarController
-        window.center()
         (AppAppearance(rawValue: SettingsStore.shared.settings.appearance) ?? .system)
             .applyToWindow(window)
         window.delegate = self
