@@ -138,6 +138,11 @@ enum AppSize {
     /// default (8px): every level's chevron and content sit this far right
     /// of its parent's, starting from the collection.
     static let treeIndent: CGFloat = 8
+    /// Leading offset of the collection level: one `treeIndent` step inside
+    /// the group header's chevron, which sits at the tree container's
+    /// leading edge - so the header → collection step equals the per-level
+    /// step.
+    static let treeBaseIndent: CGFloat = treeIndent
     /// The chevron column plus its trailing gap - the fixed offset between a
     /// row's chevron and its content column (folder icon, method tag, name).
     static let treeExpanderColumn: CGFloat = treeChevronWidth + AppSpacing.xSmall

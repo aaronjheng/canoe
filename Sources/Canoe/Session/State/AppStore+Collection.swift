@@ -540,8 +540,7 @@ extension AppStore {
         enqueueStructuralWrite { [weak self] in
             guard let self else { return }
             if let sourceCollectionID,
-                let source = self.vault.collections.first(where: { $0.id == sourceCollectionID })
-            {
+                let source = self.vault.collections.first(where: { $0.id == sourceCollectionID }) {
                 _ = await self.vault.writeCollection(self.persistable(source))
             }
             _ = await self.vault.writeCollection(self.persistable(targetCollection))
@@ -633,8 +632,7 @@ extension AppStore {
         enqueueStructuralWrite { [weak self] in
             guard let self else { return }
             if let sourceCollectionID,
-                let source = self.vault.collections.first(where: { $0.id == sourceCollectionID })
-            {
+                let source = self.vault.collections.first(where: { $0.id == sourceCollectionID }) {
                 _ = await self.vault.writeCollection(self.persistable(source))
             }
             _ = await self.vault.writeCollection(self.persistable(targetCollection))

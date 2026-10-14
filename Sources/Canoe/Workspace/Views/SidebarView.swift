@@ -224,10 +224,11 @@ private struct GroupHeader<Actions: View>: View {
                         .font(AppFont.sidebarGroupHeader)
                         .padding(.leading, AppSpacing.xSmall)
                 }
-                // 14pt from the panel edge (list gutter + compact inset),
-                // one step inside the tree rows' 28pt chevrons; the hover
-                // fill still spans the full gutter, matching the filter box.
-                .padding(.leading, AppSpacing.compact)
+                // The chevron sits at the tree container's leading edge:
+                // the collection level below is one `treeIndent` step in
+                // (see `treeBaseIndent`), matching the per-level step; the
+                // hover fill still spans the full gutter, matching the
+                // filter box.
                 .padding(.vertical, AppSpacing.xSmall)
                 Spacer(minLength: 0)
                 actions()
@@ -321,7 +322,7 @@ private struct EnvironmentRow: View {
                 }
             }
             // Level-1 leaf: name on the same content column as collections.
-            .padding(.leading, 2 * AppSize.treeExpanderColumn)
+            .padding(.leading, AppSize.treeBaseIndent + AppSize.treeExpanderColumn)
             .padding(.trailing, AppSpacing.xSmall)
             .padding(.vertical, AppSpacing.xSmall)
             // Same band as the tree rows it sits beside.
@@ -507,7 +508,7 @@ private struct IndentGuides: View {
                 Color.clear
                     .frame(
                         width: index == 0
-                            ? AppSize.treeExpanderColumn + AppSize.treeChevronWidth / 2
+                            ? AppSize.treeBaseIndent + AppSize.treeChevronWidth / 2
                             : AppSize.treeIndent - 1
                     )
                 AppColor.treeGuide
@@ -734,7 +735,7 @@ private struct CollectionTree: View {
     /// hidden, the field sits where the label was.
     private var renameRow: some View {
         HStack(spacing: 0) {
-            Color.clear.frame(width: AppSize.treeExpanderColumn)
+            Color.clear.frame(width: AppSize.treeBaseIndent)
             InlineRenameField(
                 initialName: collection.name,
                 onCommit: { name in
@@ -845,8 +846,9 @@ private struct CollectionTree: View {
                             .foregroundStyle(isSelected ? AppColor.textPrimary : AppColor.textSecondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    // Tree level 1: one expander column in from the header.
-                    .padding(.leading, AppSize.treeExpanderColumn)
+                    // Tree level 1: one indent step inside the group
+                    // header's chevron, matching the per-level step below.
+                    .padding(.leading, AppSize.treeBaseIndent)
                     // Every tree level shares one band height (see
                     // `AppSize.treeRowHeight`).
                     .frame(height: AppSize.treeRowHeight)
@@ -1016,7 +1018,7 @@ private struct FolderTree: View {
     private var renameRow: some View {
         HStack(spacing: 0) {
             Color.clear
-                .frame(width: AppSize.treeExpanderColumn + AppSize.treeIndent * CGFloat(depth))
+                .frame(width: AppSize.treeBaseIndent + AppSize.treeIndent * CGFloat(depth))
             InlineRenameField(
                 initialName: folder.name,
                 onCommit: { name in
@@ -1117,7 +1119,7 @@ private struct FolderTree: View {
                         // collection's chevron; the folder icon lands one expander
                         // column past it - the same x as sibling requests' tags.
                         Color.clear
-                            .frame(width: AppSize.treeExpanderColumn + AppSize.treeIndent * CGFloat(depth))
+                            .frame(width: AppSize.treeBaseIndent + AppSize.treeIndent * CGFloat(depth))
                         HStack(spacing: AppSpacing.xSmall) {
                             Button {
                                 store.toggleSidebarNode(folder.id)
@@ -1282,7 +1284,7 @@ private struct RequestRow: View {
     private var renameRow: some View {
         HStack(spacing: 0) {
             Color.clear
-                .frame(width: 2 * AppSize.treeExpanderColumn + AppSize.treeIndent * CGFloat(depth))
+                .frame(width: AppSize.treeBaseIndent + AppSize.treeExpanderColumn + AppSize.treeIndent * CGFloat(depth))
             HStack(spacing: AppSpacing.xSmall) {
                 MethodTag(method: request.httpMethod)
                 InlineRenameField(
@@ -1357,7 +1359,7 @@ private struct RequestRow: View {
                         // column past the row's chevron position, which steps one
                         // tree step per level - the same x as sibling folders' icons.
                         Color.clear
-                            .frame(width: 2 * AppSize.treeExpanderColumn + AppSize.treeIndent * CGFloat(depth))
+                            .frame(width: AppSize.treeBaseIndent + AppSize.treeExpanderColumn + AppSize.treeIndent * CGFloat(depth))
                         HStack(spacing: AppSpacing.xSmall) {
                             MethodTag(method: request.httpMethod)
                             sidebarRowLabel(request.name, filter: store.sidebarFilter)
