@@ -157,12 +157,15 @@ private struct ItemsView: View {
                         collectionsGroupHeader
                         if store.isCollectionsSectionExpanded {
                             collectionsTree
+                                .transition(.identity)
                             Spacer(minLength: 0)
+                                .transition(.identity)
                         }
                         GroupDivider()
                         environmentsGroupHeader
                         if store.isEnvironmentsSectionExpanded {
                             environmentsRows
+                                .transition(.identity)
                         }
                     }
                     // Matches the boxed filter field's own inset, so the row
