@@ -222,7 +222,7 @@ private struct GroupHeader<Actions: View>: View {
                         .frame(width: AppSize.treeChevronWidth)
                     Text(title.uppercased())
                         .font(AppFont.sidebarGroupHeader)
-                        .padding(.leading, AppSpacing.xSmall)
+                        .padding(.leading, AppSpacing.xxSmall)
                 }
                 // The chevron sits at the tree container's leading edge:
                 // the collection level below is one `treeIndent` step in
@@ -829,7 +829,7 @@ private struct CollectionTree: View {
                     store.preview(.collection(collection.id))
                     store.toggleSidebarNode(collection.id)
                 } label: {
-                    HStack(spacing: AppSpacing.xSmall) {
+                    HStack(spacing: AppSpacing.xxSmall) {
                         Button {
                             store.toggleSidebarNode(collection.id)
                         } label: {
@@ -1120,7 +1120,7 @@ private struct FolderTree: View {
                         // column past it - the same x as sibling requests' tags.
                         Color.clear
                             .frame(width: AppSize.treeBaseIndent + AppSize.treeIndent * CGFloat(depth))
-                        HStack(spacing: AppSpacing.xSmall) {
+                        HStack(spacing: AppSpacing.xxSmall) {
                             Button {
                                 store.toggleSidebarNode(folder.id)
                             } label: {
@@ -1133,14 +1133,18 @@ private struct FolderTree: View {
                             .buttonStyle(.plain)
                             .clickCursor()
                             .help(isExpanded ? "Collapse folder" : "Expand folder")
-                            Image(systemName: "folder")
-                                .font(AppFont.iconLarge)  // VS Code uses 16px tree icons
-                                .foregroundStyle(AppColor.textSecondary)
-                            sidebarRowLabel(folder.name, filter: store.sidebarFilter)
-                                .font(AppFont.sidebarRow)
-                                .lineLimit(1)
-                                .foregroundStyle(isSelected ? AppColor.textPrimary : AppColor.textSecondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            // The icon keeps its own xSmall gap to the name:
+                            // only the chevron's gap tightens.
+                            HStack(spacing: AppSpacing.xSmall) {
+                                Image(systemName: "folder")
+                                    .font(AppFont.iconLarge)  // VS Code uses 16px tree icons
+                                    .foregroundStyle(AppColor.textSecondary)
+                                sidebarRowLabel(folder.name, filter: store.sidebarFilter)
+                                    .font(AppFont.sidebarRow)
+                                    .lineLimit(1)
+                                    .foregroundStyle(isSelected ? AppColor.textPrimary : AppColor.textSecondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
                         }
                         .padding(.trailing, AppSpacing.xSmall)
                         .padding(.vertical, AppSpacing.xSmall)

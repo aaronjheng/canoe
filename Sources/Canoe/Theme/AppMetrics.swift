@@ -145,7 +145,7 @@ enum AppSize {
     static let treeBaseIndent: CGFloat = treeIndent
     /// The chevron column plus its trailing gap - the fixed offset between a
     /// row's chevron and its content column (folder icon, method tag, name).
-    static let treeExpanderColumn: CGFloat = treeChevronWidth + AppSpacing.xSmall
+    static let treeExpanderColumn: CGFloat = treeChevronWidth + AppSpacing.xxSmall
     /// Fixed height of every tree row (collections, folders, requests) and
     /// their inline rename fields. Pinned rather than padding-driven so the
     /// levels of one tree share one band: a folder row with its 16pt icon
