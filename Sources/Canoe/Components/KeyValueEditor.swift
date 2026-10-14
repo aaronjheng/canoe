@@ -135,9 +135,11 @@ struct KeyValueEditor<T: KVItem>: View {
     /// Fixed widths for the non-text columns; Key and Value split the
     /// remaining width equally, matching the header labels above. Reorder
     /// tables merge the drag grip and the checkbox into one leading column
-    /// (two icons, one cell) so the grid carries one hairline fewer; the
-    /// secret eye and the delete button merge the same way into one
-    /// trailing column.
+    /// (two icons, one cell); the secret eye and the delete button merge
+    /// the same way into one trailing column. Neither icon column carries
+    /// an inner hairline: they open toward the text columns (the leading
+    /// column drops its right rule, the trailing its left), so the action
+    /// glyphs read as floating on the row, not as cells of the grid.
     private let toggleColumnWidth: CGFloat = 32
     private let gripGlyphWidth: CGFloat = 14
     private let deleteColumnWidth: CGFloat = 26
@@ -153,7 +155,7 @@ struct KeyValueEditor<T: KVItem>: View {
     /// Merged trailing icon column. Eye and trash share one fixed glyph box
     /// each (18pt, squared so SF Symbols of different widths match) with the
     /// leading column's 2pt group gap, plus 4pt side insets so neither glyph
-    /// hugs the hairline: 4 + 18 + 2 + 18 + 4 = 46pt. Tables without a
+    /// hugs the table border: 4 + 18 + 2 + 18 + 4 = 46pt. Tables without a
     /// secret column keep the lone delete cell in a 26pt column (4pt insets
     /// around the same 18pt box).
     private var trailingColumnWidth: CGFloat {
@@ -309,34 +311,24 @@ struct KeyValueEditor<T: KVItem>: View {
     private var headerRow: some View {
         // Icon columns (merged leading grip/checkbox, merged trailing
         // eye/delete) get no header cells: empty ruled boxes read as
-        // missing labels. Indents keep the text labels over their columns
-        // instead. Form-data's Type menu lives inside the key cell, so it
-        // needs no header cell either.
+        // missing labels. The clear reservations below match the body
+        // rows' icon column widths exactly; the icon columns carry no
+        // inner hairline, so unlike the Key/Value divider there is no rule
+        // width to account for. Form-data's Type menu lives inside the key
+        // cell, so it needs no header cell either.
         HStack(spacing: 0) {
             if showsIconColumns {
-                Color.clear.frame(width: leadingIconWidth)
+                Color.clear.frame(width: leadingColumnWidth)
             }
             headerLabel(keyHeader, isKey: true)
             verticalRule
             headerLabel(valueHeader)
             if showsIconColumns {
-                Color.clear.frame(width: trailingIconWidth)
+                Color.clear.frame(width: trailingColumnWidth)
             }
         }
         .frame(height: AppSize.tableRowHeight)
         .background(headerBackground ?? .clear)
-    }
-
-    /// Indent matching the body rows' leading icon column (including its
-    /// 1pt hairline) so the text labels land exactly over the cells.
-    private var leadingIconWidth: CGFloat {
-        leadingColumnWidth + 1
-    }
-
-    /// Reserve the trailing merged column and its hairline so Key and
-    /// Value divide the same remaining width in both header and rows.
-    private var trailingIconWidth: CGFloat {
-        1 + trailingColumnWidth
     }
 
     private func headerLabel(_ text: String) -> some View {
@@ -585,8 +577,11 @@ struct KeyValueEditor<T: KVItem>: View {
 // MARK: - Row
 
 /// One table row: merged leading cell (grip + checkbox), borderless
-/// key/value cells split by hairlines, and a merged trailing cell (secret
+/// key/value cells split by a hairline, and a merged trailing cell (secret
 /// eye + delete, the latter appearing only while hovering, Postman-style).
+/// The icon columns are not fenced off by hairlines: the leading cell has
+/// no right rule and the trailing cell no left rule, so they open toward
+/// the text columns and the only vertical rule left is the Key/Value one.
 private struct KVRow: View {
     @Binding var isEnabled: Bool
     @Binding var key: String
@@ -607,10 +602,10 @@ private struct KVRow: View {
     let keyFocus: CellFocus
     let valueFocus: CellFocus
     /// Width of the merged leading column: drag grip (when reorder is on)
-    /// plus the enabled checkbox share one cell and one hairline.
+    /// plus the enabled checkbox share one cell; no right hairline.
     let leadingColumnWidth: CGFloat
     /// Width of the merged trailing column: secret eye (variables tables
-    /// only) plus the delete button share one cell and one hairline.
+    /// only) plus the delete button share one cell; no left hairline.
     let trailingColumnWidth: CGFloat
     private let gripGlyphWidth: CGFloat = 14
     /// nil for real rows; the trailing ghost row reports its editing session's
@@ -663,7 +658,8 @@ private struct KVRow: View {
     var body: some View {
         HStack(spacing: 0) {
             // One merged leading cell: drag grip (pointer-only, on hover)
-            // and the enabled checkbox share a single column and hairline.
+            // and the enabled checkbox share a single column, with no
+            // right hairline opening the key cell next to it.
             // The frame centers the icon group so the grip's left inset
             // mirrors the checkbox's right inset. The trailing ghost row
             // keeps an empty grip slot - nothing to drag yet - so its
@@ -709,7 +705,6 @@ private struct KVRow: View {
                 }
             }
             .frame(width: leadingColumnWidth)
-            verticalRule
             cell(.key) {
                 HStack(spacing: AppSpacing.xSmall) {
                     VariableHighlightEditor(
@@ -746,7 +741,6 @@ private struct KVRow: View {
                     )
                 }
             }
-            verticalRule
             trailingColumn
         }
         .frame(height: AppSize.tableRowHeight)
@@ -909,11 +903,11 @@ private struct KVRow: View {
     }
 
     /// One merged trailing cell: the secret eye (variables tables only)
-    /// and the delete button share a single column and hairline, mirroring
-    /// the merged leading grip+checkbox cell exactly: one `xxSmall`-spaced
-    /// group, fitted and centered, so the glyph gap and the side insets
-    /// match the leading column. The ghost row reserves the same width so
-    /// its cells line up with the real rows.
+    /// and the delete button share a single column with no left hairline,
+    /// mirroring the merged leading grip+checkbox cell exactly: one
+    /// `xxSmall`-spaced group, fitted and centered, so the glyph gap and
+    /// the side insets match the leading column. The ghost row reserves
+    /// the same width so its cells line up with the real rows.
     private var trailingColumn: some View {
         HStack(spacing: AppSpacing.xxSmall) {
             if secretColumnWidth > 0 {
@@ -998,13 +992,11 @@ private struct ReadOnlyKVRow: View {
         HStack(spacing: 0) {
             if showsIconColumns {
                 readOnlyLeadingCell
-                verticalRule
             }
             readOnlyCell(key, showsInfo: showsKeyInfo)
             verticalRule
             readOnlyCell(value)
             if showsIconColumns {
-                verticalRule
                 Color.clear.frame(width: trailingColumnWidth)
             }
         }
