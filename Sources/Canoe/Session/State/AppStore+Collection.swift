@@ -362,6 +362,44 @@ extension AppStore {
         enqueueStructuralWrite { await self.vault.writeCollection(self.persistable(updated)) }
     }
 
+    /// Postman-style sidebar reordering: places a collection above or below
+    /// a target collection among their shared workspace's collections.
+    /// Siblings from the insertion slot on shift by one (orderIndex ties
+    /// never appear), and every shifted file is rewritten - orderIndex lives
+    /// inside each collection's JSON.
+    func moveCollection(_ collectionID: UUID, relativeTo targetID: UUID, position: SidebarDropPosition) {
+        guard position != .into, collectionID != targetID,
+            let draggedIndex = vault.collections.firstIndex(where: { $0.id == collectionID }),
+            let targetIndex = vault.collections.firstIndex(where: { $0.id == targetID })
+        else { return }
+        let workspaceID = vault.collections[targetIndex].workspaceID
+        guard vault.collections[draggedIndex].workspaceID == workspaceID else { return }
+
+        let target = vault.collections[targetIndex]
+        let insertBase = position == .above ? target.orderIndex : target.orderIndex + 1
+        var shiftedIDs: Set<UUID> = []
+        for index in vault.collections.indices {
+            let sibling = vault.collections[index]
+            guard sibling.id != collectionID, sibling.workspaceID == workspaceID, sibling.orderIndex >= insertBase
+            else { continue }
+            vault.collections[index].orderIndex += 1
+            shiftedIDs.insert(sibling.id)
+        }
+        vault.collections[draggedIndex].orderIndex = insertBase
+
+        var toWrite: [Collection] = []
+        for collection in vault.collections
+        where collection.id == collectionID || shiftedIDs.contains(collection.id) {
+            toWrite.append(collection)
+        }
+        enqueueStructuralWrite { [weak self] in
+            guard let self else { return }
+            for collection in toWrite {
+                _ = await self.vault.writeCollection(self.persistable(collection))
+            }
+        }
+    }
+
     // MARK: - Folders
 
     @discardableResult

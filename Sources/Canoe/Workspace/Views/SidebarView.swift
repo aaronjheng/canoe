@@ -863,16 +863,47 @@ private struct CollectionTree: View {
                 .animation(AppMotion.quick, value: isSelected)
                 .animation(AppMotion.quick, value: showsActions)
                 .help("Open \(collection.name)")
-                // Drop target: any drop on the collection row lands the
-                // dragged request/folder at the collection root. The
-                // delegate computes the hover position for the shared
-                // insertion-line state (Postman-style).
+                // Drag source: plain-text payload "collection-<uuid>". The
+                // kind marker also tells drop targets this is a reorder
+                // drag (collection rows split into above/below halves
+                // instead of their whole-row join-the-collection zone).
+                .onDrag {
+                    store.sidebarDraggingKind = "collection"
+                    return NSItemProvider(object: "collection-\(collection.id.uuidString)" as NSString)
+                } preview: {
+                    HStack(spacing: AppSpacing.xSmall) {
+                        Image(systemName: "list.bullet.rectangle")
+                            .font(AppFont.iconLarge)
+                            .foregroundStyle(AppColor.textSecondary)
+                        Text(collection.name)
+                            .font(AppFont.sidebarRow)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, AppSpacing.small)
+                    .padding(.vertical, AppSpacing.xxSmall)
+                    .background(
+                        RoundedRectangle(cornerRadius: AppRadius.small)
+                            .fill(AppColor.subtleBackground)
+                    )
+                }
+                // Drop target: requests/folders dropped anywhere join the
+                // collection root; a dragged collection reorders among its
+                // siblings (the delegate computes the hover position for
+                // the shared insertion-line state, Postman-style).
                 .onDrop(
                     of: [.plainText],
                     delegate: SidebarDropDelegate(
                         store: store, kind: .collection,
                         targetID: collection.id, collectionID: collection.id)
                 )
+                .overlay(alignment: .top) {
+                    sidebarInsertionLine(
+                        isVisible: store.sidebarDropIndicator == SidebarDropIndicator(targetID: collection.id, position: .above))
+                }
+                .overlay(alignment: .bottom) {
+                    sidebarInsertionLine(
+                        isVisible: store.sidebarDropIndicator == SidebarDropIndicator(targetID: collection.id, position: .below))
+                }
                 .overlay(
                     RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
                         .stroke(
@@ -1133,7 +1164,8 @@ private struct FolderTree: View {
                 .help("Open \(folder.name)")
                 // Drag source: enables moving folders via drag-and-drop.
                 .onDrag {
-                    NSItemProvider(object: "folder-\(folder.id.uuidString)" as NSString)
+                    store.sidebarDraggingKind = "folder"
+                    return NSItemProvider(object: "folder-\(folder.id.uuidString)" as NSString)
                 } preview: {
                     HStack(spacing: AppSpacing.xSmall) {
                         Image(systemName: "folder")
@@ -1364,7 +1396,8 @@ private struct RequestRow: View {
                 // Drag source: plain-text payload "request-<uuid>", matching
                 // the drop delegates' parser.
                 .onDrag {
-                    NSItemProvider(object: "request-\(request.id.uuidString)" as NSString)
+                    store.sidebarDraggingKind = "request"
+                    return NSItemProvider(object: "request-\(request.id.uuidString)" as NSString)
                 } preview: {
                     HStack(spacing: AppSpacing.xSmall) {
                         MethodTag(method: request.httpMethod)
@@ -1560,10 +1593,10 @@ private struct SidebarDropDelegate: DropDelegate {
             // maxSplits: 1 - UUIDs contain hyphens of their own.
             let parts = payload.split(separator: "-", maxSplits: 1)
             guard parts.count == 2, let draggedID = UUID(uuidString: String(parts[1])) else { return }
-            let draggedIsFolder = parts[0] == "folder"
+            let draggedKind = String(parts[0])
             Task { @MainActor in
                 store.commitSidebarDrop(
-                    draggedID: draggedID, draggedIsFolder: draggedIsFolder,
+                    draggedID: draggedID, draggedKind: draggedKind,
                     targetKind: kind, indicator: indicator, collectionID: collectionID)
             }
         }
@@ -1591,6 +1624,13 @@ private struct SidebarDropDelegate: DropDelegate {
             }
             return SidebarDropIndicator(targetID: targetID, position: .into)
         case .collection:
+            // A dragged collection reorders among its siblings: the row's
+            // top/bottom halves place it above/below the target. Requests
+            // and folders dropped anywhere on the row join the collection.
+            if store.sidebarDraggingKind == "collection" {
+                let position: SidebarDropPosition = location.y < AppSize.treeRowHeight / 2 ? .above : .below
+                return SidebarDropIndicator(targetID: targetID, position: position)
+            }
             return SidebarDropIndicator(targetID: targetID, position: .into)
         }
     }
@@ -1605,29 +1645,33 @@ extension AppStore {
     ///   folder's parent, appended.
     /// - request onto a collection row: appended at the collection root.
     /// - folder onto a folder: middle = nested inside; edges = the target's
-    ///   sibling slot (same collection only).
+    ///   sibling slot (cross-collection brings the subtree along).
     /// - folder onto a request: joins the request's parent, appended.
     /// - folder onto a collection row: moved to the collection root.
+    /// - collection onto a collection row: edges = reorders the sidebar;
+    ///   middle = no-op (collections do not nest).
+    /// - collection onto a request/folder row: no-op (a collection is a
+    ///   top-level container).
     @MainActor
     fileprivate func commitSidebarDrop(
         draggedID: UUID,
-        draggedIsFolder: Bool,
+        draggedKind: String,
         targetKind: SidebarDropTargetKind,
         indicator: SidebarDropIndicator,
         collectionID: UUID?
     ) {
         let targetID = indicator.targetID
         let position = indicator.position
-        switch (targetKind, draggedIsFolder) {
-        case (.request, false):
+        switch (targetKind, draggedKind) {
+        case (.request, "request"):
             guard targetID != draggedID else { return }
             moveRequest(draggedID, relativeTo: targetID, position: position)
-        case (.request, true):
+        case (.request, "folder"):
             guard let request = request(withID: targetID),
                 let collection = collectionForRequest(request)
             else { return }
             moveFolder(draggedID, to: request.folderID, in: collection.id)
-        case (.folder, false):
+        case (.folder, "request"):
             guard let collection = collectionForFolder(targetID) else { return }
             if position == .into {
                 moveRequest(draggedID, to: targetID, in: collection.id)
@@ -1635,7 +1679,7 @@ extension AppStore {
                 let parent = folder(withID: targetID)?.parentFolderID
                 moveRequest(draggedID, to: parent, in: collection.id)
             }
-        case (.folder, true):
+        case (.folder, "folder"):
             guard let collection = collectionForFolder(targetID) else { return }
             if position == .into {
                 moveFolder(draggedID, to: targetID, in: collection.id)
@@ -1645,13 +1689,19 @@ extension AppStore {
                 guard targetID != draggedID else { return }
                 moveFolder(draggedID, relativeTo: targetID, position: position)
             }
-        case (.collection, _):
+        case (.collection, "request"):
             guard let collectionID else { return }
-            if draggedIsFolder {
-                moveFolder(draggedID, to: nil, in: collectionID)
-            } else {
-                moveRequest(draggedID, to: nil, in: collectionID)
-            }
+            moveRequest(draggedID, to: nil, in: collectionID)
+        case (.collection, "folder"):
+            guard let collectionID else { return }
+            moveFolder(draggedID, to: nil, in: collectionID)
+        case (.collection, "collection"):
+            // Collections do not nest: only the edge halves reorder.
+            guard position != .into else { return }
+            moveCollection(draggedID, relativeTo: targetID, position: position)
+        default:
+            // A dragged collection over a request/folder row: no home for it.
+            return
         }
     }
 }

@@ -26,6 +26,13 @@ final class AppStore {
     /// (.above/.below) or the folder highlight (.into). Set by the drop
     /// delegate, cleared on exit/drop - never persisted.
     var sidebarDropIndicator: SidebarDropIndicator?
+    /// What the active sidebar drag carries ("request" / "folder" /
+    /// "collection"), set when the drag session starts. Drop targets read it
+    /// to decide hover visuals: a collection dragged over a collection row
+    /// reorders (edges = lines), a request/folder joins the collection
+    /// (whole row = into). Stale values are harmless - every drag start
+    /// overwrites it.
+    var sidebarDraggingKind: String?
 
     // MARK: - Sidebar expansion state
 
