@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Group panel expand/collapse: one smooth, quick curve shared by both
 /// toggles so the bottom stack slides into place instead of jumping.
@@ -862,6 +863,23 @@ private struct CollectionTree: View {
                 .animation(AppMotion.quick, value: isSelected)
                 .animation(AppMotion.quick, value: showsActions)
                 .help("Open \(collection.name)")
+                // Drop target: any drop on the collection row lands the
+                // dragged request/folder at the collection root. The
+                // delegate computes the hover position for the shared
+                // insertion-line state (Postman-style).
+                .onDrop(
+                    of: [.plainText],
+                    delegate: SidebarDropDelegate(
+                        store: store, kind: .collection,
+                        targetID: collection.id, collectionID: collection.id)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                        .stroke(
+                            AppColor.accent,
+                            lineWidth: store.sidebarDropIndicator == SidebarDropIndicator(targetID: collection.id, position: .into) ? 2 : 0
+                        )
+                )
                 // Double-click pins the preview tab (same instant-click
                 // reasoning as the request rows).
                 .simultaneousGesture(
@@ -1014,6 +1032,9 @@ private struct FolderTree: View {
                 store.addFolder(in: collection.id, parentFolderID: folder.id)
                 store.setSidebarNodeExpanded(folder.id, true)
             },
+            DropdownRow.action("Duplicate") {
+                store.duplicateFolder(folder.id, in: collection.id)
+            },
             .divider(),
             DropdownRow.action("Edit", systemImage: "folder.badge.gearshape") {
                 store.openTab(.folder(folder.id))
@@ -1110,6 +1131,25 @@ private struct FolderTree: View {
                 .animation(AppMotion.quick, value: isSelected)
                 .animation(AppMotion.quick, value: showsActions)
                 .help("Open \(folder.name)")
+                // Drag source: enables moving folders via drag-and-drop.
+                .onDrag {
+                    NSItemProvider(object: "folder-\(folder.id.uuidString)" as NSString)
+                } preview: {
+                    HStack(spacing: AppSpacing.xSmall) {
+                        Image(systemName: "folder")
+                            .font(AppFont.iconLarge)
+                            .foregroundStyle(AppColor.textSecondary)
+                        Text(folder.name)
+                            .font(AppFont.sidebarRow)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, AppSpacing.small)
+                    .padding(.vertical, AppSpacing.xxSmall)
+                    .background(
+                        RoundedRectangle(cornerRadius: AppRadius.small)
+                            .fill(AppColor.subtleBackground)
+                    )
+                }
                 // Double-click pins the preview tab (same instant-click
                 // reasoning as the request rows).
                 .simultaneousGesture(
@@ -1119,6 +1159,30 @@ private struct FolderTree: View {
                         store.toggleSidebarNode(folder.id)
                         store.pin(.folder(folder.id))
                     }
+                )
+                // Drop target: the folder's middle takes the dragged item
+                // inside (highlight); the top/bottom edges place it above/
+                // below this folder among its siblings (insertion line).
+                .onDrop(
+                    of: [.plainText],
+                    delegate: SidebarDropDelegate(
+                        store: store, kind: .folder,
+                        targetID: folder.id, collectionID: collection.id)
+                )
+                .overlay(alignment: .top) {
+                    sidebarInsertionLine(
+                        isVisible: store.sidebarDropIndicator == SidebarDropIndicator(targetID: folder.id, position: .above))
+                }
+                .overlay(alignment: .bottom) {
+                    sidebarInsertionLine(
+                        isVisible: store.sidebarDropIndicator == SidebarDropIndicator(targetID: folder.id, position: .below))
+                }
+                .overlay(
+                    RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                        .stroke(
+                            AppColor.accent,
+                            lineWidth: store.sidebarDropIndicator == SidebarDropIndicator(targetID: folder.id, position: .into) ? 2 : 0
+                        )
                 )
                 .contextMenu {
                     DropdownMenuContent(
@@ -1297,6 +1361,40 @@ private struct RequestRow: View {
                 .simultaneousGesture(
                     TapGesture(count: 2).onEnded { store.pinRequest(request.id) }
                 )
+                // Drag source: plain-text payload "request-<uuid>", matching
+                // the drop delegates' parser.
+                .onDrag {
+                    NSItemProvider(object: "request-\(request.id.uuidString)" as NSString)
+                } preview: {
+                    HStack(spacing: AppSpacing.xSmall) {
+                        MethodTag(method: request.httpMethod)
+                        Text(request.name)
+                            .font(AppFont.sidebarRow)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, AppSpacing.small)
+                    .padding(.vertical, AppSpacing.xxSmall)
+                    .background(
+                        RoundedRectangle(cornerRadius: AppRadius.small)
+                            .fill(AppColor.subtleBackground)
+                    )
+                }
+                // Drop target: the row's top/bottom edges place the dragged
+                // item above/below it among its siblings (insertion line).
+                .onDrop(
+                    of: [.plainText],
+                    delegate: SidebarDropDelegate(
+                        store: store, kind: .request,
+                        targetID: request.id, collectionID: nil)
+                )
+                .overlay(alignment: .top) {
+                    sidebarInsertionLine(
+                        isVisible: store.sidebarDropIndicator == SidebarDropIndicator(targetID: request.id, position: .above))
+                }
+                .overlay(alignment: .bottom) {
+                    sidebarInsertionLine(
+                        isVisible: store.sidebarDropIndicator == SidebarDropIndicator(targetID: request.id, position: .below))
+                }
                 .contextMenu { DropdownMenuContent(rows: rowActions) }
                 .overlay(alignment: .trailing) { hoverActions }
                 .help(request.name)
@@ -1391,5 +1489,169 @@ private struct HistoryRow: View {
             requestExists
                 ? "\(entry.urlString) · \(entry.timestamp.formatted(date: .abbreviated, time: .shortened))" : "Original request was deleted"
         )
+    }
+}
+
+// MARK: - Sidebar drag & drop (Postman-style insertion lines)
+
+/// Which sidebar row kind a drop delegate is attached to.
+
+/// The 2px insertion line drawn at a row's top or bottom edge while a drag
+/// hovers that position (Postman-style drop indicator).
+func sidebarInsertionLine(isVisible: Bool) -> some View {
+    Group {
+        if isVisible {
+            Rectangle()
+                .fill(AppColor.accent)
+                .frame(height: 2)
+        }
+    }
+}
+
+/// Which sidebar row kind a drop delegate is attached to.
+enum SidebarDropTargetKind {
+    case request
+    case folder
+    case collection
+}
+
+/// Per-row drop delegate for the sidebar tree: tracks the hover position to
+/// publish the shared insertion-line state (above/below) or the folder
+/// highlight (into), and commits the move on drop. The payload is the same
+/// plain-text "request-<uuid>" / "folder-<uuid>" string the drag sources
+/// provide.
+private struct SidebarDropDelegate: DropDelegate {
+    let store: AppStore
+    let kind: SidebarDropTargetKind
+    let targetID: UUID
+    /// Only used by `.collection` rows (their id is at hand there); the
+    /// request/folder rows derive the owning collection on drop instead.
+    let collectionID: UUID?
+
+    func validateDrop(info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: [.plainText])
+    }
+
+    func dropEntered(info: DropInfo) {
+        store.sidebarDropIndicator = indicator(for: info)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func dropExited(info: DropInfo) {
+        // Only clear the row's own indicator: the next row's dropEntered may
+        // already have set its own (exit/enter ordering is not guaranteed).
+        if store.sidebarDropIndicator?.targetID == targetID {
+            store.sidebarDropIndicator = nil
+        }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        let indicator = indicator(for: info)
+        store.sidebarDropIndicator = nil
+        guard let provider = info.itemProviders(for: [.plainText]).first else { return false }
+        let kind = self.kind
+        let collectionID = self.collectionID
+        let targetID = self.targetID
+        _ = provider.loadObject(ofClass: NSString.self) { object, _ in
+            guard let payload = object as? String else { return }
+            // maxSplits: 1 - UUIDs contain hyphens of their own.
+            let parts = payload.split(separator: "-", maxSplits: 1)
+            guard parts.count == 2, let draggedID = UUID(uuidString: String(parts[1])) else { return }
+            let draggedIsFolder = parts[0] == "folder"
+            Task { @MainActor in
+                store.commitSidebarDrop(
+                    draggedID: draggedID, draggedIsFolder: draggedIsFolder,
+                    targetKind: kind, indicator: indicator, collectionID: collectionID)
+            }
+        }
+        return true
+    }
+
+    /// The indicator for a hover/drop at `info`'s location: request rows are
+    /// split in half (above/below); folder rows use thirds (edges = place
+    /// beside, middle = take inside); the collection row is always "into".
+    /// `info.location` is already local to the view the delegate is on (the
+    /// row), whose height is the fixed tree-row height.
+    private func indicator(for info: DropInfo) -> SidebarDropIndicator {
+        let location = info.location
+        switch kind {
+        case .request:
+            let position: SidebarDropPosition = location.y < AppSize.treeRowHeight / 2 ? .above : .below
+            return SidebarDropIndicator(targetID: targetID, position: position)
+        case .folder:
+            let third = AppSize.treeRowHeight / 3
+            if location.y < third {
+                return SidebarDropIndicator(targetID: targetID, position: .above)
+            }
+            if location.y > AppSize.treeRowHeight - third {
+                return SidebarDropIndicator(targetID: targetID, position: .below)
+            }
+            return SidebarDropIndicator(targetID: targetID, position: .into)
+        case .collection:
+            return SidebarDropIndicator(targetID: targetID, position: .into)
+        }
+    }
+}
+
+extension AppStore {
+    /// Executes a committed sidebar drag, dispatched by the dragged kind,
+    /// the target row's kind, and the hover position:
+    /// - request onto a request: above/below joins the target's sibling slot
+    ///   (works across collections).
+    /// - request onto a folder: middle = into the folder; edges = into the
+    ///   folder's parent, appended.
+    /// - request onto a collection row: appended at the collection root.
+    /// - folder onto a folder: middle = nested inside; edges = the target's
+    ///   sibling slot (same collection only).
+    /// - folder onto a request: joins the request's parent, appended.
+    /// - folder onto a collection row: moved to the collection root.
+    @MainActor
+    fileprivate func commitSidebarDrop(
+        draggedID: UUID,
+        draggedIsFolder: Bool,
+        targetKind: SidebarDropTargetKind,
+        indicator: SidebarDropIndicator,
+        collectionID: UUID?
+    ) {
+        let targetID = indicator.targetID
+        let position = indicator.position
+        switch (targetKind, draggedIsFolder) {
+        case (.request, false):
+            guard targetID != draggedID else { return }
+            moveRequest(draggedID, relativeTo: targetID, position: position)
+        case (.request, true):
+            guard let request = request(withID: targetID),
+                let collection = collectionForRequest(request)
+            else { return }
+            moveFolder(draggedID, to: request.folderID, in: collection.id)
+        case (.folder, false):
+            guard let collection = collectionForFolder(targetID) else { return }
+            if position == .into {
+                moveRequest(draggedID, to: targetID, in: collection.id)
+            } else {
+                let parent = folder(withID: targetID)?.parentFolderID
+                moveRequest(draggedID, to: parent, in: collection.id)
+            }
+        case (.folder, true):
+            guard let collection = collectionForFolder(targetID) else { return }
+            if position == .into {
+                moveFolder(draggedID, to: targetID, in: collection.id)
+            } else {
+                // Cross-collection drops work too: moveFolder brings the
+                // whole subtree over before slotting beside the target.
+                guard targetID != draggedID else { return }
+                moveFolder(draggedID, relativeTo: targetID, position: position)
+            }
+        case (.collection, _):
+            guard let collectionID else { return }
+            if draggedIsFolder {
+                moveFolder(draggedID, to: nil, in: collectionID)
+            } else {
+                moveRequest(draggedID, to: nil, in: collectionID)
+            }
+        }
     }
 }

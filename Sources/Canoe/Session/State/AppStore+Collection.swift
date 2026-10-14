@@ -435,4 +435,172 @@ extension AppStore {
         enqueueStructuralWrite { await self.vault.writeCollection(self.persistable(updated)) }
     }
 
+    /// Duplicates a folder (same parent, same authorization) into the same
+    /// collection, selecting the copy for inline rename.
+    @discardableResult
+    func duplicateFolder(_ folderID: UUID, in collectionID: UUID) -> Folder? {
+        guard let idx = vault.collections.firstIndex(where: { $0.id == collectionID }) else { return nil }
+        guard let sourceIdx = vault.collections[idx].folders.firstIndex(where: { $0.id == folderID }) else { return nil }
+        let source = vault.collections[idx].folders[sourceIdx]
+        var updated = vault.collections[idx]
+        let siblingMax = updated.folders.filter { $0.parentFolderID == source.parentFolderID }.map(\.orderIndex).max()
+        var copy = source
+        copy.id = UUID()
+        copy.name = "\(source.name) copy"
+        copy.createdAt = Date()
+        copy.orderIndex = (siblingMax ?? -1) + 1
+        updated.folders.append(copy)
+        vault.collections[idx] = updated
+        enqueueStructuralWrite { await self.vault.writeCollection(self.persistable(updated)) }
+        sidebarFilter = ""
+        pendingInlineRenameID = copy.id
+        return copy
+    }
+
+    /// Moves a folder to a different parent (or root). A move to root
+    /// passes `parentFolderID: nil`. Moves into another collection bring
+    /// the whole subtree along (descendant folders and their requests).
+    /// A parent change reassigns the orderIndex to the end of the
+    /// destination siblings, so the folder cannot tie with them.
+    func moveFolder(_ folderID: UUID, to parentFolderID: UUID?, in collectionID: UUID) {
+        // Cycle guard first, against the tree as it stands now: the new
+        // parent chain must never run through the moved folder itself.
+        if let parent = parentFolderID {
+            var currentParent = parent
+            var visited: Set<UUID> = []
+            while true {
+                guard !visited.contains(currentParent) else { return }  // cycle detected
+                visited.insert(currentParent)
+                if currentParent == folderID { return }  // would nest under itself
+                guard
+                    let parentFolder = vault.collections
+                        .first(where: { $0.folders.contains { $0.id == currentParent } })?
+                        .folders.first(where: { $0.id == currentParent })
+                else { break }
+                currentParent = parentFolder.parentFolderID ?? currentParent
+            }
+        }
+        // Another collection's file: the subtree relocates first, with the
+        // root parked at the destination root until the parent lands below.
+        var sourceCollectionID: UUID?
+        if collectionForFolder(folderID)?.id != collectionID {
+            sourceCollectionID = relocateFolderSubtree(folderID, into: collectionID)
+        }
+        guard let idx = vault.collections.firstIndex(where: { $0.id == collectionID }),
+            let folderIdx = vault.collections[idx].folders.firstIndex(where: { $0.id == folderID })
+        else { return }
+        guard vault.collections[idx].folders[folderIdx].parentFolderID != parentFolderID || sourceCollectionID != nil
+        else { return }
+        var updated = vault.collections[idx]
+        let siblingMax = updated.folders
+            .filter { $0.id != folderID && $0.parentFolderID == parentFolderID }
+            .map(\.orderIndex).max()
+        updated.folders[folderIdx].parentFolderID = parentFolderID
+        updated.folders[folderIdx].orderIndex = (siblingMax ?? -1) + 1
+        vault.collections[idx] = updated
+        let targetCollection = vault.collections[idx]
+        enqueueStructuralWrite { [weak self] in
+            guard let self else { return }
+            if let sourceCollectionID,
+                let source = self.vault.collections.first(where: { $0.id == sourceCollectionID })
+            {
+                _ = await self.vault.writeCollection(self.persistable(source))
+            }
+            _ = await self.vault.writeCollection(self.persistable(targetCollection))
+        }
+    }
+
+    /// Moves a folder and its whole subtree (descendant folders plus the
+    /// requests filed inside them) into another collection file. Folder ids
+    /// and their internal parentFolderID chains stay intact; the relocated
+    /// root parks at the destination collection's root (parentFolderID nil)
+    /// - callers assign its real parent right after. @return the source
+    /// collection's id when files actually moved, nil when the folder
+    /// already lives in `collectionID` (or either side is missing).
+    @discardableResult
+    private func relocateFolderSubtree(_ folderID: UUID, into collectionID: UUID) -> UUID? {
+        guard let sourceIndex = vault.collections.firstIndex(where: { $0.folders.contains { $0.id == folderID } }),
+            vault.collections[sourceIndex].id != collectionID,
+            let targetIndex = vault.collections.firstIndex(where: { $0.id == collectionID })
+        else { return nil }
+
+        // Collect the folder and every descendant.
+        var subtree: Set<UUID> = [folderID]
+        var changed = true
+        while changed {
+            changed = false
+            for folder in vault.collections[sourceIndex].folders {
+                guard let parent = folder.parentFolderID, subtree.contains(parent), subtree.insert(folder.id).inserted
+                else { continue }
+                changed = true
+            }
+        }
+
+        let movedFolders = vault.collections[sourceIndex].folders.filter { subtree.contains($0.id) }
+        vault.collections[sourceIndex].folders.removeAll { subtree.contains($0.id) }
+        let movedRequests = vault.collections[sourceIndex].requests.filter { $0.folderID.map(subtree.contains) ?? false }
+        vault.collections[sourceIndex].requests.removeAll { $0.folderID.map(subtree.contains) ?? false }
+
+        var reattached = movedFolders
+        if let rootIndex = reattached.firstIndex(where: { $0.id == folderID }) {
+            reattached[rootIndex].parentFolderID = nil
+        }
+        vault.collections[targetIndex].folders.append(contentsOf: reattached)
+        vault.collections[targetIndex].requests.append(contentsOf: movedRequests)
+        return vault.collections[sourceIndex].id
+    }
+
+    /// Postman-style positional move: places the folder above or below a
+    /// target folder, adopting the target's parent and sibling slot. Works
+    /// across collections (the whole subtree relocates to the target's
+    /// file). The target must not sit inside the moved folder's subtree
+    /// (that would make the folder its own ancestor).
+    func moveFolder(_ folderID: UUID, relativeTo targetID: UUID, position: SidebarDropPosition) {
+        guard position != .into, targetID != folderID,
+            let sourceIndex = vault.collections.firstIndex(where: { $0.folders.contains { $0.id == folderID } }),
+            let targetIndex = vault.collections.firstIndex(where: { $0.folders.contains { $0.id == targetID } }),
+            let targetFolderIndex = vault.collections[targetIndex].folders.firstIndex(where: { $0.id == targetID })
+        else { return }
+        let target = vault.collections[targetIndex].folders[targetFolderIndex]
+
+        // The target must not sit inside the moved folder's subtree.
+        var ancestor = target.parentFolderID
+        var visited: Set<UUID> = []
+        while let current = ancestor {
+            guard visited.insert(current).inserted else { break }
+            if current == folderID { return }  // target is inside the moved subtree
+            ancestor = vault.collections[targetIndex].folders.first { $0.id == current }?.parentFolderID
+        }
+
+        // Cross-collection: the subtree relocates first (root parked at the
+        // destination root), then slots in relative to the target.
+        var sourceCollectionID: UUID?
+        if vault.collections[sourceIndex].id != vault.collections[targetIndex].id {
+            sourceCollectionID = relocateFolderSubtree(folderID, into: vault.collections[targetIndex].id)
+        }
+
+        let destinationParent = target.parentFolderID
+        let insertBase = position == .above ? target.orderIndex : target.orderIndex + 1
+        for folderIndex in vault.collections[targetIndex].folders.indices {
+            let sibling = vault.collections[targetIndex].folders[folderIndex]
+            guard sibling.id != folderID, sibling.parentFolderID == destinationParent, sibling.orderIndex >= insertBase
+            else { continue }
+            vault.collections[targetIndex].folders[folderIndex].orderIndex += 1
+        }
+        guard let movedIndex = vault.collections[targetIndex].folders.firstIndex(where: { $0.id == folderID })
+        else { return }
+        vault.collections[targetIndex].folders[movedIndex].parentFolderID = destinationParent
+        vault.collections[targetIndex].folders[movedIndex].orderIndex = insertBase
+        let targetCollection = vault.collections[targetIndex]
+        enqueueStructuralWrite { [weak self] in
+            guard let self else { return }
+            if let sourceCollectionID,
+                let source = self.vault.collections.first(where: { $0.id == sourceCollectionID })
+            {
+                _ = await self.vault.writeCollection(self.persistable(source))
+            }
+            _ = await self.vault.writeCollection(self.persistable(targetCollection))
+        }
+    }
+
 }

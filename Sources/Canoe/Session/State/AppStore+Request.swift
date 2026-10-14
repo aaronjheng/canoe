@@ -165,6 +165,117 @@ extension AppStore {
         }
     }
 
+    /// Moves a request to a different folder (or root). A move to root
+    /// passes `folderID: nil`. Works across collections: the request leaves
+    /// its old collection file and joins the target's (Postman-style drag
+    /// between collections). A parent change reassigns the orderIndex to the
+    /// end of the destination siblings, so the request cannot tie with them.
+    func moveRequest(_ requestID: UUID, to folderID: UUID?, in collectionID: UUID) {
+        guard let targetIndex = vault.collections.firstIndex(where: { $0.id == collectionID }),
+            let sourceIndex = vault.collections.firstIndex(where: { $0.requests.contains { $0.id == requestID } }),
+            let requestIndex = vault.collections[sourceIndex].requests.firstIndex(where: { $0.id == requestID })
+        else { return }
+        let crossCollection = sourceIndex != targetIndex
+        // Only keep the folder when the target collection owns it.
+        let resolvedFolderID =
+            folderID.flatMap { fid in vault.collections[targetIndex].folders.contains(where: { $0.id == fid }) ? fid : nil }
+        let current = vault.collections[sourceIndex].requests[requestIndex]
+        guard crossCollection || current.folderID != resolvedFolderID else { return }
+
+        var moved = current
+        if crossCollection {
+            vault.collections[sourceIndex].requests.remove(at: requestIndex)
+        }
+        let siblingMax = vault.collections[targetIndex].requests
+            .filter { $0.id != requestID && $0.folderID == resolvedFolderID }
+            .map(\.orderIndex).max()
+        moved.folderID = resolvedFolderID
+        moved.orderIndex = (siblingMax ?? -1) + 1
+        moved.updatedAt = Date()
+        if let existingIndex = vault.collections[targetIndex].requests.firstIndex(where: { $0.id == requestID }) {
+            vault.collections[targetIndex].requests[existingIndex] = moved
+        } else {
+            vault.collections[targetIndex].requests.append(moved)
+        }
+
+        let newOrderIndex = moved.orderIndex
+        pendingRequestSnapshots[requestID]?.folderID = resolvedFolderID
+        pendingRequestSnapshots[requestID]?.orderIndex = newOrderIndex
+        persistedRequestBaselines[requestID]?.folderID = resolvedFolderID
+        persistedRequestBaselines[requestID]?.orderIndex = newOrderIndex
+        if previewTab == .request(requestID) { previewTab = nil }
+        if pendingRequestSnapshots[requestID] != nil { scheduleDraftPersistence() }
+
+        let sourceCollection = vault.collections[sourceIndex]
+        let targetCollection = vault.collections[targetIndex]
+        enqueueStructuralWrite { [weak self] in
+            guard let self else { return }
+            if crossCollection {
+                _ = await self.vault.writeCollection(self.persistable(sourceCollection))
+            }
+            _ = await self.vault.writeCollection(self.persistable(targetCollection))
+        }
+    }
+
+    /// Postman-style positional move: places the request above or below a
+    /// target request, adopting the target's parent folder and sibling slot.
+    /// Works across collections (the request leaves its old file and joins
+    /// the target's). Every sibling from the insertion slot on shifts by one
+    /// so orderIndex ties never appear.
+    func moveRequest(_ requestID: UUID, relativeTo targetID: UUID, position: SidebarDropPosition) {
+        guard position != .into else { return }
+        guard targetID != requestID,
+            let sourceIndex = vault.collections.firstIndex(where: { $0.requests.contains { $0.id == requestID } }),
+            let sourceRequestIndex = vault.collections[sourceIndex].requests.firstIndex(where: { $0.id == requestID }),
+            let targetIndex = vault.collections.firstIndex(where: { $0.requests.contains { $0.id == targetID } }),
+            let targetRequestIndex = vault.collections[targetIndex].requests.firstIndex(where: { $0.id == targetID })
+        else { return }
+
+        let request = vault.collections[sourceIndex].requests[sourceRequestIndex]
+        let target = vault.collections[targetIndex].requests[targetRequestIndex]
+        let destinationFolderID = target.folderID
+        var moved = request
+
+        // Leave the old home first; the insertion slot is computed against
+        // the destination siblings without the moved request among them.
+        vault.collections[sourceIndex].requests.remove(at: sourceRequestIndex)
+        let insertBase = position == .above ? target.orderIndex : target.orderIndex + 1
+        var shiftedIDs: Set<UUID> = []
+        for siblingIndex in vault.collections[targetIndex].requests.indices {
+            let sibling = vault.collections[targetIndex].requests[siblingIndex]
+            guard sibling.folderID == destinationFolderID, sibling.orderIndex >= insertBase else { continue }
+            vault.collections[targetIndex].requests[siblingIndex].orderIndex += 1
+            shiftedIDs.insert(sibling.id)
+        }
+        moved.folderID = destinationFolderID
+        moved.orderIndex = insertBase
+        moved.updatedAt = Date()
+        vault.collections[targetIndex].requests.append(moved)
+
+        // Keep open editors' drafts and baselines in step (same rule as
+        // deleteFolder), or the next keystroke pushes the stale slot back.
+        pendingRequestSnapshots[requestID]?.folderID = destinationFolderID
+        pendingRequestSnapshots[requestID]?.orderIndex = insertBase
+        persistedRequestBaselines[requestID]?.folderID = destinationFolderID
+        persistedRequestBaselines[requestID]?.orderIndex = insertBase
+        for shiftedID in shiftedIDs {
+            pendingRequestSnapshots[shiftedID]?.orderIndex += 1
+            persistedRequestBaselines[shiftedID]?.orderIndex += 1
+        }
+        if previewTab == .request(requestID) { previewTab = nil }
+        if pendingRequestSnapshots[requestID] != nil || !shiftedIDs.isEmpty { scheduleDraftPersistence() }
+
+        let sourceCollection = vault.collections[sourceIndex]
+        let targetCollection = vault.collections[targetIndex]
+        enqueueStructuralWrite { [weak self] in
+            guard let self else { return }
+            _ = await self.vault.writeCollection(self.persistable(sourceCollection))
+            if sourceCollection.id != targetCollection.id {
+                _ = await self.vault.writeCollection(self.persistable(targetCollection))
+            }
+        }
+    }
+
     /// Applies the draft to the in-memory vault and marks the request dirty.
     /// Nothing is written to disk until Save (⌘S / Save button) or the
     /// "Save" branch of a leave-point confirmation.

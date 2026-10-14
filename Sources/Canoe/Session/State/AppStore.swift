@@ -22,6 +22,10 @@ final class AppStore {
         }
     }
     var sidebarTab = SidebarTab.items
+    /// Transient sidebar drag hover: which row shows an insertion line
+    /// (.above/.below) or the folder highlight (.into). Set by the drop
+    /// delegate, cleared on exit/drop - never persisted.
+    var sidebarDropIndicator: SidebarDropIndicator?
 
     // MARK: - Sidebar expansion state
 
