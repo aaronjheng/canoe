@@ -40,3 +40,9 @@ install: build
     @rm -rf ~/Applications/Canoe.app
     @cp -R '{{ app_bundle }}' ~/Applications/Canoe.app
     @echo 'Installed to ~/Applications/Canoe.app'
+
+uninstall:
+    @osascript -e 'quit app "Canoe"' 2>/dev/null || true
+    @n=0; while pgrep -x Canoe >/dev/null 2>&1 && [ $n -lt 50 ]; do sleep 0.1; n=$((n+1)); done
+    @rm -rf ~/Applications/Canoe.app
+    @echo 'Uninstalled ~/Applications/Canoe.app'
