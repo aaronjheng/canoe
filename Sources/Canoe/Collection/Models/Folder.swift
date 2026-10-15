@@ -16,6 +16,9 @@ struct Folder: Identifiable, Codable, Hashable, Sendable {
     /// type walk outward through their folder chain, so a folder's explicit
     /// settings (or explicit no-auth) stop that walk.
     var authorization: Authorization = Authorization(type: .inherit)
+    /// Folder documentation (Postman's folder description), edited in the
+    /// folder page and auto-saved (debounced), like a rename.
+    var requestDescription: String = ""
 
     init(
         id: UUID = UUID(),
@@ -40,6 +43,7 @@ struct Folder: Identifiable, Codable, Hashable, Sendable {
         case createdAt
         case parentFolderID
         case authorization
+        case requestDescription
     }
 
     /// Tolerates files written before `authorization` / `createdAt` existed
@@ -53,5 +57,6 @@ struct Folder: Identifiable, Codable, Hashable, Sendable {
         parentFolderID = try container.decodeIfPresent(UUID.self, forKey: .parentFolderID)
         authorization =
             try container.decodeIfPresent(Authorization.self, forKey: .authorization) ?? Authorization(type: .inherit)
+        requestDescription = try container.decodeIfPresent(String.self, forKey: .requestDescription) ?? ""
     }
 }

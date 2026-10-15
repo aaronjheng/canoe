@@ -18,6 +18,9 @@ struct Collection: Identifiable, Codable, Hashable, Sendable {
     /// Postman-style Authorization helper inherited by requests set to the
     /// inherit type. A manually set Authorization header always wins.
     var authorization: Authorization = Authorization()
+    /// Collection documentation (Postman's collection description), edited
+    /// in the Overview and auto-saved (debounced), like a rename.
+    var requestDescription: String = ""
 
     init(
         id: UUID = UUID(),
@@ -41,6 +44,7 @@ struct Collection: Identifiable, Codable, Hashable, Sendable {
         case requests
         case variables
         case authorization
+        case requestDescription
     }
 }
 
@@ -60,5 +64,6 @@ extension Collection {
         requests = try container.decodeLossyArray(forKey: .requests)
         variables = try container.decodeLossyArray(forKey: .variables)
         authorization = try container.decodeIfPresent(Authorization.self, forKey: .authorization) ?? Authorization()
+        requestDescription = try container.decodeIfPresent(String.self, forKey: .requestDescription) ?? ""
     }
 }

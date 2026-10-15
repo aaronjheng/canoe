@@ -2,13 +2,19 @@ import AppKit
 import SwiftUI
 
 struct ResponseViewerView: View {
+    /// Shorthand for the response data type (defined on the model).
+    typealias BodyLanguage = ResponseModel.BodyLanguage
+
     @Environment(AppStore.self) private var store
     @State private var bodyMode: BodyMode = .pretty
+    /// Data type selector (Postman): auto-detect by default; user can pin
+    /// JSON/XML/HTML/Text. Only affects Pretty mode rendering.
+    @State private var bodyLanguage: BodyLanguage = .auto
     @State private var wordWrap = false
     @State private var responseSection: ResponseSection = .body
     /// Render cache keyed by response + body mode (see refreshBodyRender).
     @State private var bodyRenderKey = ""
-    @State private var bodyRenderDisplay = BodyDisplay(text: "", totalCount: nil, isJSON: false)
+    @State private var bodyRenderDisplay = BodyDisplay(text: "", totalCount: nil, language: .text)
     @State private var bodyRenderText = Text("")
     /// The same render as an attributed string: the find overlay needs
     /// attribute access (match backgrounds) without re-running the
@@ -74,9 +80,11 @@ struct ResponseViewerView: View {
     }
 
     enum ResponseSection: String, CaseIterable, Identifiable {
-        case headers = "Headers"
+        // Postman order: Body first and selected by default, then Cookies,
+        // then Headers.
         case body = "Body"
         case cookies = "Cookies"
+        case headers = "Headers"
         var id: String { rawValue }
     }
 
@@ -200,12 +208,12 @@ struct ResponseViewerView: View {
         // frames. State is only written from the task, never during view
         // evaluation. Preview mode renders in a web view / image view and
         // needs no text, so it skips the decode entirely.
-        let key = "\(response.id)-\(bodyMode)"
+        let key = "\(response.id)-\(bodyMode)-\(bodyLanguage)"
         let isPreview = bodyMode == .preview
         let display: BodyDisplay =
             key == bodyRenderKey
             ? bodyRenderDisplay
-            : (isPreview ? BodyDisplay(text: "", totalCount: nil, isJSON: false) : bodyDisplay(response))
+            : (isPreview ? BodyDisplay(text: "", totalCount: nil, language: .text) : bodyDisplay(response))
         let rendered: Text =
             key == bodyRenderKey
             ? bodyRenderText
@@ -215,7 +223,7 @@ struct ResponseViewerView: View {
             ? bodyRenderAttributed
             : (isPreview
                 ? AttributedString("")
-                : (display.isJSON ? SyntaxHighlight.attributedText(display.text) : AttributedString(display.text)))
+                : SyntaxHighlight.attributedText(display.text, syntax: display.syntax))
         return VStack(spacing: 0) {
             sectionBar(response)
             // Same gutter as the request editor's tab bar (labels, underline,
@@ -321,7 +329,7 @@ struct ResponseViewerView: View {
     }
 
     private func renderedText(for display: BodyDisplay) -> Text {
-        display.isJSON ? SyntaxHighlight.highlightedText(display.text) : Text(display.text)
+        SyntaxHighlight.highlightedText(display.text, syntax: display.syntax)
     }
 
     /// Response tab bar - and the panel's top row while a response exists:
@@ -329,13 +337,7 @@ struct ResponseViewerView: View {
     /// (duration, size) trailing, mirroring the old title bar's summary.
     private func sectionBar(_ response: ResponseModel) -> some View {
         HStack(spacing: AppSpacing.large) {
-            UnderlineTab(
-                title: ResponseSection.headers.rawValue,
-                count: response.headers.isEmpty ? nil : response.headers.count,
-                labelInset: 0,
-                isSelected: responseSection == .headers,
-                action: { responseSection = .headers }
-            )
+            // Postman order: Body leads, then Cookies, then Headers.
             UnderlineTab(
                 title: ResponseSection.body.rawValue,
                 count: nil,
@@ -349,6 +351,13 @@ struct ResponseViewerView: View {
                 labelInset: 0,
                 isSelected: responseSection == .cookies,
                 action: { responseSection = .cookies }
+            )
+            UnderlineTab(
+                title: ResponseSection.headers.rawValue,
+                count: response.headers.isEmpty ? nil : response.headers.count,
+                labelInset: 0,
+                isSelected: responseSection == .headers,
+                action: { responseSection = .headers }
             )
             Spacer()
             HStack(spacing: AppSpacing.small) {
@@ -605,7 +614,10 @@ struct ResponseViewerView: View {
                 // only while the bar is open with a query - the cached
                 // no-find render stays the default path for large bodies.
                 let findActive = findVisible && !findQuery.isEmpty
-                let rangesKey = "\(response.id)-\(bodyMode)-\(findQuery)"
+                // Language is part of the key: the data-type selector changes
+                // the display text (pretty-printed JSON vs raw), so ranges
+                // computed on one language do not index into another.
+                let rangesKey = "\(response.id)-\(bodyMode)-\(bodyLanguage)-\(findQuery)"
                 // Match list cached per response/mode/query (keyed task
                 // below warms it, sync-on-miss keeps the first paint
                 // correct): word-wrap toggles, banners, and other unrelated
@@ -708,6 +720,28 @@ struct ResponseViewerView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .fixedSize()
+            // Postman's data type selector (Pretty mode only): Auto resolves
+            // to the detected type; JSON/XML/HTML highlight via the shared
+            // tree-sitter grammars, Text stays plain.
+            if bodyMode == .pretty {
+                DropdownFieldButton(
+                    id: "response.body.language",
+                    label: bodyLanguageLabel,
+                    width: 128
+                ) {
+                    ResponseModel.BodyLanguage.allCases.map { language in
+                        DropdownRow.action(
+                            language == .auto
+                                ? "Auto (\(response.resolvedBodyLanguage(.auto)).rawValue)"
+                                : language.rawValue,
+                            isSelected: language == bodyLanguage
+                        ) {
+                            bodyLanguage = language
+                        }
+                    }
+                }
+                .help("Response data type (sets the syntax highlighting)")
+            }
             Spacer()
             HStack(spacing: AppSpacing.small) {
                 // Word wrap and find are text-mode tools: hidden in Preview
@@ -753,6 +787,16 @@ struct ResponseViewerView: View {
         }
         .padding(.horizontal, AppSpacing.medium)
         .padding(.vertical, AppSpacing.xSmall)
+    }
+
+    /// Label of the data-type selector: Auto shows the detected type in
+    /// parentheses (Postman auto-selects by Content-Type), a manual pick
+    /// shows its own name.
+    private var bodyLanguageLabel: String {
+        guard bodyLanguage == .auto, let response = store.displayedResponse else {
+            return bodyLanguage.rawValue
+        }
+        return "Auto (\(response.resolvedBodyLanguage(.auto)).rawValue)"
     }
 
     private func bodyScroll(
@@ -971,23 +1015,34 @@ struct ResponseViewerView: View {
     private struct BodyDisplay {
         let text: String
         let totalCount: Int?
-        /// True when Pretty mode shows JSON - then `text` renders highlighted.
-        let isJSON: Bool
+        /// The resolved display language: decides the highlight grammar.
+        let language: ResponseModel.BodyLanguage
+
+        /// The tree-sitter grammar for this language: JSON and XML have
+        /// their own; HTML shares the XML one (SGML-style tags); Text is
+        /// plain.
+        var syntax: BodySyntax {
+            switch language {
+            case .json: .json
+            case .xml, .html: .xml
+            case .auto, .text: .plain
+            }
+        }
     }
 
-    /// The body as this pane shows it: the current mode's text, capped at
-    /// `bodyDisplayLimit` characters.
+    /// The body as this pane shows it: the current mode's text (with the
+    /// data-type selector applied), capped at `bodyDisplayLimit` characters.
     private func bodyDisplay(_ response: ResponseModel) -> BodyDisplay {
-        // One decode answers both questions the pane has - whether the body is
-        // JSON and what its text looks like - so they come from one parse.
-        let decoded = response.bodyText(prettify: bodyMode == .pretty)
+        // One decode answers both questions the pane has - the resolved
+        // language and its text - so they come from one parse.
+        let decoded = response.bodyText(prettify: bodyMode == .pretty, language: bodyLanguage)
         guard decoded.text.count > Self.bodyDisplayLimit else {
-            return BodyDisplay(text: decoded.text, totalCount: nil, isJSON: decoded.isJSON)
+            return BodyDisplay(text: decoded.text, totalCount: nil, language: decoded.language)
         }
         return BodyDisplay(
             text: String(decoded.text.prefix(Self.bodyDisplayLimit)),
             totalCount: decoded.text.count,
-            isJSON: decoded.isJSON
+            language: decoded.language
         )
     }
 
@@ -1258,7 +1313,7 @@ struct ResponseViewerView: View {
     /// Copy and Save both act on everything the server returned.
     private func fullBodyText(_ response: ResponseModel, display: BodyDisplay) -> String {
         if display.totalCount == nil { return display.text }
-        return response.bodyText(prettify: bodyMode == .pretty).text
+        return response.bodyText(prettify: bodyMode == .pretty, language: bodyLanguage).text
     }
 
     /// Saves the response body to a file, like Postman's "Save Response".

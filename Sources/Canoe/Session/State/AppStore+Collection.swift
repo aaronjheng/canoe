@@ -362,6 +362,30 @@ extension AppStore {
         enqueueStructuralWrite { await self.vault.writeCollection(self.persistable(updated)) }
     }
 
+    /// Applies a collection-description edit (Postman's collection Docs)
+    /// and auto-saves it like a rename: the caller debounces keystrokes,
+    /// this lands the value in the vault and writes the collection file.
+    func updateCollectionDescription(_ id: UUID, to description: String) {
+        guard let idx = vault.collections.firstIndex(where: { $0.id == id }) else { return }
+        guard vault.collections[idx].requestDescription != description else { return }
+        vault.collections[idx].requestDescription = description
+        // An edit is an edit: it pins a live preview like any other.
+        if previewTab == .collection(id) { previewTab = nil }
+        let updated = vault.collections[idx]
+        enqueueStructuralWrite { await self.vault.writeCollection(self.persistable(updated)) }
+    }
+
+    /// Same auto-save for a folder's description.
+    func updateFolderDescription(_ folderID: UUID, in collectionID: UUID, to description: String) {
+        guard let at = folderIndexes(folderID) else { return }
+        guard vault.collections[at.collection].id == collectionID else { return }
+        guard vault.collections[at.collection].folders[at.folder].requestDescription != description else { return }
+        vault.collections[at.collection].folders[at.folder].requestDescription = description
+        if previewTab == .folder(folderID) { previewTab = nil }
+        let updated = vault.collections[at.collection]
+        enqueueStructuralWrite { await self.vault.writeCollection(self.persistable(updated)) }
+    }
+
     /// Postman-style sidebar reordering: places a collection above or below
     /// a target collection among their shared workspace's collections.
     /// Siblings from the insertion slot on shift by one (orderIndex ties

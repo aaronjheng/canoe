@@ -34,11 +34,21 @@ enum SyntaxHighlight {
         Text(attributedText(source))
     }
 
+    /// Syntax-colored view for the response data type selector: JSON uses
+    /// the JSON grammar, XML/HTML share the XML grammar, Text stays plain.
+    static func highlightedText(_ source: String, syntax: BodySyntax) -> Text {
+        Text(attributedText(source, syntax: syntax))
+    }
+
     /// The same syntax-colored document as an attributed string: the
     /// response body's find overlay layers match highlights on top of the
     /// token colors, which needs attribute access a plain Text can't give.
     static func attributedText(_ source: String) -> AttributedString {
-        guard let runs = highlightRuns(in: source) else { return AttributedString(source) }
+        attributedText(source, syntax: .json)
+    }
+
+    static func attributedText(_ source: String, syntax: BodySyntax) -> AttributedString {
+        guard let runs = highlightRuns(in: source, syntax: syntax) else { return AttributedString(source) }
         var result = AttributedString("")
         for run in runs {
             var piece = AttributedString(run.text)
@@ -50,19 +60,43 @@ enum SyntaxHighlight {
         return result
     }
 
-    private static func highlightRuns(in source: String) -> [Run]? {
-        let pointer: OpaquePointer? = tree_sitter_json()
-        guard let pointer else { return nil }
-        let parser = Parser()
-        guard (try? parser.setLanguage(Language(pointer))) != nil else { return nil }
-        guard let tree = parser.parse(source), let root = tree.rootNode else { return nil }
+    private static func highlightRuns(in source: String, syntax: BodySyntax) -> [Run]? {
+        switch syntax {
+        case .plain:
+            return nil
+        case .json, .xml:
+            // Reuse the flat (range, color) foreground runs shared with the
+            // request body editor, laid over the source as alternating text
+            // runs like the JSON painter does.
+            guard let foreground = foregroundRuns(in: source, syntax: syntax) else { return nil }
+            return overlaidRuns(foreground, in: source)
+        }
+    }
 
+    /// Converts flat (range, color) runs into text runs, filling the gaps
+    /// with uncolored text so the attributed string covers the source.
+    private static func overlaidRuns(_ foreground: [(NSRange, NSColor)], in source: String) -> [Run] {
         let nsSource = source as NSString
         var runs: [Run] = []
         var cursor = 0
-        paint(root, asKey: false, nsSource: nsSource, cursor: &cursor, runs: &runs)
+        for (range, color) in foreground {
+            guard range.location >= cursor, range.length > 0 else { continue }
+            if range.location > cursor {
+                runs.append(
+                    Run(
+                        color: nil,
+                        text: nsSource.substring(with: NSRange(location: cursor, length: range.location - cursor))
+                    ))
+            }
+            runs.append(Run(color: Color(nsColor: color), text: nsSource.substring(with: range)))
+            cursor = range.location + range.length
+        }
         if cursor < nsSource.length {
-            runs.append(Run(color: nil, text: nsSource.substring(with: NSRange(location: cursor, length: nsSource.length - cursor))))
+            runs.append(
+                Run(
+                    color: nil,
+                    text: nsSource.substring(with: NSRange(location: cursor, length: nsSource.length - cursor))
+                ))
         }
         return runs
     }

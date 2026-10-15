@@ -80,26 +80,7 @@ struct ContentView: View {
                 StatusBarView()
             }
         }
-        .sheet(isPresented: $store.presentNewWorkspace) {
-            NewWorkspaceView()
-        }
-        // Save Request sheet: an unfiled request's explicit save (⌘S, Save
-        // chip, or the Save branch of a dirty close) stages a context here.
-        .sheet(item: $store.requestSaveContext) { context in
-            SaveRequestSheet(requestID: context.requestID)
-        }
-        // File ▸ Clear History: same confirmation the sidebar's Clear button
-        // stages. The menu command has no view of its own, so the dialog is
-        // hosted here - outside the layout branches below, so it survives
-        // the switch to the welcome / workspaces-manager screens too.
-        .confirmationDialog(
-            "Clear all history",
-            isPresented: $store.presentClearHistoryConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("Clear History", role: .destructive) { store.clearHistory() }
-            Button("Cancel", role: .cancel) {}
-        }
+        .modifier(AppSheetHostModifier(store: store))
         // The window runs full-size-content (the top bar replaces the system
         // title bar), so the hosting view reports the titlebar as a top safe
         // area inset - ignore it or the bar sinks 32pt below the traffic
@@ -118,6 +99,45 @@ struct ContentView: View {
         .onPreferenceChange(MethodMenuAnchorKey.self) { methodMenuAnchor = $0 }
         .onPreferenceChange(DropdownAnchorKey.self) { dropdownAnchors = $0 }
         .environment(dropdown)
+    }
+
+    /// The window-level sheets and dialogs: the new-workspace flow, the
+    /// cURL import sheet, the save-request flow, and the clear-history
+    /// confirmation. Pulled out of `body` as one modifier so the main chain
+    /// stays within the type-checker's budget.
+    private struct AppSheetHostModifier: ViewModifier {
+        @Bindable var store: AppStore
+
+        func body(content: Content) -> some View {
+            content
+                .sheet(isPresented: $store.presentNewWorkspace) {
+                    NewWorkspaceView()
+                }
+                // Import cURL: File ▸ Import cURL… stages the paste-and-parse
+                // sheet.
+                .sheet(isPresented: $store.presentImportCURL) {
+                    ImportCURLSheet()
+                }
+                // Save Request sheet: an unfiled request's explicit save (⌘S,
+                // Save chip, or the Save branch of a dirty close) stages a
+                // context here.
+                .sheet(item: $store.requestSaveContext) { context in
+                    SaveRequestSheet(requestID: context.requestID)
+                }
+                // File ▸ Clear History: same confirmation the sidebar's Clear
+                // button stages. The menu command has no view of its own, so the
+                // dialog is hosted here - outside the layout branches, so it
+                // survives the switch to the welcome / workspaces-manager
+                // screens too.
+                .confirmationDialog(
+                    "Clear all history",
+                    isPresented: $store.presentClearHistoryConfirm,
+                    titleVisibility: .visible
+                ) {
+                    Button("Clear History", role: .destructive) { store.clearHistory() }
+                    Button("Cancel", role: .cancel) {}
+                }
+        }
     }
 
     /// Postman-style environment dropdown: no popover bubble or arrow, just

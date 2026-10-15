@@ -213,9 +213,51 @@ struct FolderDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppSpacing.medium) {
                 overviewStats
+                descriptionBlock
             }
             .padding(AppSpacing.medium)
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// Folder description (Postman's folder Docs): same block as the
+    /// collection's Overview, auto-saved with a debounce.
+    @ViewBuilder
+    private var descriptionBlock: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
+            Text("Description")
+                .font(AppFont.sectionTitle)
+            // Explicit specialization: no programmatic focus wiring.
+            VariableHighlightEditor<Bool>(
+                text: $draft.requestDescription,
+                variables: resolvedVariables,
+                suggestions: suggestions,
+                isSingleLine: false,
+                font: .systemSubheadline,
+                placeholder: "Document this folder..."
+            )
+            .padding(AppSpacing.small)
+            .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                    .strokeBorder(AppColor.border, lineWidth: AppLine.field)
+            )
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onChange(of: draft.requestDescription) { _, newValue in
+            scheduleDescriptionSave(newValue)
+        }
+    }
+
+    /// Debounces description keystrokes into one auto-save per idle gap.
+    @State private var descriptionSaveTask: Task<Void, Never>?
+    private func scheduleDescriptionSave(_ description: String) {
+        guard let collectionID = collection?.id else { return }
+        descriptionSaveTask?.cancel()
+        descriptionSaveTask = Task {
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            store.updateFolderDescription(draft.id, in: collectionID, to: description)
         }
     }
 

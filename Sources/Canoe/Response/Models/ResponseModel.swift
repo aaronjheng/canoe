@@ -70,6 +70,39 @@ struct ResponseModel: Identifiable, Sendable {
 
     var bodySize: Int { body.count }
 
+    /// The body's display language, mirroring Postman's data type selector:
+    /// auto-detect by default, with manual overrides. JSON/XML/HTML are
+    /// syntax-highlighted (HTML through the XML grammar); Text stays plain.
+    enum BodyLanguage: String, CaseIterable, Identifiable, Sendable {
+        case auto = "Auto"
+        case json = "JSON"
+        case xml = "XML"
+        case html = "HTML"
+        case text = "Text"
+
+        var id: String { rawValue }
+    }
+
+    /// Resolves the display language: the user's pick, or detection for
+    /// Auto. Detection reads the Content-Type first, then sniffs the
+    /// content (JSON object/array that parses, `<?xml`, `<!doctype html`).
+    func resolvedBodyLanguage(_ language: BodyLanguage) -> BodyLanguage {
+        guard language == .auto else { return language }
+        let mime = (mimeType ?? "").lowercased()
+        if mime.contains("html") { return .html }
+        if mime.contains("xml") { return .xml }
+        if mime.contains("json") { return .json }
+        let trimmed = bodyString.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parsesAsJSON = (try? JSONSerialization.jsonObject(with: body, options: .allowFragments)) != nil
+        if trimmed.hasPrefix("{") || trimmed.hasPrefix("["), parsesAsJSON {
+            return .json
+        }
+        let lower = trimmed.lowercased()
+        if lower.hasPrefix("<?xml") { return .xml }
+        if lower.hasPrefix("<!doctype html") || lower.hasPrefix("<html") { return .html }
+        return .text
+    }
+
     var bodyString: String {
         String(data: body, encoding: .utf8) ?? "<binary data, \(body.count) bytes>"
     }
@@ -111,7 +144,9 @@ struct ResponseModel: Identifiable, Sendable {
         /// The text to show: pretty-printed when the body is JSON and the
         /// caller asked for it, verbatim otherwise.
         let text: String
-        let isJSON: Bool
+        /// The resolved display language (Auto resolved to the detected
+        /// type): decides which highlight grammar the viewer applies.
+        let language: BodyLanguage
     }
 
     /// Bodies above this skip the JSON round-trip: it blocks the main thread
@@ -121,14 +156,23 @@ struct ResponseModel: Identifiable, Sendable {
 
     /// Decodes the body once. `prettify` is the pretty mode's request -
     /// parsing and re-serializing is the expensive half, so raw mode (and any
-    /// caller that only wants the text) never pays it.
-    func bodyText(prettify: Bool) -> BodyText {
+    /// caller that only wants the text) never pays it, and it applies to
+    /// JSON bodies only (Postman pretty-prints JSON; XML/HTML render as-is,
+    /// highlighted). `language` is the data-type selector; Auto resolves to
+    /// the detected type. The returned language is the resolved one, so the
+    /// viewer knows which highlight grammar applies.
+    func bodyText(prettify: Bool, language: BodyLanguage = .auto) -> BodyText {
+        let resolved = resolvedBodyLanguage(language)
         let raw = bodyString
-        guard prettify, body.count <= Self.maxDecodedBodyBytes else { return BodyText(text: raw, isJSON: false) }
+        guard prettify, resolved == .json, body.count <= Self.maxDecodedBodyBytes else {
+            return BodyText(text: raw, language: resolved)
+        }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.first == "{" || trimmed.first == "[" else { return BodyText(text: raw, isJSON: false) }
+        guard trimmed.first == "{" || trimmed.first == "[" else {
+            return BodyText(text: raw, language: resolved)
+        }
         guard let object = try? JSONSerialization.jsonObject(with: body, options: .allowFragments) else {
-            return BodyText(text: raw, isJSON: false)
+            return BodyText(text: raw, language: resolved)
         }
         guard
             let pretty = try? JSONSerialization.data(
@@ -138,9 +182,9 @@ struct ResponseModel: Identifiable, Sendable {
         else {
             // Parsed as JSON but would not re-serialize: still JSON for
             // highlighting, shown exactly as it arrived.
-            return BodyText(text: raw, isJSON: true)
+            return BodyText(text: raw, language: resolved)
         }
-        return BodyText(text: String(data: pretty, encoding: .utf8) ?? raw, isJSON: true)
+        return BodyText(text: String(data: pretty, encoding: .utf8) ?? raw, language: resolved)
     }
 
     var isSuccess: Bool { (200..<300).contains(statusCode) }

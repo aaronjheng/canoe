@@ -193,6 +193,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         appStore.addWorkspace()
     }
 
+    @objc func importCURL() {
+        guard !isSettingsWindowKey else { return }
+        appStore.presentImportCURL = true
+    }
+
     @objc func newEnvironment() {
         guard !isSettingsWindowKey else { return }
         appStore.addEnvironment()
@@ -670,6 +675,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             keyEquivalent: "e")
         newEnvironmentMenuItem = newEnvironmentItem
         fileMenu.addItem(newEnvironmentItem)
+        fileMenu.addItem(.separator())
+        // Import (Postman's header Import button, paste-raw-text flow).
+        fileMenu.addItem(
+            withTitle: "Import cURL…",
+            action: #selector(importCURL),
+            keyEquivalent: "")
         fileMenu.addItem(.separator())
         // Tab-bound editor actions: enabled only while a request tab is up
         // (see refreshTabBoundMenuItems).

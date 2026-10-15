@@ -10,6 +10,8 @@ final class AppStore {
     let vault = VaultStore()
 
     var presentNewWorkspace = false
+    /// File ▸ Import cURL…: the paste-a-cURL-command sheet.
+    var presentImportCURL = false
     /// The File menu's "Clear History" stages this instead of wiping
     /// directly: history has no undo, so the menu command confirms exactly
     /// like the sidebar's Clear button does.

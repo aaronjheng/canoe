@@ -98,6 +98,28 @@ extension AppStore {
         openRequest(request.id)
     }
 
+    /// Lands an imported cURL request (Postman's Import > Raw text): into
+    /// the chosen collection's root, or as an unsaved scratch tab when no
+    /// collection was chosen. Opens the request either way.
+    func importCURLRequest(_ request: Request, into collectionID: UUID?) {
+        guard let collectionID,
+            let idx = vault.collections.firstIndex(where: { $0.id == collectionID })
+        else {
+            unfiledRequests[request.id] = request
+            pendingRequestSnapshots[request.id] = request
+            scheduleDraftPersistence()
+            openRequest(request.id)
+            return
+        }
+        var updated = vault.collections[idx]
+        var imported = request
+        imported.orderIndex = (updated.requests.map(\.orderIndex).max() ?? -1) + 1
+        updated.requests.append(imported)
+        vault.collections[idx] = updated
+        enqueueStructuralWrite { await self.vault.writeCollection(self.persistable(updated)) }
+        openRequest(imported.id)
+    }
+
     /// Duplicates a request (same method/URL/headers/params/body) into the same
     /// collection and folder, selecting the copy.
     func duplicateRequest(_ id: UUID) {

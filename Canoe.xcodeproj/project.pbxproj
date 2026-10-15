@@ -142,7 +142,7 @@
 			<key>children</key>
 			<array>
 				<string>A70F1001A1B1000000000011</string>
-			</array>
+							</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 			<key>path</key>
@@ -351,7 +351,7 @@
 				<string>463C03345AEB1A2F4D009D5C</string>
 				<string>29D0F9950EE7A654D999EDDB</string>
 				<string>8770709A5599F706B1DFFB07</string>
-							<string>C0A5E1000000000000000D20</string>
+				<string>C0A5E1000000000000000D20</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -402,6 +402,28 @@
 			<string>sourcecode.swift</string>
 			<key>path</key>
 			<string>URLSuggestionPopup.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>C0A5E1000000000000000D30</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CURLImporter.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>C0A5E1000000000000000D40</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>ImportCURLSheet.swift</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
@@ -911,6 +933,7 @@
 				<string>14F533F9DC2880721FF47BC3</string>
 				<string>47C391996EB2857EE89E4D52</string>
 				<string>7A3F2C81D4E5B6A90C1E2F34</string>
+				<string>C0A5E1000000000000000D40</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -1381,6 +1404,20 @@
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>C0A5E1000000000000000D20</string>
+		</dict>
+		<key>C0A5E2000000000000000D30</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>C0A5E1000000000000000D30</string>
+		</dict>
+		<key>C0A5E2000000000000000D40</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>C0A5E1000000000000000D40</string>
 		</dict>
 		<key>F1BDCFDFDAA772F69D6EC2DE</key>
 		<dict>
@@ -2123,6 +2160,7 @@
 			<key>children</key>
 			<array>
 				<string>206E63282E786D9E22FA9BDD</string>
+				<string>C0A5E1000000000000000D30</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -2172,6 +2210,8 @@
 				<string>472E57AD11EDA8197ADCD7E5</string>
 				<string>C0A5E2000000000000000D10</string>
 				<string>C0A5E2000000000000000D20</string>
+				<string>C0A5E2000000000000000D30</string>
+				<string>C0A5E2000000000000000D40</string>
 				<string>F1BDCFDFDAA772F69D6EC2DE</string>
 				<string>F8DCA2A85AB92C26CA1D4B16</string>
 				<string>CBDEA718EADA8A9CA7A50165</string>
