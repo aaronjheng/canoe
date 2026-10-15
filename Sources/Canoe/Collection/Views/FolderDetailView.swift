@@ -320,6 +320,7 @@ struct FolderDetailView: View {
             apiKey: $draft.authorization.apiKey,
             apiKeyValue: $draft.authorization.apiKeyValue,
             apiKeyLocation: $draft.authorization.apiKeyLocation,
+            oauth: $draft.authorization,
             variables: resolvedVariables,
             suggestions: suggestions,
             inheritedSource: inheritedSource,

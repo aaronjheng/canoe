@@ -263,6 +263,15 @@ enum CodeSnippetGenerator {
                 if !username.isEmpty || !password.isEmpty {
                     digestCredentials = (username, password)
                 }
+            case .oauth2:
+                // The stored access token rides the header with the user's
+                // prefix (Postman exports the same shape).
+                let token = resolve(authorization.oauthAccessToken)
+                if !token.isEmpty {
+                    let prefix = authorization.oauthHeaderPrefix
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    headers.append((key: "Authorization", value: prefix.isEmpty ? token : "\(prefix) \(token)"))
+                }
             }
         }
 

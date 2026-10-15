@@ -394,6 +394,17 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>C0A5E1000000000000000D50</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>OAuth2Service.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>C0A5E1000000000000000D20</key>
 		<dict>
 			<key>isa</key>
@@ -447,6 +458,7 @@
 				<string>EBB11063F5D37FF3F33DE52D</string>
 				<string>AC64FA0CE9C3B946CA8E78B4</string>
 				<string>C0A5E1000000000000000D10</string>
+				<string>C0A5E1000000000000000D50</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -1398,6 +1410,13 @@
 			<key>fileRef</key>
 			<string>C0A5E1000000000000000D10</string>
 		</dict>
+		<key>C0A5E2000000000000000D50</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>C0A5E1000000000000000D50</string>
+		</dict>
 		<key>C0A5E2000000000000000D20</key>
 		<dict>
 			<key>isa</key>
@@ -2209,6 +2228,7 @@
 				<string>93244121A13F7AE0281016E7</string>
 				<string>472E57AD11EDA8197ADCD7E5</string>
 				<string>C0A5E2000000000000000D10</string>
+				<string>C0A5E2000000000000000D50</string>
 				<string>C0A5E2000000000000000D20</string>
 				<string>C0A5E2000000000000000D30</string>
 				<string>C0A5E2000000000000000D40</string>

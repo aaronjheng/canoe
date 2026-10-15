@@ -584,6 +584,18 @@ enum HTTPClient {
                 // Nothing up front: the challenge arrives with the 401, and
                 // the response is computed and replayed below.
                 break
+            case .oauth2:
+                // Postman's Header Prefix (default "Bearer"): an empty
+                // prefix sends the bare token.
+                let token = VariableResolver.resolve(authorization.oauthAccessToken, variables: variables)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !token.isEmpty {
+                    let prefix = authorization.oauthHeaderPrefix
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    urlRequest.setValue(
+                        prefix.isEmpty ? token : "\(prefix) \(token)",
+                        forHTTPHeaderField: "Authorization")
+                }
             }
         }
 

@@ -135,6 +135,7 @@ struct CollectionDetailView: View {
                     apiKey: $draft.authorization.apiKey,
                     apiKeyValue: $draft.authorization.apiKeyValue,
                     apiKeyLocation: $draft.authorization.apiKeyLocation,
+                    oauth: $draft.authorization,
                     variables: resolvedVariables,
                     suggestions: suggestions,
                     // The collection is the top of the inheritance chain;

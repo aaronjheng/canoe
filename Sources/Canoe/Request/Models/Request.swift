@@ -34,6 +34,20 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
     var authApiKey: String = ""
     var authApiValue: String = ""
     var authApiKeyIn: String = ApiKeyLocation.header.rawValue
+    /// OAuth 2.0 helper fields (Postman's Configure New Token section),
+    /// flat on the request like every other auth field; raw enum/string
+    /// storage throughout.
+    var authOAuthGrantType: String = "client_credentials"
+    var authOAuthAuthURL: String = ""
+    var authOAuthTokenURL: String = ""
+    var authOAuthClientID: String = ""
+    var authOAuthClientSecret: String = ""
+    var authOAuthScope: String = ""
+    var authOAuthCallbackURL: String = ""
+    var authOAuthState: String = ""
+    var authOAuthClientAuth: String = "body"
+    var authOAuthHeaderPrefix: String = "Bearer"
+    var authOAuthAccessToken: String = ""
     /// Free-form request documentation (Postman's description), shown
     /// under the name bar and saved with ⌘S like the rest of the request.
     var requestDescription: String = ""
@@ -46,6 +60,11 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
     var timeoutSeconds: Double = 0
     var orderIndex: Int = 0
     var folderID: UUID?
+    /// Path variables (Postman's Params › Path Variables): values for the
+    /// `{{placeholders}}` in this request's URL path, keyed by name. Rows
+    /// derive from the URL; these values override same-named variables in
+    /// any scope.
+    var pathVariables: [String: String] = [:]
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
     var headers: [HTTPHeader] = []
@@ -77,9 +96,14 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
         case formFields, urlEncodedFields, binaryFilePath
         case authType, authUsername, authPassword, authToken
         case authApiKey, authApiValue, authApiKeyIn
+        case authOAuthGrantType, authOAuthAuthURL, authOAuthTokenURL
+        case authOAuthClientID, authOAuthClientSecret, authOAuthScope
+        case authOAuthCallbackURL, authOAuthState, authOAuthClientAuth
+        case authOAuthHeaderPrefix, authOAuthAccessToken
         case requestDescription
         case followRedirects, timeoutSeconds
         case orderIndex, folderID, createdAt, updatedAt, headers, params
+        case pathVariables
         case disabledGeneratedHeaders
     }
 
@@ -109,11 +133,25 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
         authApiKeyIn =
             try container.decodeIfPresent(String.self, forKey: .authApiKeyIn)
             ?? ApiKeyLocation.header.rawValue
+        authOAuthGrantType =
+            try container.decodeIfPresent(String.self, forKey: .authOAuthGrantType) ?? "client_credentials"
+        authOAuthAuthURL = try container.decodeIfPresent(String.self, forKey: .authOAuthAuthURL) ?? ""
+        authOAuthTokenURL = try container.decodeIfPresent(String.self, forKey: .authOAuthTokenURL) ?? ""
+        authOAuthClientID = try container.decodeIfPresent(String.self, forKey: .authOAuthClientID) ?? ""
+        authOAuthClientSecret = try container.decodeIfPresent(String.self, forKey: .authOAuthClientSecret) ?? ""
+        authOAuthScope = try container.decodeIfPresent(String.self, forKey: .authOAuthScope) ?? ""
+        authOAuthCallbackURL = try container.decodeIfPresent(String.self, forKey: .authOAuthCallbackURL) ?? ""
+        authOAuthState = try container.decodeIfPresent(String.self, forKey: .authOAuthState) ?? ""
+        authOAuthClientAuth = try container.decodeIfPresent(String.self, forKey: .authOAuthClientAuth) ?? "body"
+        authOAuthHeaderPrefix = try container.decodeIfPresent(String.self, forKey: .authOAuthHeaderPrefix) ?? "Bearer"
+        authOAuthAccessToken = try container.decodeIfPresent(String.self, forKey: .authOAuthAccessToken) ?? ""
         requestDescription = try container.decodeIfPresent(String.self, forKey: .requestDescription) ?? ""
         followRedirects = try container.decodeIfPresent(Bool.self, forKey: .followRedirects) ?? true
         timeoutSeconds = try container.decodeIfPresent(Double.self, forKey: .timeoutSeconds) ?? 0
         orderIndex = try container.decodeIfPresent(Int.self, forKey: .orderIndex) ?? 0
         folderID = try container.decodeIfPresent(UUID.self, forKey: .folderID)
+        pathVariables =
+            try container.decodeIfPresent([String: String].self, forKey: .pathVariables) ?? [:]
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
         headers = try container.decodeLossyArray(forKey: .headers)
@@ -174,11 +212,23 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
             && authApiKey == other.authApiKey
             && authApiValue == other.authApiValue
             && authApiKeyIn == other.authApiKeyIn
+            && authOAuthGrantType == other.authOAuthGrantType
+            && authOAuthAuthURL == other.authOAuthAuthURL
+            && authOAuthTokenURL == other.authOAuthTokenURL
+            && authOAuthClientID == other.authOAuthClientID
+            && authOAuthClientSecret == other.authOAuthClientSecret
+            && authOAuthScope == other.authOAuthScope
+            && authOAuthCallbackURL == other.authOAuthCallbackURL
+            && authOAuthState == other.authOAuthState
+            && authOAuthClientAuth == other.authOAuthClientAuth
+            && authOAuthHeaderPrefix == other.authOAuthHeaderPrefix
+            && authOAuthAccessToken == other.authOAuthAccessToken
             && requestDescription == other.requestDescription
             && followRedirects == other.followRedirects
             && timeoutSeconds == other.timeoutSeconds
             && orderIndex == other.orderIndex
             && folderID == other.folderID
+            && pathVariables == other.pathVariables
             && headers == other.headers
             && params == other.params
             && disabledGeneratedHeaders == other.disabledGeneratedHeaders

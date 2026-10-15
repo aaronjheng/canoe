@@ -14,6 +14,7 @@ enum AuthType: String, Codable, CaseIterable, Identifiable, Sendable {
     case bearer
     case apiKey
     case digest
+    case oauth2
 
     var id: String { rawValue }
 
@@ -25,6 +26,7 @@ enum AuthType: String, Codable, CaseIterable, Identifiable, Sendable {
         case .bearer: "Bearer Token"
         case .apiKey: "API Key"
         case .digest: "Digest Auth"
+        case .oauth2: "OAuth 2.0"
         }
     }
 }
@@ -59,6 +61,22 @@ struct Authorization: Codable, Hashable, Sendable {
     var apiKey: String = ""
     var apiKeyValue: String = ""
     var apiKeyIn: String = ApiKeyLocation.header.rawValue
+    /// OAuth 2.0 helper (Postman's Configure New Token section): grant
+    /// type (`client_credentials` | `authorization_code_pkce`), endpoints,
+    /// client credentials, scope, and the resulting access token. PKCE
+    /// uses a loopback callback automatically; `clientAuth` mirrors
+    /// Postman's Client Authentication ("body" | "basic", default body).
+    var oauthGrantType: String = "client_credentials"
+    var oauthAuthURL: String = ""
+    var oauthTokenURL: String = ""
+    var oauthClientID: String = ""
+    var oauthClientSecret: String = ""
+    var oauthScope: String = ""
+    var oauthCallbackURL: String = ""
+    var oauthState: String = ""
+    var oauthClientAuth: String = "body"
+    var oauthHeaderPrefix: String = "Bearer"
+    var oauthAccessToken: String = ""
 
     enum CodingKeys: String, CodingKey {
         case type
@@ -68,6 +86,17 @@ struct Authorization: Codable, Hashable, Sendable {
         case apiKey
         case apiKeyValue
         case apiKeyIn
+        case oauthGrantType
+        case oauthAuthURL
+        case oauthTokenURL
+        case oauthClientID
+        case oauthClientSecret
+        case oauthScope
+        case oauthCallbackURL
+        case oauthState
+        case oauthClientAuth
+        case oauthHeaderPrefix
+        case oauthAccessToken
     }
 
     /// Tolerant on purpose, same reason as `QueryParam`: this type is nested
@@ -88,6 +117,17 @@ struct Authorization: Codable, Hashable, Sendable {
         apiKeyIn =
             try container.decodeIfPresent(String.self, forKey: .apiKeyIn)
             ?? ApiKeyLocation.header.rawValue
+        oauthGrantType = try container.decodeIfPresent(String.self, forKey: .oauthGrantType) ?? "client_credentials"
+        oauthAuthURL = try container.decodeIfPresent(String.self, forKey: .oauthAuthURL) ?? ""
+        oauthTokenURL = try container.decodeIfPresent(String.self, forKey: .oauthTokenURL) ?? ""
+        oauthClientID = try container.decodeIfPresent(String.self, forKey: .oauthClientID) ?? ""
+        oauthClientSecret = try container.decodeIfPresent(String.self, forKey: .oauthClientSecret) ?? ""
+        oauthScope = try container.decodeIfPresent(String.self, forKey: .oauthScope) ?? ""
+        oauthCallbackURL = try container.decodeIfPresent(String.self, forKey: .oauthCallbackURL) ?? ""
+        oauthState = try container.decodeIfPresent(String.self, forKey: .oauthState) ?? ""
+        oauthClientAuth = try container.decodeIfPresent(String.self, forKey: .oauthClientAuth) ?? "body"
+        oauthHeaderPrefix = try container.decodeIfPresent(String.self, forKey: .oauthHeaderPrefix) ?? "Bearer"
+        oauthAccessToken = try container.decodeIfPresent(String.self, forKey: .oauthAccessToken) ?? ""
     }
 
     init(
@@ -97,7 +137,18 @@ struct Authorization: Codable, Hashable, Sendable {
         token: String = "",
         apiKey: String = "",
         apiKeyValue: String = "",
-        apiKeyIn: String = ApiKeyLocation.header.rawValue
+        apiKeyIn: String = ApiKeyLocation.header.rawValue,
+        oauthGrantType: String = "client_credentials",
+        oauthAuthURL: String = "",
+        oauthTokenURL: String = "",
+        oauthClientID: String = "",
+        oauthClientSecret: String = "",
+        oauthScope: String = "",
+        oauthCallbackURL: String = "",
+        oauthState: String = "",
+        oauthClientAuth: String = "body",
+        oauthHeaderPrefix: String = "Bearer",
+        oauthAccessToken: String = ""
     ) {
         self.type = type
         self.username = username
@@ -106,6 +157,17 @@ struct Authorization: Codable, Hashable, Sendable {
         self.apiKey = apiKey
         self.apiKeyValue = apiKeyValue
         self.apiKeyIn = apiKeyIn
+        self.oauthGrantType = oauthGrantType
+        self.oauthAuthURL = oauthAuthURL
+        self.oauthTokenURL = oauthTokenURL
+        self.oauthClientID = oauthClientID
+        self.oauthClientSecret = oauthClientSecret
+        self.oauthScope = oauthScope
+        self.oauthCallbackURL = oauthCallbackURL
+        self.oauthState = oauthState
+        self.oauthClientAuth = oauthClientAuth
+        self.oauthHeaderPrefix = oauthHeaderPrefix
+        self.oauthAccessToken = oauthAccessToken
     }
 
     /// Lifts a request's stored flat fields into the shared shape, for
@@ -118,7 +180,18 @@ struct Authorization: Codable, Hashable, Sendable {
             token: request.authToken,
             apiKey: request.authApiKey,
             apiKeyValue: request.authApiValue,
-            apiKeyIn: request.authApiKeyIn
+            apiKeyIn: request.authApiKeyIn,
+            oauthGrantType: request.authOAuthGrantType,
+            oauthAuthURL: request.authOAuthAuthURL,
+            oauthTokenURL: request.authOAuthTokenURL,
+            oauthClientID: request.authOAuthClientID,
+            oauthClientSecret: request.authOAuthClientSecret,
+            oauthScope: request.authOAuthScope,
+            oauthCallbackURL: request.authOAuthCallbackURL,
+            oauthState: request.authOAuthState,
+            oauthClientAuth: request.authOAuthClientAuth,
+            oauthHeaderPrefix: request.authOAuthHeaderPrefix,
+            oauthAccessToken: request.authOAuthAccessToken
         )
     }
 
@@ -128,6 +201,7 @@ struct Authorization: Codable, Hashable, Sendable {
         case .basic, .digest: !username.isEmpty || !password.isEmpty
         case .bearer: !token.isEmpty
         case .apiKey: !apiKey.isEmpty || !apiKeyValue.isEmpty
+        case .oauth2: !oauthAccessToken.isEmpty || !oauthTokenURL.isEmpty
         case .none, .inherit: false
         }
     }
@@ -135,6 +209,35 @@ struct Authorization: Codable, Hashable, Sendable {
     var apiKeyLocation: ApiKeyLocation {
         get { ApiKeyLocation(rawValue: apiKeyIn) ?? .header }
         set { apiKeyIn = newValue.rawValue }
+    }
+
+    /// The OAuth 2.0 grant type (raw string storage like every enum-backed
+    /// auth field).
+    var oauthGrant: OAuth2Grant {
+        get { OAuth2Grant(rawValue: oauthGrantType) ?? .clientCredentials }
+        set { oauthGrantType = newValue.rawValue }
+    }
+
+    var oauthSendsBasicAuth: Bool {
+        get { oauthClientAuth == "basic" }
+        set { oauthClientAuth = newValue ? "basic" : "body" }
+    }
+}
+
+/// The OAuth 2.0 grant types Canoe implements (Postman's two core
+/// machine-to-machine / SPA grants; implicit and password grants are
+/// deliberately out of scope).
+enum OAuth2Grant: String, Codable, CaseIterable, Identifiable, Sendable {
+    case clientCredentials = "client_credentials"
+    case authorizationCodePKCE = "authorization_code_pkce"
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .clientCredentials: "Client Credentials"
+        case .authorizationCodePKCE: "Authorization Code (With PKCE)"
+        }
     }
 }
 

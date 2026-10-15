@@ -44,10 +44,40 @@ struct AuthEditor: View {
             apiKey: $request.authApiKey,
             apiKeyValue: $request.authApiValue,
             apiKeyLocation: $request.authApiKeyLocation,
+            oauth: oauthBinding,
             variables: resolvedVariables,
             suggestions: requestSuggestions,
             inheritedSource: inheritanceSource,
             onEditInParent: editInParent
+        )
+    }
+
+    /// Bridges the request's flat auth fields onto the shared Authorization
+    /// value object, so the OAuth 2.0 pane (which binds the struct) reads
+    /// and writes the same storage the send path resolves.
+    private var oauthBinding: Binding<Authorization> {
+        Binding(
+            get: { Authorization(from: request) },
+            set: { auth in
+                request.requestAuthType = auth.type
+                request.authUsername = auth.username
+                request.authPassword = auth.password
+                request.authToken = auth.token
+                request.authApiKey = auth.apiKey
+                request.authApiValue = auth.apiKeyValue
+                request.authApiKeyIn = auth.apiKeyIn
+                request.authOAuthGrantType = auth.oauthGrantType
+                request.authOAuthAuthURL = auth.oauthAuthURL
+                request.authOAuthTokenURL = auth.oauthTokenURL
+                request.authOAuthClientID = auth.oauthClientID
+                request.authOAuthClientSecret = auth.oauthClientSecret
+                request.authOAuthScope = auth.oauthScope
+                request.authOAuthCallbackURL = auth.oauthCallbackURL
+                request.authOAuthState = auth.oauthState
+                request.authOAuthClientAuth = auth.oauthClientAuth
+                request.authOAuthHeaderPrefix = auth.oauthHeaderPrefix
+                request.authOAuthAccessToken = auth.oauthAccessToken
+            }
         )
     }
 }
@@ -66,6 +96,10 @@ struct AuthorizationForm: View {
     @Binding var apiKey: String
     @Binding var apiKeyValue: String
     @Binding var apiKeyLocation: ApiKeyLocation
+    /// OAuth 2.0 helper: the whole Authorization value object (the grant
+    /// has many fields, so the pane binds the struct instead of each
+    /// field). Callers bridge the request's flat auth fields onto it.
+    @Binding var oauth: Authorization
     /// Merged variable scope for `{{placeholder}}` highlighting.
     let variables: [String: String]
     /// Completion candidates with scope metadata for `{{` auto-completion.
@@ -144,6 +178,8 @@ struct AuthorizationForm: View {
             "Canoe sends the request once to collect the server's 401 challenge, then resends it with the computed Digest response."
         case .apiKey:
             "The key/value pair is added to the selected header or the query string when you send the request."
+        case .oauth2:
+            "Fetch an access token with Get New Access Token, then requests send it in the Authorization header with your header prefix."
         }
     }
 
@@ -254,6 +290,8 @@ struct AuthorizationForm: View {
                         }
                         .help("Where the key/value pair is added when the request is sent")
                     }
+                case .oauth2:
+                    oauth2Pane
                 }
             }
             Spacer(minLength: 0)
@@ -261,6 +299,197 @@ struct AuthorizationForm: View {
         // Postman caps the form width instead of stretching fields across a
         // wide window.
         .frame(maxWidth: AppSize.formFieldMaxWidth, alignment: .leading)
+    }
+
+    // MARK: - OAuth 2.0 pane
+
+    /// Postman's Configure New Token section: grant type selector, the
+    /// endpoint/credential fields it needs, client authentication, header
+    /// prefix, the Get New Access Token button, and the resulting token
+    /// (editable, so it can also be pasted by hand).
+    @State private var isFetchingToken = false
+    @State private var tokenFetchError: String?
+
+    @ViewBuilder
+    private var oauth2Pane: some View {
+        let isPKCE = oauth.oauthGrant == .authorizationCodePKCE
+        VStack(alignment: .leading, spacing: AppSpacing.medium) {
+            fieldRow("Grant Type") {
+                DropdownFieldButton(
+                    id: "auth.oauth2.grant",
+                    label: oauth.oauthGrant.label,
+                    width: 240
+                ) {
+                    OAuth2Grant.allCases.map { grant in
+                        DropdownRow.action(grant.label, isSelected: grant == oauth.oauthGrant) {
+                            oauth.oauthGrant = grant
+                        }
+                    }
+                }
+            }
+            if isPKCE {
+                fieldRow("Callback URL") {
+                    OAuthField(
+                        text: oauthCallbackBinding,
+                        variables: variables,
+                        suggestions: suggestions,
+                        placeholder: "Empty uses an automatic loopback callback"
+                    )
+                }
+                fieldRow("Auth URL") {
+                    OAuthField(
+                        text: oauthAuthURLBinding,
+                        variables: variables,
+                        suggestions: suggestions,
+                        placeholder: "https://provider.com/authorize"
+                    )
+                }
+                fieldRow("State") {
+                    OAuthField(
+                        text: oauthStateBinding,
+                        variables: variables,
+                        suggestions: suggestions,
+                        placeholder: "Empty generates a random state"
+                    )
+                }
+            }
+            fieldRow("Access Token URL") {
+                OAuthField(
+                    text: oauthTokenURLBinding,
+                    variables: variables,
+                    suggestions: suggestions,
+                    placeholder: "https://provider.com/token"
+                )
+            }
+            fieldRow("Client ID") {
+                OAuthField(
+                    text: oauthClientIDBinding,
+                    variables: variables,
+                    suggestions: suggestions,
+                    placeholder: "Client ID"
+                )
+            }
+            fieldRow("Client Secret") {
+                OAuthSecretField(text: oauthClientSecretBinding)
+            }
+            fieldRow("Scope") {
+                OAuthField(
+                    text: oauthScopeBinding,
+                    variables: variables,
+                    suggestions: suggestions,
+                    placeholder: "Space-separated scopes"
+                )
+            }
+            fieldRow("Client Authentication") {
+                DropdownFieldButton(
+                    id: "auth.oauth2.clientAuth",
+                    label: oauth.oauthSendsBasicAuth ? "Send as Basic Auth header" : "Send client credentials in body",
+                    width: 260
+                ) {
+                    [
+                        DropdownRow.action(
+                            "Send client credentials in body",
+                            isSelected: !oauth.oauthSendsBasicAuth
+                        ) {
+                            oauth.oauthSendsBasicAuth = false
+                        },
+                        DropdownRow.action(
+                            "Send as Basic Auth header",
+                            isSelected: oauth.oauthSendsBasicAuth
+                        ) {
+                            oauth.oauthSendsBasicAuth = true
+                        },
+                    ]
+                }
+                .help("Where the client credentials ride on the token request")
+            }
+            fieldRow("Header Prefix") {
+                OAuthField(
+                    text: oauthHeaderPrefixBinding,
+                    variables: variables,
+                    suggestions: suggestions,
+                    placeholder: "Bearer"
+                )
+            }
+            HStack(spacing: AppSpacing.medium) {
+                Button(action: fetchAccessToken) {
+                    HStack(spacing: AppSpacing.xSmall) {
+                        if isFetchingToken {
+                            ProgressView().controlSize(.small)
+                        }
+                        Text(isFetchingToken ? "Fetching…" : "Get New Access Token")
+                    }
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(isFetchingToken)
+                .help("Runs the configured grant and stores the token below")
+                if let tokenFetchError {
+                    Text(tokenFetchError)
+                        .font(AppFont.small)
+                        .foregroundStyle(AppColor.error)
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+                        .help(tokenFetchError)
+                }
+            }
+            fieldRow("Access Token") {
+                OAuthField(
+                    text: oauthAccessTokenBinding,
+                    variables: variables,
+                    suggestions: suggestions,
+                    placeholder: "Fetched here, or paste one"
+                )
+            }
+        }
+    }
+
+    /// Runs the configured grant; the fetched token lands in the access
+    /// token field through the oauth binding (so it persists with ⌘S like
+    /// every other auth field).
+    private func fetchAccessToken() {
+        guard !isFetchingToken else { return }
+        isFetchingToken = true
+        tokenFetchError = nil
+        let fields = oauth
+        let variables = self.variables
+        Task {
+            defer { isFetchingToken = false }
+            do {
+                let token = try await OAuth2Service.fetchToken(authorization: fields, variables: variables)
+                oauth.oauthAccessToken = token
+            } catch {
+                tokenFetchError = error.localizedDescription
+            }
+        }
+    }
+
+    // Per-field bindings over the oauth struct.
+    private var oauthAuthURLBinding: Binding<String> {
+        Binding(get: { oauth.oauthAuthURL }, set: { oauth.oauthAuthURL = $0 })
+    }
+    private var oauthTokenURLBinding: Binding<String> {
+        Binding(get: { oauth.oauthTokenURL }, set: { oauth.oauthTokenURL = $0 })
+    }
+    private var oauthClientIDBinding: Binding<String> {
+        Binding(get: { oauth.oauthClientID }, set: { oauth.oauthClientID = $0 })
+    }
+    private var oauthClientSecretBinding: Binding<String> {
+        Binding(get: { oauth.oauthClientSecret }, set: { oauth.oauthClientSecret = $0 })
+    }
+    private var oauthScopeBinding: Binding<String> {
+        Binding(get: { oauth.oauthScope }, set: { oauth.oauthScope = $0 })
+    }
+    private var oauthCallbackBinding: Binding<String> {
+        Binding(get: { oauth.oauthCallbackURL }, set: { oauth.oauthCallbackURL = $0 })
+    }
+    private var oauthStateBinding: Binding<String> {
+        Binding(get: { oauth.oauthState }, set: { oauth.oauthState = $0 })
+    }
+    private var oauthHeaderPrefixBinding: Binding<String> {
+        Binding(get: { oauth.oauthHeaderPrefix }, set: { oauth.oauthHeaderPrefix = $0 })
+    }
+    private var oauthAccessTokenBinding: Binding<String> {
+        Binding(get: { oauth.oauthAccessToken }, set: { oauth.oauthAccessToken = $0 })
     }
 
     // MARK: - Inherited echo (Postman-style read-only parent view)
@@ -344,6 +573,17 @@ struct AuthorizationForm: View {
                         }
                     }
                     echoRow("Add to") { echoField { Text(source.authorization.apiKeyLocation.label) } }
+                case .oauth2:
+                    echoRow("Auth type") { echoField { Text(source.authorization.type.label) } }
+                    echoRow("Access token") {
+                        maskedEchoField {
+                            SecureField(
+                                "Access token",
+                                text: .constant(source.authorization.oauthAccessToken.isEmpty ? "—" : "••••••••")
+                            )
+                            .textFieldStyle(.plain)
+                        }
+                    }
                 case .none, .inherit:
                     echoRow("Auth type") { echoField { Text(AuthType.none.label) } }
                     Text("\"\(source.ownerName)\" has no Authorization configured; requests under it send without one.")
@@ -413,5 +653,50 @@ struct AuthorizationForm: View {
     private func maskedEchoField(@ViewBuilder field: () -> some View) -> some View {
         echoField { field() }
             .allowsHitTesting(false)
+    }
+}
+
+/// One OAuth 2.0 form field: the shared variable-aware editor with its own
+/// focus/hover mirrors (the panel's eleven fields would otherwise need a
+/// matching pair of `@State` each). Owns the bordered chrome, so callers
+/// only pass the binding and placeholders.
+private struct OAuthField: View {
+    @Binding var text: String
+    let variables: [String: String]
+    let suggestions: [VariableSuggestion]
+    let placeholder: String
+    @State private var isFocused = false
+    @State private var isHovered = false
+
+    var body: some View {
+        VariableHighlightEditor(
+            text: $text,
+            variables: variables,
+            suggestions: suggestions,
+            font: .systemSubheadline,
+            placeholder: placeholder,
+            onFocusChange: { isFocused = $0 },
+            onHoverChanged: { isHovered = $0 }
+        )
+        .variableFieldBordered(isFocused: isFocused, isHovered: isHovered)
+    }
+}
+
+/// The client-secret field: masked like the basic-auth password.
+private struct OAuthSecretField: View {
+    @Binding var text: String
+    @State private var isFocused = false
+    @State private var isHovered = false
+    @FocusState private var fieldFocused: Bool
+
+    var body: some View {
+        SecureField("Client Secret", text: $text)
+            .font(AppFont.small)
+            .variableFieldBordered(isFocused: isFocused, isHovered: isHovered)
+            .focused($fieldFocused)
+            .onHover { isHovered = $0 }
+            .onChange(of: fieldFocused) { _, focused in
+                isFocused = focused
+            }
     }
 }

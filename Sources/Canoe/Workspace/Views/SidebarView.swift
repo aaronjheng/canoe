@@ -1331,11 +1331,26 @@ private struct RequestRow: View {
             DropdownRow.action("Duplicate") {
                 store.duplicateRequest(request.id)
             },
+            DropdownRow.action("Copy as cURL") {
+                copyAsCURL()
+            },
             .divider(),
             DropdownRow.action("Delete", isDestructive: true) {
                 showDeleteConfirm = true
             },
         ]
+    }
+
+    /// Postman's Copy as cURL: the resolved request (variables applied) as
+    /// a ready-to-paste cURL command on the pasteboard.
+    private func copyAsCURL() {
+        let snippet = CodeSnippetGenerator.generate(
+            request: request,
+            variables: store.variablesForRequest(request),
+            authorization: store.authorizationForRequest(request),
+            language: .curl)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(snippet, forType: .string)
     }
 
     /// One hover-revealed overflow menu instead of a bank of icon buttons:
