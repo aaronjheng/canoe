@@ -211,6 +211,14 @@ struct RequestEditorView: View {
         }
     }
 
+    /// Whether any request setting differs from its default (Postman's
+    /// Settings tab dot): drives the tab's green content marker, so a
+    /// request at defaults reads as unmodified. Keep in sync with the
+    /// defaults when adding settings rows.
+    private var isSettingsChangedFromDefault: Bool {
+        !draft.followRedirects || draft.timeoutSeconds > 0
+    }
+
     /// Merged variable scope for `{{placeholder}}` highlighting in every
     /// editable request field (Postman-style green/red highlighting).
     private var resolvedVariables: [String: String] {
@@ -982,7 +990,7 @@ struct RequestEditorView: View {
             UnderlineTab(
                 title: RequestSection.settings.rawValue,
                 count: nil,
-                hasContent: !draft.followRedirects || draft.timeoutSeconds > 0,
+                hasContent: isSettingsChangedFromDefault,
                 labelInset: 0,
                 isSelected: section == .settings,
                 action: {
@@ -1077,52 +1085,83 @@ struct RequestEditorView: View {
         .background(AppColor.controlBackground)
     }
 
-    /// Postman's per-request Settings tab: whether 3xx responses are
-    /// followed, and the idle timeout in seconds (empty = the app default).
-    /// Both ride the draft's onChange like every other edit, so they save
-    /// with ⌘S and reach `HTTPClient` on the next send.
+    /// Postman's per-request Settings tab: rows of title + description on
+    /// the left, control on the right (switch with an ON/OFF label, right-
+    /// aligned field for the timeout). Both settings ride the draft's
+    /// onChange like every other edit, so they save with ⌘S and reach
+    /// `HTTPClient` on the next send.
     private var settingsPane: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.medium) {
-            Text("Request Settings")
-                .font(AppFont.panelTitle)
-            Toggle(isOn: $draft.followRedirects) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Follow redirects")
-                        .font(AppFont.small)
-                    Text(
-                        draft.followRedirects
-                            ? "3xx responses are followed automatically."
-                            : "3xx responses are returned as-is."
-                    )
+        ScrollView {
+            VStack(alignment: .leading, spacing: AppSpacing.xLarge) {
+                settingsToggleRow(
+                    title: "Automatically follow redirects",
+                    description: "Follow HTTP 3xx responses as redirects.",
+                    isOn: $draft.followRedirects
+                )
+                settingsTimeoutRow
+            }
+            .padding(AppSpacing.medium)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(AppColor.controlBackground)
+    }
+
+    /// One Postman-style toggle row: bold title over a muted description
+    /// paragraph, switch + ON/OFF state trailing.
+    private func settingsToggleRow(title: String, description: String, isOn: Binding<Bool>) -> some View {
+        HStack(alignment: .top, spacing: AppSpacing.medium) {
+            VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
+                Text(title)
+                    .font(AppFont.small.weight(.semibold))
+                Text(description)
                     .font(AppFont.emptyStateBody)
                     .foregroundStyle(AppColor.textSecondary)
-                }
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .toggleStyle(.checkbox)
-            HStack(spacing: AppSpacing.medium) {
-                Text("Timeout (seconds)")
+            Spacer(minLength: AppSpacing.medium)
+            HStack(spacing: AppSpacing.xSmall) {
+                Toggle(title, isOn: isOn)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .fixedSize()
+                Text(isOn.wrappedValue ? "ON" : "OFF")
                     .font(AppFont.small)
-                    .frame(width: AppSize.authLabelColumnWidth, alignment: .leading)
-                VariableHighlightEditor<Bool>(
-                    text: timeoutBinding,
-                    isSingleLine: true,
-                    singleLineMinHeight: AppSize.controlHeight,
-                    font: .systemSubheadline,
-                    placeholder: "30"
-                )
-                .frame(width: 120)
-                .variableFieldBordered(isFocused: isTimeoutFocused, isHovered: isTimeoutHovered)
+                    .monospacedDigit()
+                    .foregroundStyle(AppColor.textSecondary)
+                    .frame(width: 30, alignment: .leading)
+                    .accessibilityHidden(true)
             }
-            Text(
-                "Maximum idle time between data arrivals before the request gives up. Empty uses the app default (30s)."
-            )
-            .font(AppFont.emptyStateBody)
-            .foregroundStyle(AppColor.textSecondary)
-            Spacer(minLength: 0)
+            .padding(.top, 1)
         }
-        .padding(AppSpacing.medium)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(AppColor.controlBackground)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// The timeout row: same left column shape, a right-aligned seconds
+    /// field instead of a switch. Empty uses the app default (30s).
+    private var settingsTimeoutRow: some View {
+        HStack(alignment: .top, spacing: AppSpacing.medium) {
+            VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
+                Text("Timeout (seconds)")
+                    .font(AppFont.small.weight(.semibold))
+                Text(
+                    "Maximum idle time between data arrivals before the request gives up. Empty uses the app default (30s)."
+                )
+                .font(AppFont.emptyStateBody)
+                .foregroundStyle(AppColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: AppSpacing.medium)
+            VariableHighlightEditor<Bool>(
+                text: timeoutBinding,
+                isSingleLine: true,
+                singleLineMinHeight: AppSize.controlHeight,
+                font: .systemSubheadline,
+                placeholder: "30"
+            )
+            .frame(width: 120)
+            .variableFieldBordered(isFocused: isTimeoutFocused, isHovered: isTimeoutHovered)
+        }
     }
 
     /// The timeout as text: empty while unset (0 = default), whole seconds
