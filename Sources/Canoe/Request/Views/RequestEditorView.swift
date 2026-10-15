@@ -22,10 +22,12 @@ struct RequestEditorView: View {
     @State private var section: RequestSection = .params
 
     enum RequestSection: String, CaseIterable, Identifiable {
+        case docs = "Docs"
         case params = "Params"
         case auth = "Authorization"
         case headers = "Headers"
         case body = "Body"
+        case settings = "Settings"
         var id: String { rawValue }
     }
 
@@ -84,6 +86,9 @@ struct RequestEditorView: View {
         if let contentType = generatedContentType {
             append("Content-Type", contentType)
             append("Content-Length", generatedContentLength ?? "Generated at send time")
+        }
+        if let apiKey = generatedAPIKeyHeader {
+            append(apiKey, String(repeating: "•", count: 8), isMuted: true, isToggleable: false)
         }
         return headers
     }
@@ -153,9 +158,34 @@ struct RequestEditorView: View {
         case .bearer:
             let token = VariableResolver.resolve(authorization.token, variables: resolvedVariables)
             return token.isEmpty ? nil : "Bearer \(token)"
-        case .none, .inherit:
+        case .none, .inherit, .digest, .apiKey:
+            // digest: no header until the server challenges; apiKey in
+            // header mode is shown by `generatedAPIKeyHeader` instead.
             return nil
         }
+    }
+
+    /// The API Key helper's header name when it injects into a header (the
+    /// value is masked in the generated-headers table like Authorization's).
+    /// nil for query injection, empty fields, or when a user header row
+    /// already carries the name (the helper yields to it, same as the
+    /// send path).
+    private var generatedAPIKeyHeader: String? {
+        let authorization = store.authorizationForRequest(draft)
+        guard authorization.type == .apiKey, authorization.apiKeyLocation == .header else { return nil }
+        let key = VariableResolver.resolve(authorization.apiKey, variables: resolvedVariables)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = VariableResolver.resolve(authorization.apiKeyValue, variables: resolvedVariables)
+        guard !key.isEmpty, !value.isEmpty else { return nil }
+        let userHeaderNames = Set(
+            draft.headers.filter(\.isEnabled).map {
+                VariableResolver.resolve($0.key, variables: resolvedVariables)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .lowercased()
+            }
+        )
+        guard !userHeaderNames.contains(key.lowercased()) else { return nil }
+        return key
     }
 
     /// Shown on the Authorization tab. Unlike `Request.hasAuthConfigured`
@@ -190,6 +220,21 @@ struct RequestEditorView: View {
     /// Completion candidates with scope metadata for `{{` auto-completion.
     private var requestSuggestions: [VariableSuggestion] {
         VariableSuggestion.suggestions(from: store.variableScopesForRequest(draft))
+    }
+
+    /// Recent URLs for the URL bar's suggestion dropdown: history entries,
+    /// newest first, deduped by URL, capped like Postman's list. The panel
+    /// filters these by the current text as the user types.
+    private var urlHistorySuggestions: [URLSuggestion] {
+        var seen = Set<String>()
+        var out: [URLSuggestion] = []
+        for entry in store.history {
+            let url = entry.urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !url.isEmpty, seen.insert(url).inserted else { continue }
+            out.append(URLSuggestion(method: entry.method, urlString: entry.urlString))
+            if out.count == 8 { break }
+        }
+        return out
     }
 
     // MARK: - URL bar <-> params two-way sync
@@ -231,6 +276,9 @@ struct RequestEditorView: View {
 
     /// The raw text currently shown in the URL bar.
     @State private var urlText = ""
+    /// Focus/hover mirrors for the Settings tab's timeout field.
+    @State private var isTimeoutFocused = false
+    @State private var isTimeoutHovered = false
 
     /// The URL bar text: the stored base URL plus the query rendered from the
     /// params table (the table is the source of truth for the query; the
@@ -840,7 +888,8 @@ struct RequestEditorView: View {
             onCommit: { urlFieldFocused = nil },
             onHoverChanged: { hover in
                 isURLBarHovered = hover
-            }
+            },
+            urlSuggestions: urlHistorySuggestions
         )
         .padding(.horizontal, AppSpacing.compact)
         .padding(.vertical, 3)
@@ -870,6 +919,19 @@ struct RequestEditorView: View {
 
     private var sectionTabs: some View {
         HStack(spacing: AppSpacing.large) {
+            // Postman order: Docs leads the request tabs; the description
+            // lives here, not in the header.
+            UnderlineTab(
+                title: RequestSection.docs.rawValue,
+                count: nil,
+                hasContent: !draft.requestDescription.isEmpty,
+                labelInset: 0,
+                isSelected: section == .docs,
+                action: {
+                    urlFieldFocused = nil
+                    section = .docs
+                }
+            )
             UnderlineTab(
                 title: RequestSection.params.rawValue,
                 count: enabledParamCount,
@@ -917,6 +979,17 @@ struct RequestEditorView: View {
                     section = .body
                 }
             )
+            UnderlineTab(
+                title: RequestSection.settings.rawValue,
+                count: nil,
+                hasContent: !draft.followRedirects || draft.timeoutSeconds > 0,
+                labelInset: 0,
+                isSelected: section == .settings,
+                action: {
+                    urlFieldFocused = nil
+                    section = .settings
+                }
+            )
             Spacer()
         }
         // The row owns the whole gutter: tabs carry no label inset, so the
@@ -941,7 +1014,8 @@ struct RequestEditorView: View {
                 valuePlaceholder: "Value",
                 // Request tables skip the header wash.
                 headerBackground: nil,
-                allowsReorder: true
+                allowsReorder: true,
+                allowsBulkEdit: true
             )
             // Fresh table state per request: the editor holds ghost-row and
             // focus state internally, which must not leak across requests.
@@ -968,14 +1042,100 @@ struct RequestEditorView: View {
                 valuePlaceholder: "Value",
                 // Request tables skip the header wash.
                 headerBackground: nil,
-                allowsReorder: true
+                allowsReorder: true,
+                allowsBulkEdit: true
             )
             .id(draft.id)
         case .auth:
             AuthEditor(request: $draft)
         case .body:
             BodyEditor(request: $draft)
+        case .docs:
+            docsPane
+        case .settings:
+            settingsPane
         }
+    }
+
+    /// Postman's Docs tab: the request description as a full-height editor
+    /// in the section content area (placeholder "Document this request...").
+    /// The text lives on the draft, so it saves with ⌘S like everything else.
+    private var docsPane: some View {
+        // Explicit specialization: no programmatic focus wiring.
+        VariableHighlightEditor<Bool>(
+            text: $draft.requestDescription,
+            variables: resolvedVariables,
+            suggestions: requestSuggestions,
+            isSingleLine: false,
+            fillsContainer: true,
+            font: .systemSubheadline,
+            placeholder: "Document this request..."
+        )
+        .padding(.horizontal, AppSpacing.medium)
+        .padding(.vertical, AppSpacing.small)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(AppColor.controlBackground)
+    }
+
+    /// Postman's per-request Settings tab: whether 3xx responses are
+    /// followed, and the idle timeout in seconds (empty = the app default).
+    /// Both ride the draft's onChange like every other edit, so they save
+    /// with ⌘S and reach `HTTPClient` on the next send.
+    private var settingsPane: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.medium) {
+            Text("Request Settings")
+                .font(AppFont.panelTitle)
+            Toggle(isOn: $draft.followRedirects) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Follow redirects")
+                        .font(AppFont.small)
+                    Text(
+                        draft.followRedirects
+                            ? "3xx responses are followed automatically."
+                            : "3xx responses are returned as-is."
+                    )
+                    .font(AppFont.emptyStateBody)
+                    .foregroundStyle(AppColor.textSecondary)
+                }
+            }
+            .toggleStyle(.checkbox)
+            HStack(spacing: AppSpacing.medium) {
+                Text("Timeout (seconds)")
+                    .font(AppFont.small)
+                    .frame(width: AppSize.authLabelColumnWidth, alignment: .leading)
+                VariableHighlightEditor<Bool>(
+                    text: timeoutBinding,
+                    isSingleLine: true,
+                    singleLineMinHeight: AppSize.controlHeight,
+                    font: .systemSubheadline,
+                    placeholder: "30"
+                )
+                .frame(width: 120)
+                .variableFieldBordered(isFocused: isTimeoutFocused, isHovered: isTimeoutHovered)
+            }
+            Text(
+                "Maximum idle time between data arrivals before the request gives up. Empty uses the app default (30s)."
+            )
+            .font(AppFont.emptyStateBody)
+            .foregroundStyle(AppColor.textSecondary)
+            Spacer(minLength: 0)
+        }
+        .padding(AppSpacing.medium)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(AppColor.controlBackground)
+    }
+
+    /// The timeout as text: empty while unset (0 = default), whole seconds
+    /// otherwise. Non-numeric input falls back to the default rather than
+    /// pinning the field on a value the model would refuse.
+    private var timeoutBinding: Binding<String> {
+        Binding(
+            get: { draft.timeoutSeconds > 0 ? String(format: "%.0f", draft.timeoutSeconds) : "" },
+            set: {
+                let parsed = Double($0.trimmingCharacters(in: .whitespaces)) ?? 0
+                draft.timeoutSeconds = max(0, parsed)
+            }
+        )
     }
 }
 

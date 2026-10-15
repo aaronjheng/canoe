@@ -351,6 +351,7 @@
 				<string>463C03345AEB1A2F4D009D5C</string>
 				<string>29D0F9950EE7A654D999EDDB</string>
 				<string>8770709A5599F706B1DFFB07</string>
+							<string>C0A5E1000000000000000D20</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -382,6 +383,28 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>C0A5E1000000000000000D10</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>DigestAuth.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>C0A5E1000000000000000D20</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>URLSuggestionPopup.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>AC64FA0CE9C3B946CA8E78B4</key>
 		<dict>
 			<key>isa</key>
@@ -401,6 +424,7 @@
 			<array>
 				<string>EBB11063F5D37FF3F33DE52D</string>
 				<string>AC64FA0CE9C3B946CA8E78B4</string>
+				<string>C0A5E1000000000000000D10</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -1344,6 +1368,20 @@
 			<key>fileRef</key>
 			<string>AC64FA0CE9C3B946CA8E78B4</string>
 		</dict>
+		<key>C0A5E2000000000000000D10</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>C0A5E1000000000000000D10</string>
+		</dict>
+		<key>C0A5E2000000000000000D20</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>C0A5E1000000000000000D20</string>
+		</dict>
 		<key>F1BDCFDFDAA772F69D6EC2DE</key>
 		<dict>
 			<key>isa</key>
@@ -2132,6 +2170,8 @@
 				<string>63975F865FB84EB13E8AB66D</string>
 				<string>93244121A13F7AE0281016E7</string>
 				<string>472E57AD11EDA8197ADCD7E5</string>
+				<string>C0A5E2000000000000000D10</string>
+				<string>C0A5E2000000000000000D20</string>
 				<string>F1BDCFDFDAA772F69D6EC2DE</string>
 				<string>F8DCA2A85AB92C26CA1D4B16</string>
 				<string>CBDEA718EADA8A9CA7A50165</string>

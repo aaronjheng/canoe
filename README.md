@@ -6,10 +6,10 @@ Native macOS API client built with Swift and SwiftUI.
 
 - **Workspaces** — separate spaces for projects, each with its own collections and environments
 - **Collections & Folders** — organize requests into named collections with nested folders
-- **Request Editor** — method, URL, query params, auth (none/basic/bearer), headers, and bodies (raw, form-data, url-encoded, binary file)
+- **Request Editor** — method, URL bar with query-param two-way sync, auth (none/basic/bearer/API key/digest, with folder→collection inheritance), headers, bodies (raw, form-data, url-encoded, binary file), Docs tab for request descriptions, bulk-edit mode for key/value tables, recent-URL suggestions, and per-request settings (follow redirects, timeout)
 - **Variables** — `{{placeholder}}` substitution across URL, params, headers, auth, and body, with workspace → collection → environment precedence; the inspector shows in-scope variables and flags unresolved ones
 - **Environments** — named variable sets with an active-environment picker
-- **Response Viewer** — status, timing, headers, and syntax-highlighted JSON body with copy/save, kept per tab with history
+- **Response Viewer** — status, duration/size/network metrics, cookies, image preview, headers, and syntax-highlighted JSON body with find-in-response and copy/save, kept per tab with history
 - **History** — per-device send history with one-click reopen
 - **Code Snippets** — export any request as HTTP, cURL, or HTTPie
 - **Tabs** — requests, environments, and variable editors in tabs with dirty tracking and save (⌘S)

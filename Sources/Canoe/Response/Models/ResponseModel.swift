@@ -60,6 +60,10 @@ struct ResponseModel: Identifiable, Sendable {
     let duration: TimeInterval
     let timestamp: Date
     let mimeType: String?
+    /// The resolved request URL (variables applied, query merged): the HTML
+    /// preview's base for relative resources, and the domain fallback when
+    /// parsing cookies from `Set-Cookie` headers.
+    let requestURL: String?
     let network: NetworkInfo?
     let size: SizeInfo?
     let timing: TimingInfo?
@@ -68,6 +72,33 @@ struct ResponseModel: Identifiable, Sendable {
 
     var bodyString: String {
         String(data: body, encoding: .utf8) ?? "<binary data, \(body.count) bytes>"
+    }
+
+    /// Whether the body is an image the Preview pane can render (via
+    /// `NSImage`, which covers the common bitmap formats plus SVG).
+    var isImageBody: Bool {
+        (mimeType ?? "").lowercased().hasPrefix("image/")
+    }
+
+    /// Cookies carried by the response's `Set-Cookie` headers (Postman's
+    /// response Cookies view). The headers arrive through
+    /// `HTTPURLResponse.allHeaderFields`, which merges repeated fields
+    /// into one comma-joined value, so the split tolerates `Expires`
+    /// dates: a comma only starts a new cookie when a `token=` pair
+    /// follows it, and date text ("Wed, 21 Oct 2015 …") never matches.
+    var cookies: [HTTPCookie] {
+        let url = requestURL.flatMap(URL.init(string:)) ?? URL(string: "https://localhost")!
+        var out: [HTTPCookie] = []
+        for header in headers where header.key.caseInsensitiveCompare("set-cookie") == .orderedSame {
+            let pieces = header.value.split(separator: /,\s*(?=[^\s,;=]+=)/, omittingEmptySubsequences: true)
+            for piece in pieces {
+                out += HTTPCookie.cookies(
+                    withResponseHeaderFields: ["Set-Cookie": String(piece)],
+                    for: url
+                )
+            }
+        }
+        return out
     }
 
     /// The body decoded for display, plus the JSON decision the viewer's

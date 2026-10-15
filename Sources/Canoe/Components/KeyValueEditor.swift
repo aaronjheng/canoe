@@ -108,6 +108,13 @@ struct KeyValueEditor<T: KVItem>: View {
     /// (Text/File) dropdown (Postman form-data) and file rows swap the value
     /// cell for a file picker. Keys off `FormField.fieldKind`.
     var kindKeyPath: WritableKeyPath<T, FormFieldKind>?
+    /// Postman-style Bulk Edit: adds the table ↔ text toggle ("Bulk Edit" /
+    /// "Key-Value Edit") that swaps the grid for a `key: value`-per-line
+    /// text editor. Enabled rows only - disabled rows survive the round
+    /// trip untouched - and deliberately not offered to tables with file
+    /// rows (the Type dropdown cannot be expressed in text, so switching
+    /// would silently convert file uploads to text).
+    var allowsBulkEdit: Bool = false
 
     /// The in-progress trailing row. Display-only until the user types into
     /// it; then it materializes into `items` and focus follows the materialized
@@ -126,6 +133,10 @@ struct KeyValueEditor<T: KVItem>: View {
     @State private var dropTargetEnd = false
     /// Active key-column sort from the header click; nil until first used.
     @State private var keySortOrder: KeySortOrder?
+    /// Bulk Edit mode: the grid is swapped for a text editor whose lines
+    /// are `key: value` pairs, synced live back into `items`.
+    @State private var isBulkMode = false
+    @State private var bulkText = ""
 
     /// Candidates shown by every cell's `{{` completion popup.
     private var rowSuggestions: [VariableSuggestion] {
@@ -184,17 +195,118 @@ struct KeyValueEditor<T: KVItem>: View {
                 .padding(.top, AppSpacing.small)
                 .padding(.bottom, AppSpacing.xSmall)
             }
-            ScrollView {
-                table
+            if isBulkMode {
+                bulkEditor
+            } else {
+                ScrollView {
+                    table
+                }
+                .padding(.horizontal, AppSpacing.medium)
+                .padding(.bottom, AppSpacing.medium)
             }
-            .padding(.horizontal, AppSpacing.medium)
-            .padding(.bottom, AppSpacing.medium)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(AppColor.controlBackground)
         .onChange(of: focusedCell) { _, newValue in
             pruneAbandonedEmptyRows(newValue)
         }
+    }
+
+    // MARK: - Bulk Edit
+
+    /// The text-mode surface: a trailing "Key-Value Edit" toggle (where the
+    /// table's toggle sits), then the same bordered chrome around a
+    /// monospaced, `{{variable}}`-aware editor. Lines sync live into
+    /// `items` while typing.
+    private var bulkEditor: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Spacer(minLength: 0)
+                LinkButton("Key-Value Edit") { isBulkMode = false }
+                    .help("Switch back to the key-value table")
+            }
+            .frame(height: AppSize.tableRowHeight)
+            .padding(.horizontal, AppSpacing.medium)
+            // Explicit specialization: the bulk editor wires no programmatic
+            // focus, so FocusValue would otherwise be uninferable.
+            VariableHighlightEditor<Bool>(
+                text: $bulkText,
+                variables: variables,
+                suggestions: rowSuggestions,
+                isSingleLine: false,
+                fillsContainer: true,
+                font: .monoBody,
+                placeholder: "key: value\nheader: value"
+            )
+            .background(AppColor.codeBackground)
+            .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                    .strokeBorder(AppColor.tableBorder, lineWidth: AppLine.field)
+            )
+            .padding(.horizontal, AppSpacing.medium)
+            .padding(.bottom, AppSpacing.medium)
+        }
+        .onChange(of: bulkText) { _, newValue in
+            applyBulkText(newValue)
+        }
+    }
+
+    /// Enters Bulk Edit: the text starts from the enabled rows (disabled
+    /// rows are invisible there and survive untouched); table focus state
+    /// is reset so nothing leaks across the mode switch.
+    private func enterBulkMode() {
+        bulkText =
+            items
+            .filter { $0.isEnabled }
+            .filter { !$0.key.isEmpty || !$0.value.isEmpty }
+            .map { "\($0.key): \($0.value)" }
+            .joined(separator: "\n")
+        ghost = nil
+        focusedCell = nil
+        isBulkMode = true
+    }
+
+    /// One `key: value` per line: the first colon splits (values may
+    /// contain colons), a colon-less line becomes a bare key. Enabled
+    /// rows are rebuilt in text order; disabled rows keep their position
+    /// at the end, in their original order, so toggling in the table and
+    /// editing in text never destroy each other.
+    ///
+    /// Existing enabled rows are reused by `(key, value)` so steady-state
+    /// typing does not churn row identity (SwiftUI row diffing, drag
+    /// state) — a line only materializes a fresh row when no enabled row
+    /// with the same pair exists anymore.
+    private func applyBulkText(_ text: String) {
+        var parsed: [T] = []
+        parsed.reserveCapacity(text.count / 8 + 1)
+        // Reuse pool: the enabled rows currently in the model, in order.
+        var reusable = items.filter(\.isEnabled)
+        for line in text.components(separatedBy: "\n") {
+            let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmedLine.isEmpty else { continue }
+            let key: String
+            let value: String
+            if let colon = line.firstIndex(of: ":") {
+                key = String(line[..<colon]).trimmingCharacters(in: .whitespaces)
+                value = String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+            } else {
+                key = trimmedLine
+                value = ""
+            }
+            let row: T
+            if let index = reusable.firstIndex(where: { $0.key == key && $0.value == value }) {
+                row = reusable.remove(at: index)
+            } else {
+                var fresh = makeNew()
+                fresh.key = key
+                fresh.value = value
+                fresh.isEnabled = true
+                row = fresh
+            }
+            parsed.append(row)
+        }
+        items = parsed + items.filter { !$0.isEnabled }
     }
 
     // MARK: - Table
@@ -325,6 +437,11 @@ struct KeyValueEditor<T: KVItem>: View {
             headerLabel(valueHeader)
             if showsIconColumns {
                 Color.clear.frame(width: trailingColumnWidth)
+            }
+            if allowsBulkEdit {
+                LinkButton("Bulk Edit") { enterBulkMode() }
+                    .padding(.trailing, AppSpacing.small)
+                    .help("Edit as key-value text lines (Postman Bulk Edit)")
             }
         }
         .frame(height: AppSize.tableRowHeight)

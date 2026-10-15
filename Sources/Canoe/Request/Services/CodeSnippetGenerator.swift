@@ -32,6 +32,12 @@ enum CodeSnippetGenerator {
         /// form encoding, ...).
         var headers: [(key: String, value: String)]
         let body: Body
+        /// Digest credentials (Postman exports digest auth as the tool's
+        /// built-in digest flag - curl `--digest --user`, HTTPie
+        /// `--auth-type digest --auth`); nil for every other helper. The
+        /// raw HTTP format omits it: the header only exists after the
+        /// server's 401 challenge.
+        let digestCredentials: (username: String, password: String)?
 
         enum Body {
             case none
@@ -108,6 +114,18 @@ enum CodeSnippetGenerator {
 
         let enabledParams = request.params.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
+        // API Key helper in query mode: the pair joins the enabled params in
+        // both composition modes (computed early because the URL is built
+        // before the auth-helper section runs).
+        var apiKeyQueryPair: (key: String, value: String)?
+        if authorization.type == .apiKey, authorization.apiKeyLocation == .query {
+            let key = resolve(authorization.apiKey).trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = resolve(authorization.apiKeyValue)
+            if !key.isEmpty, !value.isEmpty {
+                apiKeyQueryPair = (key, value)
+            }
+        }
+
         var url: String
         var pathWithQuery: String
         let hostHeader: String
@@ -138,6 +156,9 @@ enum CodeSnippetGenerator {
                 }
                 components.queryItems = queryItems
             }
+            if let pair = apiKeyQueryPair {
+                components.queryItems = (components.queryItems ?? []) + [URLQueryItem(name: pair.key, value: pair.value)]
+            }
             guard let composed = components.url else { return nil }
             url = composed.absoluteString
             pathWithQuery = composed.path.isEmpty ? "/" : composed.path
@@ -160,11 +181,17 @@ enum CodeSnippetGenerator {
             hostHeader = String(authorityAndRest[..<authorityEnd])
             pathWithQuery = String(authorityAndRest[authorityEnd...])
             url = withScheme
-            let queryString = enabledParams.compactMap { param -> String? in
+            let baseQuery = enabledParams.compactMap { param -> String? in
                 let name = resolve(param.key)
                 guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
                 return "\(name)=\(resolve(param.value))"
             }.joined(separator: "&")
+            let queryString: String
+            if let pair = apiKeyQueryPair {
+                queryString = baseQuery.isEmpty ? "\(pair.key)=\(pair.value)" : "\(baseQuery)&\(pair.key)=\(pair.value)"
+            } else {
+                queryString = baseQuery
+            }
             if !queryString.isEmpty {
                 let separator = pathWithQuery.contains("?") ? "&" : "?"
                 url += "\(separator)\(queryString)"
@@ -194,6 +221,7 @@ enum CodeSnippetGenerator {
 
         // Authorization helper, same precedence as HTTPClient (manual header
         // wins).
+        var digestCredentials: (username: String, password: String)?
         if !hasAuthorization {
             switch authorization.type {
             case .none, .inherit:
@@ -211,6 +239,29 @@ enum CodeSnippetGenerator {
                 let token = resolve(authorization.token)
                 if !token.isEmpty {
                     headers.append((key: "Authorization", value: "Bearer \(token)"))
+                }
+            case .apiKey:
+                let key = resolve(authorization.apiKey).trimmingCharacters(in: .whitespacesAndNewlines)
+                let value = resolve(authorization.apiKeyValue)
+                if !key.isEmpty, !value.isEmpty {
+                    switch authorization.apiKeyLocation {
+                    case .header:
+                        // Same precedence as the client: a user header row
+                        // with the same name wins.
+                        if !headers.contains(where: { $0.key.lowercased() == key.lowercased() }) {
+                            headers.append((key: key, value: value))
+                        }
+                    case .query:
+                        // Already joined into the URL during composition
+                        // (see `apiKeyQueryPair`).
+                        break
+                    }
+                }
+            case .digest:
+                let username = resolve(authorization.username)
+                let password = resolve(authorization.password)
+                if !username.isEmpty || !password.isEmpty {
+                    digestCredentials = (username, password)
                 }
             }
         }
@@ -288,7 +339,8 @@ enum CodeSnippetGenerator {
             host: hostHeader,
             pathWithQuery: pathWithQuery,
             headers: headers,
-            body: body
+            body: body,
+            digestCredentials: digestCredentials
         )
     }
 
@@ -359,6 +411,10 @@ enum CodeSnippetGenerator {
         var lines: [String] = []
         let methodPart = prepared.method == "GET" ? "" : "-X \(prepared.method) "
         lines.append("curl \(methodPart)\(shellSingleQuoted(prepared.url))")
+        if let digest = prepared.digestCredentials {
+            lines.append("  --digest")
+            lines.append("  --user \(shellSingleQuoted("\(digest.username):\(digest.password)"))")
+        }
         for header in prepared.headers {
             lines.append("  -H \(shellSingleQuoted("\(header.key): \(header.value)"))")
         }
@@ -387,6 +443,10 @@ enum CodeSnippetGenerator {
     private static func httpie(_ prepared: Prepared) -> String {
         var lines: [String] = []
         var flags: [String] = []
+        if let digest = prepared.digestCredentials {
+            flags.append("--auth-type digest")
+            flags.append("--auth \(shellSingleQuoted("\(digest.username):\(digest.password)"))")
+        }
         switch prepared.body {
         case .raw(let content):
             flags.append("--raw \(shellSingleQuoted(content))")

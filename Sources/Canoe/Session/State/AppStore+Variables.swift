@@ -105,10 +105,12 @@ extension AppStore {
         // helper are ignored.
         let effectiveAuth = authorizationForRequest(request)
         switch effectiveAuth.type {
-        case .basic:
+        case .basic, .digest:
             sources += [effectiveAuth.username, effectiveAuth.password]
         case .bearer:
             sources.append(effectiveAuth.token)
+        case .apiKey:
+            sources += [effectiveAuth.apiKey, effectiveAuth.apiKeyValue]
         case .none, .inherit:
             break
         }

@@ -80,9 +80,14 @@ enum HTTPClient {
 
         private let state = Mutex(State())
         private let taskID: Int
+        /// Per-send redirect policy (Postman's request-level setting): the
+        /// redirect callback reads this instead of a session-wide flag, so
+        /// concurrent sends with different settings never interfere.
+        fileprivate let followsRedirects: Bool
         private let unregister: @Sendable (Int) -> Void
 
-        init(taskID: Int, unregister: @escaping @Sendable (Int) -> Void) {
+        init(taskID: Int, followsRedirects: Bool, unregister: @escaping @Sendable (Int) -> Void) {
+            self.followsRedirects = followsRedirects
             self.taskID = taskID
             self.unregister = unregister
         }
@@ -282,8 +287,8 @@ enum HTTPClient {
     private final class RedirectPolicy: NSObject, URLSessionTaskDelegate, URLSessionDataDelegate {
         private let telemetryByID = Mutex<[Int: RequestTelemetry]>([:])
 
-        func makeTelemetry(taskID: Int) -> RequestTelemetry {
-            RequestTelemetry(taskID: taskID) { [weak self] id in
+        func makeTelemetry(taskID: Int, followsRedirects: Bool) -> RequestTelemetry {
+            RequestTelemetry(taskID: taskID, followsRedirects: followsRedirects) { [weak self] id in
                 self?.telemetryByID.withLock { $0[id] = nil }
             }
         }
@@ -313,6 +318,12 @@ enum HTTPClient {
             let downgraded = from?.scheme?.lowercased() == "https" && to?.scheme?.lowercased() == "http"
             if crossHost || downgraded {
                 redirected.setValue(nil, forHTTPHeaderField: "Authorization")
+            }
+            // Per-request "Follow Redirects" off: pass nil so URLSession
+            // returns the 3xx response itself, body included.
+            if telemetry(for: task)?.followsRedirects == false {
+                completionHandler(nil)
+                return
             }
             completionHandler(redirected)
         }
@@ -477,6 +488,12 @@ enum HTTPClient {
 
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = request.method
+        // Per-request idle timeout (Postman's request Settings; 0 = app
+        // default). This bounds the gap between data arrivals; the whole
+        // exchange stays under the session's resource timeout.
+        if request.timeoutSeconds > 0 {
+            urlRequest.timeoutInterval = request.timeoutSeconds
+        }
         // Generated headers the user unchecked in the Headers table
         // (lowercased names, matching the table's item ids). Only the
         // headers Canoe sets itself can actually be withheld - User-Agent
@@ -542,6 +559,31 @@ enum HTTPClient {
                 if !token.isEmpty {
                     urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
                 }
+            case .apiKey:
+                let key = VariableResolver.resolve(authorization.apiKey, variables: variables)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let value = VariableResolver.resolve(authorization.apiKeyValue, variables: variables)
+                guard !key.isEmpty, !value.isEmpty else { break }
+                switch authorization.apiKeyLocation {
+                case .header:
+                    // A user header row with the same name wins, matching
+                    // the helper-vs-manual rule every other helper follows.
+                    if userHeaderValues[key.lowercased()] == nil {
+                        urlRequest.setValue(value, forHTTPHeaderField: key)
+                    }
+                case .query:
+                    // Appended after the params-table query, duplicates
+                    // included - Postman lets both through.
+                    var comps = components
+                    comps.queryItems = (components.queryItems ?? []) + [URLQueryItem(name: key, value: value)]
+                    if let newURL = comps.url {
+                        urlRequest.url = newURL
+                    }
+                }
+            case .digest:
+                // Nothing up front: the challenge arrives with the 401, and
+                // the response is computed and replayed below.
+                break
             }
         }
 
@@ -560,7 +602,34 @@ enum HTTPClient {
         onRequest?(urlRequest)
 
         let start = Date()
-        let outcome = try await dataWithTelemetry(for: urlRequest)
+        var outcome = try await dataWithTelemetry(for: urlRequest, followsRedirects: request.followRedirects)
+
+        // Digest handshake (RFC 2617/7616): the first send carries no
+        // credentials on purpose; a 401 with a Digest challenge is answered
+        // by recomputing the request with the response header and resending
+        // once. The first attempt is discarded - the caller sees the
+        // authenticated exchange (and its total duration).
+        let wwwAuthenticate =
+            authorization.type == .digest && !hasAuthorization && outcome.response.statusCode == 401
+            ? outcome.response.value(forHTTPHeaderField: "WWW-Authenticate")
+            : nil
+        if let challengeHeader = wwwAuthenticate, let challenge = DigestAuth.findChallenge(in: challengeHeader) {
+            let username = VariableResolver.resolve(authorization.username, variables: variables)
+            let password = VariableResolver.resolve(authorization.password, variables: variables)
+            let header = DigestAuth.responseHeader(
+                challenge: challenge,
+                method: request.method,
+                url: url,
+                username: username,
+                password: password)
+            if let header {
+                urlRequest.setValue(header, forHTTPHeaderField: "Authorization")
+                // The console logs the request that produced the response:
+                // the resent one carries the Digest header.
+                onRequest?(urlRequest)
+                outcome = try await dataWithTelemetry(for: urlRequest, followsRedirects: request.followRedirects)
+            }
+        }
         let duration = Date().timeIntervalSince(start)
 
         // `allHeaderFields` is a dictionary: iterate sorted so the stored
@@ -584,6 +653,7 @@ enum HTTPClient {
             duration: duration,
             timestamp: Date(),
             mimeType: outcome.response.mimeType,
+            requestURL: url.absoluteString,
             network: Self.makeNetworkInfo(
                 metrics: outcome.metrics,
                 certificate: outcome.certificate
@@ -609,7 +679,8 @@ enum HTTPClient {
     /// the upload/download kept running to completion server-side and the
     /// socket stayed open until the resource timeout.
     private static func dataWithTelemetry(
-        for urlRequest: URLRequest
+        for urlRequest: URLRequest,
+        followsRedirects: Bool
     ) async throws -> Outcome {
         let box = DataTaskBox()
         let outcome = try await withTaskCancellationHandler {
@@ -620,7 +691,8 @@ enum HTTPClient {
                 // Before `resume`, and before the handler can see it: a
                 // cancellation that already arrived cancels it right here.
                 box.attach(task)
-                let telemetry = redirectPolicy.makeTelemetry(taskID: task.taskIdentifier)
+                let telemetry = redirectPolicy.makeTelemetry(
+                    taskID: task.taskIdentifier, followsRedirects: followsRedirects)
                 redirectPolicy.register(telemetry, taskID: task.taskIdentifier)
                 telemetry.attach(continuation)
                 task.resume()

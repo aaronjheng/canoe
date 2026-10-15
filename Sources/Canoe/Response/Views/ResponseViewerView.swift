@@ -69,12 +69,14 @@ struct ResponseViewerView: View {
     enum BodyMode: String, CaseIterable, Identifiable {
         case pretty = "Pretty"
         case raw = "Raw"
+        case preview = "Preview"
         var id: String { rawValue }
     }
 
     enum ResponseSection: String, CaseIterable, Identifiable {
         case headers = "Headers"
         case body = "Body"
+        case cookies = "Cookies"
         var id: String { rawValue }
     }
 
@@ -196,24 +198,38 @@ struct ResponseViewerView: View {
         // response or a mode switch) computes synchronously so the first
         // paint is correct, and the task below publishes it for later
         // frames. State is only written from the task, never during view
-        // evaluation.
+        // evaluation. Preview mode renders in a web view / image view and
+        // needs no text, so it skips the decode entirely.
         let key = "\(response.id)-\(bodyMode)"
-        let display: BodyDisplay = key == bodyRenderKey ? bodyRenderDisplay : bodyDisplay(response)
-        let rendered: Text = key == bodyRenderKey ? bodyRenderText : renderedText(for: display)
-        let renderedAttributed =
+        let isPreview = bodyMode == .preview
+        let display: BodyDisplay =
+            key == bodyRenderKey
+            ? bodyRenderDisplay
+            : (isPreview ? BodyDisplay(text: "", totalCount: nil, isJSON: false) : bodyDisplay(response))
+        let rendered: Text =
+            key == bodyRenderKey
+            ? bodyRenderText
+            : (isPreview ? Text("") : renderedText(for: display))
+        let renderedAttributed: AttributedString =
             key == bodyRenderKey
             ? bodyRenderAttributed
-            : (display.isJSON ? SyntaxHighlight.attributedText(display.text) : AttributedString(display.text))
+            : (isPreview
+                ? AttributedString("")
+                : (display.isJSON ? SyntaxHighlight.attributedText(display.text) : AttributedString(display.text)))
         return VStack(spacing: 0) {
             sectionBar(response)
             // Same gutter as the request editor's tab bar (labels, underline,
             // divider, content all on one column).
             Divider()
                 .padding(.horizontal, AppSpacing.medium)
-            if responseSection == .body {
-                bodyContent(response, display, rendered: rendered, renderedAttributed: renderedAttributed)
-            } else {
+            if responseSection == .headers {
                 headersPane(response)
+            } else if responseSection == .cookies {
+                cookiesPane(response)
+            } else if isPreview {
+                previewContent(response)
+            } else {
+                bodyContent(response, display, rendered: rendered, renderedAttributed: renderedAttributed)
             }
         }
         .task(id: key) {
@@ -326,6 +342,13 @@ struct ResponseViewerView: View {
                 labelInset: 0,
                 isSelected: responseSection == .body,
                 action: { responseSection = .body }
+            )
+            UnderlineTab(
+                title: ResponseSection.cookies.rawValue,
+                count: response.cookies.isEmpty ? nil : response.cookies.count,
+                labelInset: 0,
+                isSelected: responseSection == .cookies,
+                action: { responseSection = .cookies }
             )
             Spacer()
             HStack(spacing: AppSpacing.small) {
@@ -687,25 +710,29 @@ struct ResponseViewerView: View {
             .fixedSize()
             Spacer()
             HStack(spacing: AppSpacing.small) {
-                // `text.wordwrap` does not exist in this OS's SF Symbols set
-                // (the button renders an empty glyph); `arrow.turn.down.left`
-                // is the wrap-arrow editors use.
-                Button("Toggle Word Wrap", systemImage: "arrow.turn.down.left") {
-                    wordWrap.toggle()
+                // Word wrap and find are text-mode tools: hidden in Preview
+                // (the web view wraps its own content and has its own find).
+                if bodyMode != .preview {
+                    // `text.wordwrap` does not exist in this OS's SF Symbols set
+                    // (the button renders an empty glyph); `arrow.turn.down.left`
+                    // is the wrap-arrow editors use.
+                    Button("Toggle Word Wrap", systemImage: "arrow.turn.down.left") {
+                        wordWrap.toggle()
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(IconButtonStyle())
+                    .foregroundStyle(wordWrap ? AppColor.accent : AppColor.textSecondary)
+                    .help(wordWrap ? "Disable word wrap" : "Enable word wrap")
+                    Button("Find in Response", systemImage: "magnifyingglass") {
+                        findVisible = true
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(IconButtonStyle())
+                    .foregroundStyle(findVisible ? AppColor.accent : AppColor.textSecondary)
+                    .help("Find in Response (⌘F)")
                 }
-                .labelStyle(.iconOnly)
-                .buttonStyle(IconButtonStyle())
-                .foregroundStyle(wordWrap ? AppColor.accent : AppColor.textSecondary)
-                .help(wordWrap ? "Disable word wrap" : "Enable word wrap")
-                Button("Find in Response", systemImage: "magnifyingglass") {
-                    findVisible = true
-                }
-                .labelStyle(.iconOnly)
-                .buttonStyle(IconButtonStyle())
-                .foregroundStyle(findVisible ? AppColor.accent : AppColor.textSecondary)
-                .help("Find in Response (⌘F)")
                 Button("Copy Body", systemImage: didCopyBody ? "checkmark" : "doc.on.doc") {
-                    copyBody(fullBodyText(response, display: display))
+                    copyBody(bodyMode == .preview ? response.bodyString : fullBodyText(response, display: display))
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(IconButtonStyle())
@@ -962,6 +989,190 @@ struct ResponseViewerView: View {
             totalCount: decoded.text.count,
             isJSON: decoded.isJSON
         )
+    }
+
+    // MARK: - Preview (HTML / image)
+
+    /// Bodies above this skip the image render: a preview is a rendering
+    /// convenience, not a reason to decode a 50 MB bitmap into memory.
+    private static let maxPreviewBodyBytes = 4 * 1024 * 1024
+
+    /// Postman-style Preview, image-only by design: responses typed as
+    /// images render through `NSImage` (pure native); HTML and everything
+    /// else point back to Pretty/Raw instead of hosting a web view.
+    @ViewBuilder
+    private func previewContent(_ response: ResponseModel) -> some View {
+        if response.body.isEmpty {
+            ContentUnavailableView(
+                "Empty Response Body",
+                systemImage: "doc.text",
+                description: Text("This response did not return any body content.")
+            )
+        } else if response.bodyTruncated {
+            ContentUnavailableView(
+                "Preview Unavailable",
+                systemImage: "eye.slash",
+                description: Text(
+                    "The body was truncated at \(Int64(HTTPClient.maxResponseBytes).formattedByteCount);"
+                        + " preview needs the complete content."
+                )
+            )
+        } else if response.body.count > Self.maxPreviewBodyBytes {
+            ContentUnavailableView(
+                "Preview Unavailable",
+                systemImage: "eye.slash",
+                description: Text(
+                    "The body is larger than \(Int64(Self.maxPreviewBodyBytes).formattedByteCount); use Raw to inspect it."
+                )
+            )
+        } else if response.isImageBody, let image = NSImage(data: response.body) {
+            ScrollView([.horizontal, .vertical]) {
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .frame(minWidth: 100, maxWidth: .infinity, minHeight: 100, maxHeight: .infinity)
+                    .padding(AppSpacing.medium)
+            }
+            .background(AppColor.codeBackground)
+        } else if response.isImageBody {
+            // Image-typed but undecodable (corrupt bytes).
+            ContentUnavailableView(
+                "Preview Unavailable",
+                systemImage: "eye.slash",
+                description: Text("The image data could not be decoded; use Raw to inspect it.")
+            )
+        } else {
+            ContentUnavailableView(
+                "Preview Unavailable",
+                systemImage: "eye.slash",
+                description: Text(
+                    "Canoe previews image responses. This body is \(response.mimeType ?? "of unknown type"); use Pretty or Raw."
+                )
+            )
+        }
+    }
+
+    // MARK: - Cookies
+
+    /// Postman-style response Cookies view: every cookie the response set,
+    /// one row per cookie with its attributes. Read-only - Canoe keeps the
+    /// cookie jar empty on purpose (responses are inspected, not a browser
+    /// session), so these describe what the server asked for.
+    @ViewBuilder
+    private func cookiesPane(_ response: ResponseModel) -> some View {
+        let cookies = response.cookies
+        if cookies.isEmpty {
+            ContentUnavailableView(
+                "No Cookies",
+                systemImage: "cookie",
+                description: Text("This response did not set any cookies.")
+            )
+        } else {
+            VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    cookieColumnHeader("Name", width: 160)
+                    cookieColumnHeader("Value", width: nil)
+                    cookieColumnHeader("Domain", width: 140)
+                    cookieColumnHeader("Path", width: 110)
+                    cookieColumnHeader("Expires", width: 150)
+                    cookieColumnHeader("Flags", width: 120)
+                }
+                .frame(height: AppSize.tableRowHeight)
+                .background(AppColor.tableHeaderBackground)
+                Rectangle()
+                    .fill(AppColor.tableBorder)
+                    .frame(height: AppLine.hairline)
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(Array(cookies.enumerated()), id: \.offset) { index, cookie in
+                            cookieRow(cookie)
+                            if index < cookies.count - 1 {
+                                Rectangle()
+                                    .fill(AppColor.tableBorder)
+                                    .frame(height: AppLine.hairline)
+                            }
+                        }
+                    }
+                }
+            }
+            .contextMenu {
+                Button("Copy All as Text") {
+                    copyToPasteboard(cookies.map { self.cookieText($0) }.joined(separator: "\n"))
+                }
+            }
+        }
+    }
+
+    private func cookieColumnHeader(_ text: String, width: CGFloat?) -> some View {
+        cookieTextColumn(text: text, mono: false, width: width)
+            .font(AppFont.columnHeader)
+            .foregroundStyle(AppColor.textSecondary)
+    }
+
+    /// One fixed-width (or flexible, `width` = nil) text cell of the
+    /// cookies table.
+    private func cookieTextColumn(text: String, mono: Bool, width: CGFloat?) -> some View {
+        Group {
+            if let width {
+                Text(text).frame(width: width, alignment: .leading)
+            } else {
+                Text(text).frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .font(mono ? AppFont.monoSubheadline : AppFont.small)
+        .lineLimit(1)
+        .truncationMode(.middle)
+        .textSelection(.enabled)
+        .padding(.horizontal, AppSpacing.small)
+    }
+
+    private func cookieRow(_ cookie: HTTPCookie) -> some View {
+        HStack(spacing: 0) {
+            cookieTextColumn(text: cookie.name, mono: true, width: 160)
+            cookieTextColumn(text: cookie.value, mono: true, width: nil)
+            cookieTextColumn(text: cookie.domain, mono: false, width: 140)
+            cookieTextColumn(text: cookie.path, mono: false, width: 110)
+            cookieTextColumn(
+                text: cookie.expiresDate.map { formatter.string(from: $0) } ?? "Session",
+                mono: false,
+                width: 150
+            )
+            HStack(spacing: AppSpacing.xxSmall) {
+                cookieFlag("Secure", isOn: cookie.isSecure)
+                cookieFlag("HttpOnly", isOn: cookie.isHTTPOnly)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, AppSpacing.small)
+            .frame(width: 120, alignment: .leading)
+        }
+        .frame(height: AppSize.tableRowHeight)
+        .help(cookieText(cookie))
+    }
+
+    private func cookieFlag(_ label: String, isOn: Bool) -> some View {
+        Text(label)
+            .font(AppFont.small)
+            .foregroundStyle(isOn ? AppColor.textSecondary : AppColor.tertiaryText)
+            .opacity(isOn ? 1 : 0.5)
+    }
+
+    /// The Netscape-ish text form used by the copy action and the row help.
+    private func cookieText(_ cookie: HTTPCookie) -> String {
+        var parts = ["\(cookie.name)=\(cookie.value)", "Domain=\(cookie.domain)", "Path=\(cookie.path)"]
+        if let expires = cookie.expiresDate {
+            parts.append("Expires=\(formatter.string(from: expires))")
+        }
+        if cookie.isSecure { parts.append("Secure") }
+        if cookie.isHTTPOnly { parts.append("HttpOnly") }
+        return parts.joined(separator: "; ")
+    }
+
+    private var formatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .medium
+        return formatter
     }
 
     // MARK: - Headers

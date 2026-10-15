@@ -115,7 +115,8 @@ struct BodyEditor: View {
                 keyPlaceholder: "Key",
                 valuePlaceholder: "Value",
                 // Request tables skip the header wash.
-                headerBackground: nil
+                headerBackground: nil,
+                allowsBulkEdit: true
             )
             .id(request.id)
         case .raw:

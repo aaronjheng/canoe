@@ -127,6 +127,11 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
     /// takeover continues at the offset the user had placed there instead of
     /// the fresh text view's default.
     var incomingCaretLocation: Int?
+    /// URL-bar only: recent-URL history suggestions. Non-empty enables the
+    /// focus-opened dropdown (arrow keys navigate, Return fills, Esc
+    /// dismisses); accepting replaces the whole field text. See
+    /// `URLSuggestionController`.
+    var urlSuggestions: [URLSuggestion] = []
 
     /// Cap of the auto-grow editor height before it scrolls internally.
     /// Computed: static stored properties are unsupported on generic types.
@@ -156,7 +161,8 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         onHoverChanged: ((Bool) -> Void)? = nil,
         syntax: BodySyntax = .plain,
         onCaretChange: ((Int) -> Void)? = nil,
-        incomingCaretLocation: Int? = nil
+        incomingCaretLocation: Int? = nil,
+        urlSuggestions: [URLSuggestion] = []
     ) {
         self._text = text
         self.variables = variables
@@ -179,6 +185,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         self.syntax = syntax
         self.onCaretChange = onCaretChange
         self.incomingCaretLocation = incomingCaretLocation
+        self.urlSuggestions = urlSuggestions
     }
 
     var body: some View {
@@ -220,7 +227,8 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
                         // it applies; ordering is preserved (FIFO).
                         DispatchQueue.main.async { urlContentHeight = newHeight }
                     },
-                    onHoverChanged: onHoverChanged
+                    onHoverChanged: onHoverChanged,
+                    urlSuggestions: urlSuggestions
                 )
                 .frame(
                     height: focus?.wrappedValue == focusValue
@@ -672,6 +680,8 @@ private struct WrappingURLField<FocusValue: Hashable>: NSViewRepresentable {
     /// Hover reports from the field's scroll view (see
     /// `LayoutObservingScrollView.onHoverChanged`).
     let onHoverChanged: ((Bool) -> Void)?
+    /// Recent-URL history for the focus-opened suggestion panel.
+    let urlSuggestions: [URLSuggestion]
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -680,10 +690,16 @@ private struct WrappingURLField<FocusValue: Hashable>: NSViewRepresentable {
     func makeNSView(context: Context) -> NSScrollView {
         let coordinator = context.coordinator
         coordinator.completion.setCandidates(suggestions)
+        coordinator.urlCompletion.setCandidates(urlSuggestions)
         coordinator.lastVariables = variables
 
         let textView = FocusObservingTextView()
-        textView.onDidBecomeFirstResponder = { [weak coordinator] in coordinator?.claimFocus() }
+        textView.onDidBecomeFirstResponder = { [weak coordinator, weak textView] in
+            coordinator?.claimFocus()
+            if let textView {
+                coordinator?.urlCompletion.open(for: textView)
+            }
+        }
         textView.onDidResignFirstResponder = { [weak coordinator] in coordinator?.didResignFocus() }
         textView.focusRingType = .none
         textView.isRichText = false
@@ -756,6 +772,7 @@ private struct WrappingURLField<FocusValue: Hashable>: NSViewRepresentable {
         let coordinator = context.coordinator
         coordinator.parent = self
         coordinator.completion.setCandidates(suggestions)
+        coordinator.urlCompletion.setCandidates(urlSuggestions)
         guard let textView = scrollView.documentView as? NSTextView else { return }
 
         if textView.string != text {
@@ -885,6 +902,7 @@ private struct WrappingURLField<FocusValue: Hashable>: NSViewRepresentable {
     static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
         coordinator.stopMouseDownWatch()
         coordinator.completion.hide()
+        coordinator.urlCompletion.hide()
     }
 
     @MainActor
@@ -892,6 +910,11 @@ private struct WrappingURLField<FocusValue: Hashable>: NSViewRepresentable {
         fileprivate var parent: WrappingURLField
         fileprivate var lastVariables: [String: String] = [:]
         fileprivate let completion = VariableCompletionController()
+        /// Recent-URL history dropdown (open on focus, Return fills).
+        fileprivate let urlCompletion = URLSuggestionController()
+        /// Set by the panel's fill so the text change its insertion fires
+        /// does not immediately re-filter and re-open the panel.
+        private var suppressURLRefilter = false
         private var lastReportedHeight: CGFloat = 0
         private weak var watchedScrollView: NSScrollView?
         private var mouseDownMonitor: Any?
@@ -931,6 +954,7 @@ private struct WrappingURLField<FocusValue: Hashable>: NSViewRepresentable {
             else { return }
             // A suggestion pick: the panel never takes focus, editing goes on.
             if let popup = completion.popupWindow, event.window === popup { return }
+            if let popup = urlCompletion.popupWindow, event.window === popup { return }
             if event.window === scrollView.window {
                 let location = scrollView.convert(event.locationInWindow, from: nil)
                 // Inside the (possibly expanded) visible bar: just caret moves.
@@ -976,9 +1000,10 @@ private struct WrappingURLField<FocusValue: Hashable>: NSViewRepresentable {
         }
 
         /// Real keyboard focus left (click-away or programmatic resign):
-        /// hide the popup, collapse, and drop the claim.
+        /// hide the popups, collapse, and drop the claim.
         fileprivate func didResignFocus() {
             completion.hide()
+            urlCompletion.hide()
             clearFocusClaim()
         }
 
@@ -1001,7 +1026,17 @@ private struct WrappingURLField<FocusValue: Hashable>: NSViewRepresentable {
             }
             parent.text = value
             restyle(textView)
-            completion.textChanged(textView)
+            // The two suggestion panels are mutually exclusive: typing `{{`
+            // opens the variable completion, which takes over the arrow
+            // keys - the URL history panel stands down until the next
+            // plain-text edit.
+            if completion.isVisible {
+                urlCompletion.hide()
+            } else if suppressURLRefilter {
+                suppressURLRefilter = false
+            } else {
+                urlCompletion.textChanged(textView)
+            }
             reportContentHeight(textView)
         }
 
@@ -1012,6 +1047,13 @@ private struct WrappingURLField<FocusValue: Hashable>: NSViewRepresentable {
 
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             if completion.handleCommand(commandSelector) { return true }
+            if urlCompletion.handleCommand(commandSelector) {
+                if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                    // The fill's text change must not re-open the panel.
+                    suppressURLRefilter = true
+                }
+                return true
+            }
             if commandSelector == #selector(NSResponder.insertNewline(_:)), let onCommit = parent.onCommit {
                 onCommit()
                 return true

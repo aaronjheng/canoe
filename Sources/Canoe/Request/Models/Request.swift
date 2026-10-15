@@ -28,6 +28,22 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
     var authUsername: String = ""
     var authPassword: String = ""
     var authToken: String = ""
+    /// API Key helper fields (Postman's key/value + "Add param to").
+    /// `authApiKeyIn` is a raw `ApiKeyLocation` string like every other
+    /// enum-backed field here.
+    var authApiKey: String = ""
+    var authApiValue: String = ""
+    var authApiKeyIn: String = ApiKeyLocation.header.rawValue
+    /// Free-form request documentation (Postman's description), shown
+    /// under the name bar and saved with ⌘S like the rest of the request.
+    var requestDescription: String = ""
+    /// Per-request send settings (Postman's request-level Settings tab):
+    /// whether 3xx responses are followed, and the idle timeout in seconds
+    /// (0 = the app default of 30). URLSession's request-object
+    /// `timeoutInterval` covers the idle gap; the resource timeout stays
+    /// the session's 120 s.
+    var followRedirects: Bool = true
+    var timeoutSeconds: Double = 0
     var orderIndex: Int = 0
     var folderID: UUID?
     var createdAt: Date = Date()
@@ -60,6 +76,9 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
         case id, name, type, method, urlString, bodyText, bodyContentType, bodyType, bodyRawKind
         case formFields, urlEncodedFields, binaryFilePath
         case authType, authUsername, authPassword, authToken
+        case authApiKey, authApiValue, authApiKeyIn
+        case requestDescription
+        case followRedirects, timeoutSeconds
         case orderIndex, folderID, createdAt, updatedAt, headers, params
         case disabledGeneratedHeaders
     }
@@ -85,6 +104,14 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
         authUsername = try container.decodeIfPresent(String.self, forKey: .authUsername) ?? ""
         authPassword = try container.decodeIfPresent(String.self, forKey: .authPassword) ?? ""
         authToken = try container.decodeIfPresent(String.self, forKey: .authToken) ?? ""
+        authApiKey = try container.decodeIfPresent(String.self, forKey: .authApiKey) ?? ""
+        authApiValue = try container.decodeIfPresent(String.self, forKey: .authApiValue) ?? ""
+        authApiKeyIn =
+            try container.decodeIfPresent(String.self, forKey: .authApiKeyIn)
+            ?? ApiKeyLocation.header.rawValue
+        requestDescription = try container.decodeIfPresent(String.self, forKey: .requestDescription) ?? ""
+        followRedirects = try container.decodeIfPresent(Bool.self, forKey: .followRedirects) ?? true
+        timeoutSeconds = try container.decodeIfPresent(Double.self, forKey: .timeoutSeconds) ?? 0
         orderIndex = try container.decodeIfPresent(Int.self, forKey: .orderIndex) ?? 0
         folderID = try container.decodeIfPresent(UUID.self, forKey: .folderID)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
@@ -120,6 +147,11 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
         set { authType = newValue.rawValue }
     }
 
+    var authApiKeyLocation: ApiKeyLocation {
+        get { ApiKeyLocation(rawValue: authApiKeyIn) ?? .header }
+        set { authApiKeyIn = newValue.rawValue }
+    }
+
     /// Compares everything except `updatedAt`, so the store can skip writes
     /// when the user did not actually change anything.
     func isContentEqual(to other: Request) -> Bool {
@@ -139,6 +171,12 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
             && authUsername == other.authUsername
             && authPassword == other.authPassword
             && authToken == other.authToken
+            && authApiKey == other.authApiKey
+            && authApiValue == other.authApiValue
+            && authApiKeyIn == other.authApiKeyIn
+            && requestDescription == other.requestDescription
+            && followRedirects == other.followRedirects
+            && timeoutSeconds == other.timeoutSeconds
             && orderIndex == other.orderIndex
             && folderID == other.folderID
             && headers == other.headers

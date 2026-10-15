@@ -41,6 +41,9 @@ struct AuthEditor: View {
             username: $request.authUsername,
             password: $request.authPassword,
             token: $request.authToken,
+            apiKey: $request.authApiKey,
+            apiKeyValue: $request.authApiValue,
+            apiKeyLocation: $request.authApiKeyLocation,
             variables: resolvedVariables,
             suggestions: requestSuggestions,
             inheritedSource: inheritanceSource,
@@ -58,6 +61,11 @@ struct AuthorizationForm: View {
     @Binding var username: String
     @Binding var password: String
     @Binding var token: String
+    /// API Key helper: key name, value, and injection target. Digest
+    /// reuses username/password.
+    @Binding var apiKey: String
+    @Binding var apiKeyValue: String
+    @Binding var apiKeyLocation: ApiKeyLocation
     /// Merged variable scope for `{{placeholder}}` highlighting.
     let variables: [String: String]
     /// Completion candidates with scope metadata for `{{` auto-completion.
@@ -80,6 +88,10 @@ struct AuthorizationForm: View {
     @State private var isPasswordHovered = false
     @State private var isTokenFocused = false
     @State private var isTokenHovered = false
+    @State private var isAPIKeyFocused = false
+    @State private var isAPIKeyHovered = false
+    @State private var isAPIValueFocused = false
+    @State private var isAPIValueHovered = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -111,13 +123,27 @@ struct AuthorizationForm: View {
                     }
                 }
             }
-            Text("The Authorization header will be automatically generated when you send the request.")
+            Text(helperText)
                 .font(AppFont.emptyStateBody)
                 .foregroundStyle(AppColor.textSecondary)
             Text("Fields support {{variables}} from the active environment.")
                 .font(AppFont.emptyStateBody)
                 .foregroundStyle(AppColor.textSecondary)
             Spacer(minLength: 0)
+        }
+    }
+
+    /// Per-type helper copy (Postman): the generic Authorization-header
+    /// sentence does not hold for the API Key query injection or the
+    /// challenge-driven Digest handshake.
+    private var helperText: String {
+        switch type {
+        case .inherit, .none, .basic, .bearer:
+            "The Authorization header will be automatically generated when you send the request."
+        case .digest:
+            "Canoe sends the request once to collect the server's 401 challenge, then resends it with the computed Digest response."
+        case .apiKey:
+            "The key/value pair is added to the selected header or the query string when you send the request."
         }
     }
 
@@ -138,7 +164,7 @@ struct AuthorizationForm: View {
                     Text("No Authorization header will be sent.")
                         .font(AppFont.emptyStateBody)
                         .foregroundStyle(AppColor.textSecondary)
-                case .basic:
+                case .basic, .digest:
                     fieldRow("Username") {
                         VariableHighlightEditor(
                             text: $username,
@@ -180,6 +206,54 @@ struct AuthorizationForm: View {
                             isHovered: isTokenHovered
                         )
                     }
+                case .apiKey:
+                    fieldRow("Key") {
+                        VariableHighlightEditor(
+                            text: $apiKey,
+                            variables: variables,
+                            suggestions: suggestions,
+                            font: .systemSubheadline,
+                            placeholder: "Key",
+                            onFocusChange: { isAPIKeyFocused = $0 },
+                            onHoverChanged: { isAPIKeyHovered = $0 }
+                        )
+                        .variableFieldBordered(
+                            isFocused: isAPIKeyFocused,
+                            isHovered: isAPIKeyHovered
+                        )
+                    }
+                    fieldRow("Value") {
+                        VariableHighlightEditor(
+                            text: $apiKeyValue,
+                            variables: variables,
+                            suggestions: suggestions,
+                            font: .systemSubheadline,
+                            placeholder: "Value",
+                            onFocusChange: { isAPIValueFocused = $0 },
+                            onHoverChanged: { isAPIValueHovered = $0 }
+                        )
+                        .variableFieldBordered(
+                            isFocused: isAPIValueFocused,
+                            isHovered: isAPIValueHovered
+                        )
+                    }
+                    fieldRow("Add to") {
+                        DropdownFieldButton(
+                            id: "auth.apiKey.location",
+                            label: apiKeyLocation.label,
+                            width: 160
+                        ) {
+                            ApiKeyLocation.allCases.map { location in
+                                DropdownRow.action(
+                                    location.label,
+                                    isSelected: location == apiKeyLocation
+                                ) {
+                                    apiKeyLocation = location
+                                }
+                            }
+                        }
+                        .help("Where the key/value pair is added when the request is sent")
+                    }
                 }
             }
             Spacer(minLength: 0)
@@ -218,8 +292,8 @@ struct AuthorizationForm: View {
                     }
                 }
                 switch source.authorization.type {
-                case .basic:
-                    echoRow("Auth type") { echoField { Text(AuthType.basic.label) } }
+                case .basic, .digest:
+                    echoRow("Auth type") { echoField { Text(source.authorization.type.label) } }
                     echoRow("Username") {
                         echoField {
                             VariableHighlightEditor(
@@ -250,6 +324,26 @@ struct AuthorizationForm: View {
                             )
                         }
                     }
+                case .apiKey:
+                    echoRow("Auth type") { echoField { Text(AuthType.apiKey.label) } }
+                    echoRow("Key") {
+                        echoField {
+                            VariableHighlightEditor(
+                                text: .constant(source.authorization.apiKey),
+                                variables: variables,
+                                font: .systemSubheadline,
+                                placeholder: "Key",
+                                isEditable: false
+                            )
+                        }
+                    }
+                    echoRow("Value") {
+                        maskedEchoField {
+                            SecureField("Value", text: .constant(source.authorization.apiKeyValue))
+                                .textFieldStyle(.plain)
+                        }
+                    }
+                    echoRow("Add to") { echoField { Text(source.authorization.apiKeyLocation.label) } }
                 case .none, .inherit:
                     echoRow("Auth type") { echoField { Text(AuthType.none.label) } }
                     Text("\"\(source.ownerName)\" has no Authorization configured; requests under it send without one.")
