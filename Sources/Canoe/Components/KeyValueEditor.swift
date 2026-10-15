@@ -101,6 +101,20 @@ struct KeyValueEditor<T: KVItem>: View {
     /// environment variables). Off by default; each table opts in when order
     /// is editable.
     var allowsReorder: Bool = false
+    /// Whether the table scrolls inside its own pane (the default: a
+    /// section content that fills the pane). When false the table renders
+    /// at its content height and the CALLER owns scrolling — used by the
+    /// Params section, where the query table and the path variables table
+    /// stack in one shared scroll view (Postman's layout).
+    var scrollsInternally: Bool = true
+    /// Whether rows offer the hover trash (rows can be removed). The path
+    /// variables table turns this off: its rows derive from the URL, so
+    /// deleting one would just resurrect on the next derivation.
+    var allowsDelete: Bool = true
+    /// Renders every row's KEY cell muted and non-editable (Postman's path
+    /// variables: the key is derived from the URL, only the value is
+    /// editable). The cell also opts out of hover/focus chrome.
+    var disablesKeyCell: Bool = false
     /// Click-to-sort the key column via its header (workspace variables).
     /// Off by default: ordered tables like query params keep their sequence.
     var allowsKeySort: Bool = false
@@ -152,6 +166,10 @@ struct KeyValueEditor<T: KVItem>: View {
     /// column drops its right rule, the trailing its left), so the action
     /// glyphs read as floating on the row, not as cells of the grid.
     private let toggleColumnWidth: CGFloat = 32
+    /// Width of the header's Bulk Edit cell (rule + button). Body rows
+    /// reserve the same trailing space, so the header's Key/Value columns
+    /// and their rules line up with the rows' dividers.
+    private let bulkEditCellWidth: CGFloat = 88
     private let gripGlyphWidth: CGFloat = 14
     private let deleteColumnWidth: CGFloat = 26
     // Wide enough for the checkmark gutter plus "File" at the small size,
@@ -197,18 +215,72 @@ struct KeyValueEditor<T: KVItem>: View {
             }
             if isBulkMode {
                 bulkEditor
-            } else {
+            } else if scrollsInternally {
                 ScrollView {
                     table
                 }
                 .padding(.horizontal, AppSpacing.medium)
                 .padding(.bottom, AppSpacing.medium)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            } else {
+                table
+                    .padding(.horizontal, AppSpacing.medium)
+                    .padding(.bottom, AppSpacing.medium)
+                    .frame(maxWidth: .infinity, alignment: .top)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: scrollsInternally ? .infinity : nil, maxHeight: scrollsInternally ? .infinity : nil, alignment: .top)
         .background(AppColor.controlBackground)
         .onChange(of: focusedCell) { _, newValue in
             pruneAbandonedEmptyRows(newValue)
+            updateBlurMonitor()
+        }
+        .onDisappear { removeBlurMonitor() }
+    }
+
+    // MARK: - Click-outside blur
+
+    /// While a table cell owns keyboard focus, a click anywhere outside
+    /// that field editor (blank areas, buttons, other panes) retires the
+    /// field editor — Postman's click-away commit. Without this, a raw
+    /// NSTextField keeps first responder on blank clicks, since nothing in
+    /// the hit path takes focus. Installed only while a cell is focused;
+    /// clicks inside the field editor pass untouched, clicks on other
+    /// controls resign before their own handling runs.
+    @State private var blurMonitor: Any?
+
+    private func updateBlurMonitor() {
+        if focusedCell != nil {
+            installBlurMonitor()
+        } else {
+            removeBlurMonitor()
+        }
+    }
+
+    private func installBlurMonitor() {
+        guard blurMonitor == nil else { return }
+        blurMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
+            MainActor.assumeIsolated {
+                guard focusedCell != nil else { return }
+                guard let window = event.window, let textView = window.firstResponder as? NSTextView,
+                    textView.isFieldEditor
+                else { return }
+                // A click inside the editing field itself is a caret move,
+                // not a dismissal. Anything else retires the field editor
+                // (click-away commit).
+                let editorFrame = textView.convert(textView.bounds, to: nil)
+                if !editorFrame.contains(event.locationInWindow) {
+                    window.makeFirstResponder(nil)
+                }
+            }
+            return event
+        }
+    }
+
+    private func removeBlurMonitor() {
+        if let blurMonitor {
+            NSEvent.removeMonitor(blurMonitor)
+            self.blurMonitor = nil
         }
     }
 
@@ -357,6 +429,7 @@ struct KeyValueEditor<T: KVItem>: View {
                     kind: kindBinding,
                     showsKindMenu: showsKindMenu,
                     kindMenuWidth: kindMenuWidth,
+                    isKeyDisabled: disablesKeyCell,
                     isSecret: secretBinding,
                     secretColumnWidth: secretColumnWidth,
                     variables: variables,
@@ -368,10 +441,13 @@ struct KeyValueEditor<T: KVItem>: View {
                     valueFocus: .value(item.id),
                     leadingColumnWidth: leadingColumnWidth,
                     trailingColumnWidth: trailingColumnWidth,
-                    onDelete: { [id = item.id] in
-                        items.removeAll { $0.id == id }
-                        if ghost?.id == id { ghost = nil }
-                    },
+                    onDelete: allowsDelete
+                        ? { [id = item.id] in
+                            items.removeAll { $0.id == id }
+                            if ghost?.id == id { ghost = nil }
+                        }
+                        : nil,
+                    bulkEditCellWidth: allowsBulkEdit ? bulkEditCellWidth : 0,
                     onGripDrag: allowsReorder ? { dragProvider(for: item.id) } : nil,
                     onMoveUp: allowsReorder ? { moveRow(id: item.id, by: -1) } : nil,
                     onMoveDown: allowsReorder ? { moveRow(id: item.id, by: 1) } : nil,
@@ -406,6 +482,7 @@ struct KeyValueEditor<T: KVItem>: View {
                     leadingColumnWidth: leadingColumnWidth,
                     trailingColumnWidth: trailingColumnWidth,
                     onEditingEnded: { ghost = nil },
+                    bulkEditCellWidth: allowsBulkEdit ? bulkEditCellWidth : 0,
                     dropTarget: $dropTargetEnd,
                     onDropRow: { moveDraggedRowToEnd() },
                     allowsReorder: allowsReorder
@@ -439,9 +516,15 @@ struct KeyValueEditor<T: KVItem>: View {
                 Color.clear.frame(width: trailingColumnWidth)
             }
             if allowsBulkEdit {
-                LinkButton("Bulk Edit") { enterBulkMode() }
-                    .padding(.trailing, AppSpacing.small)
-                    .help("Edit as key-value text lines (Postman Bulk Edit)")
+                // Its own header cell: a left rule separates it from the
+                // value column (Postman's header divider).
+                HStack(spacing: 0) {
+                    verticalRule
+                    LinkButton("Bulk Edit") { enterBulkMode() }
+                        .padding(.horizontal, AppSpacing.small)
+                        .help("Edit as key-value text lines (Postman Bulk Edit)")
+                }
+                .frame(width: bulkEditCellWidth)
             }
         }
         .frame(height: AppSize.tableRowHeight)
@@ -707,6 +790,9 @@ private struct KVRow: View {
     var kind: Binding<FormFieldKind>?
     let showsKindMenu: Bool
     let kindMenuWidth: CGFloat
+    /// Muted, non-editable key cell (path variables: the key derives from
+    /// the URL). Opts the key cell out of hover/focus chrome.
+    var isKeyDisabled: Bool = false
     /// nil for the trailing ghost row (nothing to hide yet) and for tables
     /// without a secret column.
     var isSecret: Binding<Bool>?
@@ -732,6 +818,10 @@ private struct KVRow: View {
     var onDelete: (() -> Void)?
     /// Drag-to-reorder: nil unless `allowsReorder`. The grip is pointer-only;
     /// keyboard users get Move Up/Down instead.
+    /// Trailing blank reservation matching the header's Bulk Edit cell (0
+    /// = none). Keeps the header's Key/Value column split aligned with the
+    /// rows' dividers.
+    var bulkEditCellWidth: CGFloat = 0
     var onGripDrag: (() -> NSItemProvider)?
     /// Keyboard/context-menu reorder steps; nil unless `allowsReorder`.
     var onMoveUp: (() -> Void)?
@@ -822,7 +912,7 @@ private struct KVRow: View {
                 }
             }
             .frame(width: leadingColumnWidth)
-            cell(.key) {
+            cell(.key, muted: isKeyDisabled) {
                 HStack(spacing: AppSpacing.xSmall) {
                     VariableHighlightEditor(
                         text: $key,
@@ -832,6 +922,7 @@ private struct KVRow: View {
                         placeholder: keyPlaceholder,
                         focus: focus,
                         focusValue: keyFocus,
+                        isEditable: !isKeyDisabled,
                         onEditingEnded: onEditingEnded,
                         onHoverChanged: { setHover(.key, $0) }
                     )
@@ -859,6 +950,9 @@ private struct KVRow: View {
                 }
             }
             trailingColumn
+            if bulkEditCellWidth > 0 {
+                Color.clear.frame(width: bulkEditCellWidth)
+            }
         }
         .frame(height: AppSize.tableRowHeight)
         .contentShape(Rectangle())
@@ -912,15 +1006,19 @@ private struct KVRow: View {
     /// lifts via `zIndex` only within the HStack - the vertical rule after
     /// this cell. Both the AppKit editor (`onHoverChanged`) and this
     /// SwiftUI shell report into the same `hoveredCell`.
-    private func cell(_ id: HoveredCell, @ViewBuilder field: () -> some View) -> some View {
+    private func cell(_ id: HoveredCell, muted: Bool = false, @ViewBuilder field: () -> some View) -> some View {
         field()
             .font(AppFont.small)
-            .foregroundStyle(isEnabled ? AppColor.textPrimary : AppColor.textSecondary)
+            .foregroundStyle(muted || !isEnabled ? AppColor.textSecondary : AppColor.textPrimary)
             .opacity(isEnabled ? 1 : AppOpacity.disabled)
             .padding(.horizontal, AppSpacing.small)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .background {
-                if isCellFocused(id) || hoveredCell == id {
+                if muted {
+                    // Disabled look: a solid muted fill (Postman's path
+                    // variable key cell), no hover/focus chrome.
+                    Rectangle().fill(AppColor.subtleBackground)
+                } else if isCellFocused(id) || hoveredCell == id {
                     Rectangle()
                         .fill(
                             isCellFocused(id)
@@ -930,7 +1028,7 @@ private struct KVRow: View {
                 }
             }
             .overlay {
-                if isCellFocused(id) || hoveredCell == id {
+                if !muted, isCellFocused(id) || hoveredCell == id {
                     Rectangle()
                         .strokeBorder(
                             isCellFocused(id) ? AppColor.accent : AppColor.borderStrong,
@@ -942,7 +1040,9 @@ private struct KVRow: View {
                 }
             }
             .onHover { hovering in
-                setHover(id, hovering)
+                if !muted {
+                    setHover(id, hovering)
+                }
             }
             // Outermost among the HStack's children: later siblings (the
             // vertical hairline after this cell) otherwise paint over the

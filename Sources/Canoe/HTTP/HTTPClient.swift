@@ -454,10 +454,16 @@ enum HTTPClient {
         guard !resolvedURLString.isEmpty else {
             throw HTTPClientError.invalidURL("(empty URL)")
         }
+        // Path variables (colon syntax): a filled `:segment` value replaces
+        // the segment in the URL path; an empty value leaves `:segment` on
+        // the wire, like an unresolved `{{variable}}`. Only the path part is
+        // touched — the query string and fragment never carry path params.
+        let urlString = Self.replacingPathVariables(
+            in: resolvedURLString, rows: request.pathVariables, variables: variables)
         // Postman-style convenience: bare "api.example.com/users" becomes
         // "https://api.example.com/users" instead of an error.
         let withScheme =
-            resolvedURLString.contains("://") ? resolvedURLString : "https://\(resolvedURLString)"
+            urlString.contains("://") ? urlString : "https://\(urlString)"
         guard var components = URLComponents(string: withScheme) else {
             throw HTTPClientError.invalidURL(resolvedURLString)
         }
@@ -678,6 +684,48 @@ enum HTTPClient {
             ),
             timing: Self.makeTimingInfo(metrics: outcome.metrics)
         )
+    }
+
+    // MARK: - Path variables
+
+    /// Replaces `:segment` path parameters with their values (already
+    /// variable-resolved). Only the path part is touched — the query string
+    /// and fragment never carry path params. A segment with no (or an
+    /// empty) value stays as-is, so an unfilled `:id` is visible on the
+    /// wire instead of vanishing. Values are percent-encoded with the
+    /// path-safe set, since they are spliced into the URL before parsing.
+    static func replacingPathVariables(
+        in urlString: String, rows: [QueryParam], variables: [String: String]
+    ) -> String {
+        guard rows.contains(where: { $0.isEnabled && !$0.value.isEmpty }) else { return urlString }
+        // Split off the query string and fragment: they never carry path
+        // parameters.
+        let suffixStart = urlString.firstIndex(where: { $0 == "?" || $0 == "#" }) ?? urlString.endIndex
+        let path = urlString[..<suffixStart]
+        let suffix = urlString[suffixStart...]
+        let replacedPath =
+            path
+            .split(separator: "/", omittingEmptySubsequences: false)
+            .map { segment -> Substring in
+                guard segment.hasPrefix(":"), segment.count > 1 else { return segment }
+                let key = String(segment.dropFirst())
+                guard let row = rows.first(where: { $0.isEnabled && $0.key == key }) else { return segment }
+                let value = VariableResolver.resolve(row.value, variables: variables)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !value.isEmpty else { return segment }
+                return Substring(Self.percentEncodePathValue(value))
+            }
+            .joined(separator: "/")
+        return replacedPath + suffix
+    }
+
+    /// Path values are spliced into the URL string before parsing, so they
+    /// are percent-encoded up front (the URL parser would otherwise choke
+    /// on spaces or a stray `?`).
+    private static func percentEncodePathValue(_ value: String) -> String {
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~")
+        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
     }
 
     // MARK: - Send + telemetry

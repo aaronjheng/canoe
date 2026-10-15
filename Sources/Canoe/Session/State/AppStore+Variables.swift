@@ -12,13 +12,6 @@ extension AppStore {
         for scope in variableScopesForRequest(request) {
             merged = scope.variables.resolvingDictionary(into: merged)
         }
-        // Path variables override every scope (Postman): they name the very
-        // placeholders in this request's URL, so a same-named variable
-        // elsewhere never wins.
-        for (key, value) in request.pathVariables
-        where !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            merged[key] = value
-        }
         return merged
     }
 

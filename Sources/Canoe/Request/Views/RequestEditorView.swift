@@ -20,35 +20,26 @@ struct RequestEditorView: View {
 
     @State private var draft: Request
     @State private var section: RequestSection = .params
-    /// Whether the Params section shows the query table or the path
-    /// variables table (Postman's two sub-tabs).
-    @State private var paramsSubsection: ParamsSubsection = .query
-
-    enum ParamsSubsection: String, CaseIterable, Identifiable {
-        case query = "Query Params"
-        case pathVariables = "Path Variables"
-        var id: String { rawValue }
-    }
 
     /// Path-variable keys in URL order, deduped: the path variables table
-    /// derives its rows from the URL's `{{placeholders}}` (Postman
-    /// behavior), so adding a placeholder to the URL materializes a row and
-    /// removing it drops the row (the value lives in
-    /// `draft.pathVariables[key]`).
+    /// derives its rows from the URL's `:segment` path parameters (Postman's
+    /// colon syntax), so adding `:id` to the URL path materializes an `id`
+    /// row and removing it drops the row (the value lives in
+    /// `draft.pathVariables[key]`). The query string and fragment never
+    /// contribute.
     private var pathVariableKeys: [String] {
+        let source = urlText.isEmpty ? draft.urlString : urlText
+        let path = source.split(whereSeparator: { $0 == "?" || $0 == "#" }).first ?? source[...]
         var seen = Set<String>()
         var keys: [String] = []
-        for (_, name) in VariableResolver.ranges(in: urlText.isEmpty ? draft.urlString : urlText) {
-            let key = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        for segment in path.split(separator: "/") {
+            guard segment.hasPrefix(":"), segment.count > 1 else { continue }
+            let key = String(segment.dropFirst())
             if !key.isEmpty, seen.insert(key).inserted {
                 keys.append(key)
             }
         }
         return keys
-    }
-
-    private var pathVariablesCount: Int {
-        pathVariableKeys.count
     }
 
     enum RequestSection: String, CaseIterable, Identifiable {
@@ -966,122 +957,72 @@ struct RequestEditorView: View {
 
     // MARK: - Path variables
 
-    /// Postman's Params sub-tabs: small underline tabs above the section
-    /// content, switching between the query table and the path variables
-    /// table. Each carries the other's count badge (query shows path count
-    /// only when non-empty, like Postman's dot).
-    private var paramsSubsectionTabs: some View {
-        HStack(spacing: AppSpacing.large) {
-            UnderlineTab(
-                title: ParamsSubsection.query.rawValue,
-                count: enabledParamCount,
-                hasContent: enabledParamCount > 0,
-                labelInset: 0,
-                isSelected: paramsSubsection == .query,
-                action: { paramsSubsection = .query }
-            )
-            UnderlineTab(
-                title: ParamsSubsection.pathVariables.rawValue,
-                count: pathVariablesCount > 0 ? pathVariablesCount : nil,
-                hasContent: pathVariablesCount > 0,
-                labelInset: 0,
-                isSelected: paramsSubsection == .pathVariables,
-                action: { paramsSubsection = .pathVariables }
-            )
-            Spacer()
+    /// Postman's Params tab: the query table on top, the path variables
+    /// table below it — the SAME table component, same chrome, only the
+    /// row lifecycle differs: rows derive from the URL's `:segment`
+    /// parameters (no ghost, no delete, no reorder, no bulk edit — those
+    /// mutate a free-form list, and this one is URL-driven).
+    private var pathVariablesBlock: some View {
+        KeyValueEditor(
+            items: pathVariableRows,
+            makeNew: { QueryParam() },
+            title: "Path Variables",
+            showsGhostRow: false,
+            variables: resolvedVariables,
+            suggestions: requestSuggestions,
+            keyPlaceholder: "Key",
+            valuePlaceholder: "Value",
+            // Request tables skip the header wash.
+            headerBackground: nil,
+            scrollsInternally: false,
+            allowsDelete: false,
+            disablesKeyCell: true,
+            allowsBulkEdit: true
+        )
+        .onChange(of: pathVariableKeys) { _, keys in
+            syncPathVariableRows(keys)
         }
-        .padding(.horizontal, AppSpacing.medium)
-        .padding(.top, AppSpacing.xSmall)
     }
 
-    /// The path variables table: one row per `{{placeholder}}` in the URL
-    /// (derived, so rows appear and disappear with the URL), the value
-    /// editable and stored on the request. Values override same-named
-    /// variables in every other scope.
-    @ViewBuilder
-    private var pathVariablesPane: some View {
-        if pathVariableKeys.isEmpty {
-            ContentUnavailableView(
-                "No Path Variables",
-                systemImage: "curlybraces.square",
-                description: Text(
-                    "Add a {{placeholder}} to the URL path and it shows up here."
-                )
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            ScrollView {
-                VStack(spacing: 0) {
-                    pathVariablesHeaderRow
-                    ForEach(pathVariableKeys, id: \.self) { key in
-                        pathVariablesRow(key)
+    /// Rows for the table: URL-key order, backed by stable storage rows
+    /// (the id must not churn between renders, or row diffing breaks).
+    private var pathVariableRows: Binding<[QueryParam]> {
+        Binding(
+            get: {
+                pathVariableKeys.compactMap { key in
+                    draft.pathVariables.first(where: { $0.key == key })
+                }
+            },
+            set: { newRows in
+                var updated = draft.pathVariables
+                for row in newRows {
+                    if let index = updated.firstIndex(where: { $0.key == row.key }) {
+                        updated[index].value = row.value
+                        updated[index].isEnabled = row.isEnabled
                     }
                 }
-                .background(AppColor.controlBackground)
-                .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                        .strokeBorder(AppColor.tableBorder, lineWidth: AppLine.field)
-                )
-                .padding(.horizontal, AppSpacing.medium)
-                .padding(.bottom, AppSpacing.medium)
+                draft.pathVariables = updated
             }
-        }
+        )
     }
 
-    private var pathVariablesHeaderRow: some View {
-        HStack(spacing: 0) {
-            Text("Key")
-                .font(AppFont.columnHeader)
-                .foregroundStyle(AppColor.textSecondary)
-                .padding(.horizontal, AppSpacing.small)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Text("Value")
-                .font(AppFont.columnHeader)
-                .foregroundStyle(AppColor.textSecondary)
-                .padding(.horizontal, AppSpacing.small)
-                .frame(maxWidth: .infinity, alignment: .leading)
+    /// Keeps `draft.pathVariables` in step with the URL: new `:segments`
+    /// materialize rows, removed ones drop their rows, and the storage
+    /// order follows the URL (the table's get reads it back in that order).
+    private func syncPathVariableRows(_ keys: [String]) {
+        var rows = draft.pathVariables
+        let keySet = Set(keys)
+        rows.removeAll { !keySet.contains($0.key) }
+        for key in keys where !rows.contains(where: { $0.key == key }) {
+            rows.append(QueryParam(key: key))
         }
-        .frame(height: AppSize.tableRowHeight)
-    }
-
-    /// One derived row: the key is read-only text (it comes from the URL),
-    /// the value is a `{{variable}}`-aware editor writing into
-    /// `draft.pathVariables[key]`.
-    private func pathVariablesRow(_ key: String) -> some View {
-        HStack(spacing: 0) {
-            Text("{{\(key)}}")
-                .font(AppFont.small)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .textSelection(.enabled)
-                .padding(.horizontal, AppSpacing.small)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                .background(AppColor.tableHeaderBackground)
-            VariableHighlightEditor<Bool>(
-                text: Binding(
-                    get: { draft.pathVariables[key] ?? "" },
-                    set: { draft.pathVariables[key] = $0 }
-                ),
-                variables: resolvedVariables,
-                suggestions: requestSuggestions,
-                isSingleLine: true,
-                font: .systemSubheadline,
-                placeholder: "Value"
-            )
-            .frame(minHeight: AppSize.tableRowHeight)
-            .padding(.horizontal, AppSpacing.small)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        rows.sort {
+            (keys.firstIndex(of: $0.key) ?? Int.max) < (keys.firstIndex(of: $1.key) ?? Int.max)
         }
-        .frame(height: AppSize.tableRowHeight)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(AppColor.tableBorder)
-                .frame(height: AppLine.hairline)
+        if rows != draft.pathVariables {
+            draft.pathVariables = rows
         }
     }
-
-    // MARK: - Path variables end
 
     private var sectionTabs: some View {
         HStack(spacing: AppSpacing.large) {
@@ -1172,11 +1113,12 @@ struct RequestEditorView: View {
         case .docs:
             docsPane
         case .params:
-            VStack(spacing: 0) {
-                paramsSubsectionTabs
-                Divider()
-                    .padding(.horizontal, AppSpacing.medium)
-                if paramsSubsection == .query {
+            // Postman's Params tab: the query table on top, the path
+            // variables table below (both titled, each self-contained), in
+            // ONE shared scroll view so neither stretches away from the
+            // other.
+            ScrollView {
+                VStack(spacing: 0) {
                     KeyValueEditor(
                         items: $draft.params,
                         makeNew: { QueryParam() },
@@ -1188,13 +1130,17 @@ struct RequestEditorView: View {
                         // Request tables skip the header wash.
                         headerBackground: nil,
                         allowsReorder: true,
+                        scrollsInternally: false,
                         allowsBulkEdit: true
                     )
                     // Fresh table state per request: the editor holds ghost-row and
                     // focus state internally, which must not leak across requests.
                     .id(draft.id)
-                } else {
-                    pathVariablesPane
+                    // The path variables table only exists while the URL
+                    // carries `:segment` parameters (Postman hides it too).
+                    if !pathVariableKeys.isEmpty {
+                        pathVariablesBlock
+                    }
                 }
             }
         case .headers:

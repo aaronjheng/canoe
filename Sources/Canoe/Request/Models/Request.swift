@@ -60,11 +60,13 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
     var timeoutSeconds: Double = 0
     var orderIndex: Int = 0
     var folderID: UUID?
-    /// Path variables (Postman's Params › Path Variables): values for the
-    /// `{{placeholders}}` in this request's URL path, keyed by name. Rows
-    /// derive from the URL; these values override same-named variables in
-    /// any scope.
-    var pathVariables: [String: String] = [:]
+    /// Path variables (Postman's colon syntax): rows for the path segments
+    /// written as `:id` in this request's URL, keyed by name. Rows are
+    /// materialized/dropped as the URL changes (keys come from the URL);
+    /// a filled, enabled value replaces the segment at send time, while an
+    /// empty or disabled one leaves `:id` on the wire (like an unresolved
+    /// `{{variable}}`).
+    var pathVariables: [QueryParam] = []
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
     var headers: [HTTPHeader] = []
@@ -150,8 +152,18 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
         timeoutSeconds = try container.decodeIfPresent(Double.self, forKey: .timeoutSeconds) ?? 0
         orderIndex = try container.decodeIfPresent(Int.self, forKey: .orderIndex) ?? 0
         folderID = try container.decodeIfPresent(UUID.self, forKey: .folderID)
-        pathVariables =
-            try container.decodeIfPresent([String: String].self, forKey: .pathVariables) ?? [:]
+        // Dual-format tolerance: `pathVariables` was briefly written as a
+        // [String: String] dictionary (an intermediate build) and is now
+        // [QueryParam] rows. `decodeLossyArray` throws on a dictionary
+        // container, which would drop the WHOLE request — so fall back to
+        // the dictionary shape and convert instead.
+        if let rows: [QueryParam] = try? container.decodeLossyArray(forKey: .pathVariables) {
+            pathVariables = rows
+        } else if let dict = try? container.decodeIfPresent([String: String].self, forKey: .pathVariables) {
+            pathVariables = dict.map { QueryParam(key: $0.key, value: $0.value) }
+        } else {
+            pathVariables = []
+        }
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
         headers = try container.decodeLossyArray(forKey: .headers)
