@@ -52,12 +52,24 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
     /// under the name bar and saved with ⌘S like the rest of the request.
     var requestDescription: String = ""
     /// Per-request send settings (Postman's request-level Settings tab):
-    /// whether 3xx responses are followed, and the idle timeout in seconds
-    /// (0 = the app default of 30). URLSession's request-object
-    /// `timeoutInterval` covers the idle gap; the resource timeout stays
-    /// the session's 120 s.
+    /// whether 3xx responses are followed (and how many at most), the idle
+    /// timeout in seconds (0 = the app default of 30), cookie-jar
+    /// participation, and TLS server-certificate validation. URLSession's
+    /// request-object `timeoutInterval` covers the idle gap; the resource
+    /// timeout stays the session's 120 s.
     var followRedirects: Bool = true
     var timeoutSeconds: Double = 0
+    /// Send cookies the jar holds for the domain and store the response's
+    /// `Set-Cookie` headers back into it. Off skips both directions - the
+    /// request goes out bare and nothing is recorded.
+    var useCookieJar: Bool = true
+    /// Validate the server's TLS certificate chain. Off accepts any
+    /// certificate (self-signed, expired, hostname mismatch) - for servers
+    /// with broken or custom chains.
+    var verifySSLCertificate: Bool = true
+    /// Follow at most this many redirects; the last 3xx response is
+    /// returned as-is once the limit is hit. 0 = unlimited.
+    var maxRedirects: Int = 0
     var orderIndex: Int = 0
     var folderID: UUID?
     /// Path variables (Postman's colon syntax): rows for the path segments
@@ -103,7 +115,8 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
         case authOAuthCallbackURL, authOAuthState, authOAuthClientAuth
         case authOAuthHeaderPrefix, authOAuthAccessToken
         case requestDescription
-        case followRedirects, timeoutSeconds
+        case followRedirects, timeoutSeconds, maxRedirects
+        case useCookieJar, verifySSLCertificate
         case orderIndex, folderID, createdAt, updatedAt, headers, params
         case pathVariables
         case disabledGeneratedHeaders
@@ -150,6 +163,10 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
         requestDescription = try container.decodeIfPresent(String.self, forKey: .requestDescription) ?? ""
         followRedirects = try container.decodeIfPresent(Bool.self, forKey: .followRedirects) ?? true
         timeoutSeconds = try container.decodeIfPresent(Double.self, forKey: .timeoutSeconds) ?? 0
+        useCookieJar = try container.decodeIfPresent(Bool.self, forKey: .useCookieJar) ?? true
+        verifySSLCertificate =
+            try container.decodeIfPresent(Bool.self, forKey: .verifySSLCertificate) ?? true
+        maxRedirects = try container.decodeIfPresent(Int.self, forKey: .maxRedirects) ?? 0
         orderIndex = try container.decodeIfPresent(Int.self, forKey: .orderIndex) ?? 0
         folderID = try container.decodeIfPresent(UUID.self, forKey: .folderID)
         // Dual-format tolerance: `pathVariables` was briefly written as a
@@ -238,6 +255,9 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
             && requestDescription == other.requestDescription
             && followRedirects == other.followRedirects
             && timeoutSeconds == other.timeoutSeconds
+            && useCookieJar == other.useCookieJar
+            && verifySSLCertificate == other.verifySSLCertificate
+            && maxRedirects == other.maxRedirects
             && orderIndex == other.orderIndex
             && folderID == other.folderID
             && pathVariables == other.pathVariables

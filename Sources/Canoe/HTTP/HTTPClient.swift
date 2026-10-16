@@ -32,6 +32,41 @@ enum HTTPClient {
     /// says plainly that the body was cut.
     static let maxResponseBytes = 50 * 1024 * 1024
 
+    /// Per-send network options (the request-level Settings tab): captured once
+    /// per send and carried on the task's telemetry, so the session delegate
+    /// reads the sending request's own settings - concurrent sends with
+    /// different settings never interfere.
+    struct HTTPSendOptions: Sendable {
+        var followsRedirects: Bool = true
+        /// Follow at most this many redirects (0 = unlimited); the last 3xx
+        /// response is returned as-is once the limit is hit.
+        var maxRedirects: Int = 0
+        var useCookieJar: Bool = true
+        var verifySSLCertificate: Bool = true
+
+        init(
+            followsRedirects: Bool = true,
+            maxRedirects: Int = 0,
+            useCookieJar: Bool = true,
+            verifySSLCertificate: Bool = true
+        ) {
+            self.followsRedirects = followsRedirects
+            self.maxRedirects = maxRedirects
+            self.useCookieJar = useCookieJar
+            self.verifySSLCertificate = verifySSLCertificate
+        }
+
+        /// The request's own Settings-tab choices.
+        init(request: Request) {
+            self.init(
+                followsRedirects: request.followRedirects,
+                maxRedirects: request.maxRedirects,
+                useCookieJar: request.useCookieJar,
+                verifySSLCertificate: request.verifySSLCertificate
+            )
+        }
+    }
+
     /// Leaf-certificate fields pulled during the server-trust challenge.
     private struct CertificateSnapshot: Sendable {
         let subjectCN: String?
@@ -70,6 +105,9 @@ enum HTTPClient {
             var allowMissingMetrics = false
             var resumed = false
             var metricsTimeout: Task<Void, Never>?
+            /// Redirects already followed for this task (see
+            /// `allowAnotherRedirect`).
+            var redirectCount = 0
         }
 
         private enum Completion {
@@ -80,16 +118,28 @@ enum HTTPClient {
 
         private let state = Mutex(State())
         private let taskID: Int
-        /// Per-send redirect policy (Postman's request-level setting): the
-        /// redirect callback reads this instead of a session-wide flag, so
+        /// Per-send network options (the request-level Settings tab): the
+        /// delegate callbacks read these instead of session-wide flags, so
         /// concurrent sends with different settings never interfere.
-        fileprivate let followsRedirects: Bool
+        fileprivate let options: HTTPSendOptions
         private let unregister: @Sendable (Int) -> Void
 
-        init(taskID: Int, followsRedirects: Bool, unregister: @escaping @Sendable (Int) -> Void) {
-            self.followsRedirects = followsRedirects
+        init(taskID: Int, options: HTTPSendOptions, unregister: @escaping @Sendable (Int) -> Void) {
+            self.options = options
             self.taskID = taskID
             self.unregister = unregister
+        }
+
+        /// Whether one more redirect may be followed: counts the redirects
+        /// already performed for this task against `options.maxRedirects`
+        /// (0 = unlimited). The delegate calls this once per redirect
+        /// response; `false` makes it hand the 3xx back to the caller.
+        func allowAnotherRedirect() -> Bool {
+            guard options.maxRedirects > 0 else { return true }
+            return state.withLock { current -> Bool in
+                current.redirectCount += 1
+                return current.redirectCount <= options.maxRedirects
+            }
         }
 
         func setCertificate(_ snapshot: CertificateSnapshot) {
@@ -287,8 +337,8 @@ enum HTTPClient {
     private final class RedirectPolicy: NSObject, URLSessionTaskDelegate, URLSessionDataDelegate {
         private let telemetryByID = Mutex<[Int: RequestTelemetry]>([:])
 
-        func makeTelemetry(taskID: Int, followsRedirects: Bool) -> RequestTelemetry {
-            RequestTelemetry(taskID: taskID, followsRedirects: followsRedirects) { [weak self] id in
+        func makeTelemetry(taskID: Int, options: HTTPSendOptions) -> RequestTelemetry {
+            RequestTelemetry(taskID: taskID, options: options) { [weak self] id in
                 self?.telemetryByID.withLock { $0[id] = nil }
             }
         }
@@ -319,9 +369,15 @@ enum HTTPClient {
             if crossHost || downgraded {
                 redirected.setValue(nil, forHTTPHeaderField: "Authorization")
             }
+            guard let telemetry = self.telemetry(for: task) else {
+                completionHandler(redirected)
+                return
+            }
             // Per-request "Follow Redirects" off: pass nil so URLSession
             // returns the 3xx response itself, body included.
-            if telemetry(for: task)?.followsRedirects == false {
+            if !telemetry.options.followsRedirects
+                || !telemetry.allowAnotherRedirect()
+            {
                 completionHandler(nil)
                 return
             }
@@ -363,8 +419,21 @@ enum HTTPClient {
             didReceive challenge: URLAuthenticationChallenge,
             completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
         ) {
+            let telemetry = self.telemetry(for: task)
             if let snapshot = Self.serverTrustSnapshot(from: challenge) {
-                telemetry(for: task)?.setCertificate(snapshot)
+                telemetry?.setCertificate(snapshot)
+            }
+            // Per-request "Verify SSL certificates" off: hand the server's
+            // own trust object back as the credential, which accepts the
+            // chain as it arrived (self-signed, expired, hostname mismatch)
+            // without evaluation. Only the server-trust challenge is
+            // bypassed; everything else keeps the default handling.
+            if telemetry?.options.verifySSLCertificate == false,
+                challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+                let trust = challenge.protectionSpace.serverTrust
+            {
+                completionHandler(.useCredential, URLCredential(trust: trust))
+                return
             }
             completionHandler(.performDefaultHandling, nil)
         }
@@ -461,7 +530,7 @@ enum HTTPClient {
         /// change only affects sessions built after it.
         func currentSession() -> (session: URLSession, redirectPolicy: RedirectPolicy) {
             lock.withLock { _ in
-                return (session, redirectPolicy)
+                (session, redirectPolicy)
             }
         }
 
@@ -550,13 +619,18 @@ enum HTTPClient {
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = request.method
 
+        // Per-send options from the request's Settings tab; the delegates
+        // read them from the task's telemetry, the cookie jar from here.
+        let sendOptions = HTTPSendOptions(request: request)
+
         // Injected Cookie header from the jar, unless the user already set
-        // one manually (a manual Cookie header always wins, Postman-style).
+        // one manually (a manual Cookie header always wins, Postman-style)
+        // or the request opted out of the jar entirely.
         let hasUserCookie = request.headers.contains {
             $0.isEnabled
                 && $0.key.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "cookie"
         }
-        if !hasUserCookie {
+        if !hasUserCookie, sendOptions.useCookieJar {
             if let cookieValue = await CookieStore.shared.cookieHeader(for: url) {
                 urlRequest.setValue(cookieValue, forHTTPHeaderField: "Cookie")
             }
@@ -687,7 +761,7 @@ enum HTTPClient {
         onRequest?(urlRequest)
 
         let start = Date()
-        var outcome = try await dataWithTelemetry(for: urlRequest, followsRedirects: request.followRedirects)
+        var outcome = try await dataWithTelemetry(for: urlRequest, options: sendOptions)
 
         // Digest handshake (RFC 2617/7616): the first send carries no
         // credentials on purpose; a 401 with a Digest challenge is answered
@@ -712,17 +786,20 @@ enum HTTPClient {
                 // The console logs the request that produced the response:
                 // the resent one carries the Digest header.
                 onRequest?(urlRequest)
-                outcome = try await dataWithTelemetry(for: urlRequest, followsRedirects: request.followRedirects)
+                outcome = try await dataWithTelemetry(for: urlRequest, options: sendOptions)
             }
         }
 
         // Persist any `Set-Cookie` headers so later requests to the same
-        // domain send them back (Postman cookie jar behavior).
+        // domain send them back (Postman cookie jar behavior) - unless the
+        // request opted out of the jar.
         let setCookieHeaders = outcome.response.allHeaderFields.compactMap { (key, value) -> String? in
             guard let key = key as? String, key.lowercased() == "set-cookie", let value = value as? String else { return nil }
             return value
         }
-        await CookieStore.shared.store(setCookieHeaders: setCookieHeaders, for: url)
+        if sendOptions.useCookieJar {
+            await CookieStore.shared.store(setCookieHeaders: setCookieHeaders, for: url)
+        }
 
         let duration = Date().timeIntervalSince(start)
 
@@ -816,7 +893,7 @@ enum HTTPClient {
     /// socket stayed open until the resource timeout.
     private static func dataWithTelemetry(
         for urlRequest: URLRequest,
-        followsRedirects: Bool
+        options: HTTPSendOptions
     ) async throws -> Outcome {
         let box = DataTaskBox()
         // One atomic snapshot of (session, redirectPolicy) for the whole
@@ -833,7 +910,7 @@ enum HTTPClient {
                 // cancellation that already arrived cancels it right here.
                 box.attach(task)
                 let telemetry = redirectPolicy.makeTelemetry(
-                    taskID: task.taskIdentifier, followsRedirects: followsRedirects)
+                    taskID: task.taskIdentifier, options: options)
                 redirectPolicy.register(telemetry, taskID: task.taskIdentifier)
                 telemetry.attach(continuation)
                 task.resume()

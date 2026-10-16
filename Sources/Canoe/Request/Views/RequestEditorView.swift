@@ -322,9 +322,13 @@ struct RequestEditorView: View {
 
     /// The raw text currently shown in the URL bar.
     @State private var urlText = ""
-    /// Focus/hover mirrors for the Settings tab's timeout field.
+    /// Focus/hover mirrors for the Settings tab's numeric fields (timeout,
+    /// redirect cap): the AppKit editors report through `onFocusChange` /
+    /// `onHoverChanged`, and the field chrome lifts on either.
     @State private var isTimeoutFocused = false
     @State private var isTimeoutHovered = false
+    @State private var isMaxRedirectsFocused = false
+    @State private var isMaxRedirectsHovered = false
 
     /// The URL bar text: the stored base URL plus the query rendered from the
     /// params table (the table is the source of truth for the query; the
@@ -1220,9 +1224,9 @@ struct RequestEditorView: View {
 
     /// Postman's per-request Settings tab: rows of title + description on
     /// the left, control on the right (switch with an ON/OFF label, right-
-    /// aligned field for the timeout). Both settings ride the draft's
-    /// onChange like every other edit, so they save with ⌘S and reach
-    /// `HTTPClient` on the next send.
+    /// aligned fields for the timeout and the redirect cap). Everything
+    /// rides the draft's onChange like every other edit, so it saves with
+    /// ⌘S and reaches `HTTPClient` on the next send.
     private var settingsPane: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppSpacing.xLarge) {
@@ -1231,7 +1235,20 @@ struct RequestEditorView: View {
                     description: "Follow HTTP 3xx responses as redirects.",
                     isOn: $draft.followRedirects
                 )
+                settingsMaxRedirectsRow
                 settingsTimeoutRow
+                settingsToggleRow(
+                    title: "Use cookie jar",
+                    description:
+                        "Send cookies the jar holds for this domain and store the response's Set-Cookie headers back into it.",
+                    isOn: $draft.useCookieJar
+                )
+                settingsToggleRow(
+                    title: "Verify SSL certificates",
+                    description:
+                        "Validate the server's TLS certificate chain. Turn off to accept self-signed or otherwise invalid certificates.",
+                    isOn: $draft.verifySSLCertificate
+                )
             }
             .padding(AppSpacing.medium)
         }
@@ -1273,28 +1290,72 @@ struct RequestEditorView: View {
     /// The timeout row: same left column shape, a right-aligned seconds
     /// field instead of a switch. Empty uses the app default (30s).
     private var settingsTimeoutRow: some View {
+        settingsNumberRow(
+            title: "Timeout (seconds)",
+            description:
+                "Maximum idle time between data arrivals before the request gives up. Empty uses the app default (30s).",
+            placeholder: "30",
+            text: timeoutBinding,
+            chrome: SettingsFieldChrome(
+                isFocused: $isTimeoutFocused, isHovered: $isTimeoutHovered)
+        )
+    }
+
+    /// The redirect-cap row: same shape as the timeout row. Empty follows
+    /// every redirect; a number caps them (the last 3xx comes back as-is).
+    private var settingsMaxRedirectsRow: some View {
+        settingsNumberRow(
+            title: "Maximum redirects",
+            description:
+                "Follow at most this many redirects; the last 3xx response is returned as-is when the"
+                + " limit is hit. Empty follows every redirect.",
+            placeholder: "Unlimited",
+            text: maxRedirectsBinding,
+            chrome: SettingsFieldChrome(
+                isFocused: $isMaxRedirectsFocused, isHovered: $isMaxRedirectsHovered)
+        )
+    }
+
+    /// Hover/focus mirrors for one Settings tab numeric field: the AppKit
+    /// editor reports through `onHoverChanged` / `onFocusChange`, and the
+    /// field chrome lifts on either.
+    private struct SettingsFieldChrome {
+        let isFocused: Binding<Bool>
+        let isHovered: Binding<Bool>
+    }
+
+    /// Shared shape of the Settings tab's numeric rows (timeout, redirect
+    /// cap): label + description left, a bordered single-line field right.
+    /// The editor reports hover/focus itself - nested AppKit fields never
+    /// fire SwiftUI's `.onHover`, and no `@FocusState` sees their focus.
+    private func settingsNumberRow(
+        title: String, description: String, placeholder: String,
+        text: Binding<String>, chrome: SettingsFieldChrome
+    ) -> some View {
         HStack(alignment: .top, spacing: AppSpacing.medium) {
             VStack(alignment: .leading, spacing: AppSpacing.xSmall) {
-                Text("Timeout (seconds)")
+                Text(title)
                     .font(AppFont.small.weight(.semibold))
-                Text(
-                    "Maximum idle time between data arrivals before the request gives up. Empty uses the app default (30s)."
-                )
-                .font(AppFont.emptyStateBody)
-                .foregroundStyle(AppColor.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+                Text(description)
+                    .font(AppFont.emptyStateBody)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: AppSpacing.medium)
             VariableHighlightEditor<Bool>(
-                text: timeoutBinding,
+                text: text,
                 isSingleLine: true,
                 singleLineMinHeight: AppSize.controlHeight,
                 font: .systemSubheadline,
-                placeholder: "30"
+                placeholder: placeholder,
+                onFocusChange: { chrome.isFocused.wrappedValue = $0 },
+                onHoverChanged: { chrome.isHovered.wrappedValue = $0 }
             )
             .frame(width: 120)
-            .variableFieldBordered(isFocused: isTimeoutFocused, isHovered: isTimeoutHovered)
+            .variableFieldBordered(
+                isFocused: chrome.isFocused.wrappedValue, isHovered: chrome.isHovered.wrappedValue)
         }
+        .accessibilityElement(children: .combine)
     }
 
     /// The timeout as text: empty while unset (0 = default), whole seconds
@@ -1307,6 +1368,15 @@ struct RequestEditorView: View {
                 let parsed = Double($0.trimmingCharacters(in: .whitespaces)) ?? 0
                 draft.timeoutSeconds = max(0, parsed)
             }
+        )
+    }
+
+    /// The redirect cap as text: empty while unlimited (0), whole count
+    /// otherwise. Non-numeric input falls back to unlimited.
+    private var maxRedirectsBinding: Binding<String> {
+        Binding(
+            get: { draft.maxRedirects > 0 ? String(draft.maxRedirects) : "" },
+            set: { draft.maxRedirects = max(0, Int($0.trimmingCharacters(in: .whitespaces)) ?? 0) }
         )
     }
 }
