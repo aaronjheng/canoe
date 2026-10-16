@@ -426,18 +426,73 @@ enum HTTPClient {
         }
     }
 
-    private static let redirectPolicy = RedirectPolicy()
+    /// Holds the live URLSession and its redirect-policy delegate, rebuilt
+    /// whenever the proxy settings change. Mutex-guarded because Swift 6
+    /// disallows non-isolated global mutable state, and `connectionProxyDictionary`
+    /// cannot be mutated on an existing URLSession.
+    private final class SessionBox: @unchecked Sendable {
+        static let shared = SessionBox()
+        private let lock = Mutex(())
+        private(set) var session: URLSession
+        private(set) var redirectPolicy: RedirectPolicy
+        private var lastAppliedProxyDict: [String: Any]?
 
-    private static let session: URLSession = {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 120
-        config.httpShouldSetCookies = false
-        config.httpCookieAcceptPolicy = .never
-        // An API client must never serve a cached response as a fresh send.
-        config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        return URLSession(configuration: config, delegate: redirectPolicy, delegateQueue: nil)
-    }()
+        private init() {
+            let (session, policy) = Self.makeSession(proxy: nil)
+            self.session = session
+            self.redirectPolicy = policy
+        }
+
+        private static func makeSession(proxy: [String: Any]?) -> (URLSession, RedirectPolicy) {
+            let config = URLSessionConfiguration.default
+            config.timeoutIntervalForRequest = 30
+            config.timeoutIntervalForResource = 120
+            config.httpShouldSetCookies = false
+            config.httpCookieAcceptPolicy = .never
+            // An API client must never serve a cached response as a fresh send.
+            config.requestCachePolicy = .reloadIgnoringLocalCacheData
+            config.connectionProxyDictionary = proxy
+            let policy = RedirectPolicy()
+            return (URLSession(configuration: config, delegate: policy, delegateQueue: nil), policy)
+        }
+
+        /// The current session and its redirect-policy delegate, fetched
+        /// atomically. A send holds these for its whole duration; a proxy
+        /// change only affects sessions built after it.
+        func currentSession() -> (session: URLSession, redirectPolicy: RedirectPolicy) {
+            lock.withLock { _ in
+                return (session, redirectPolicy)
+            }
+        }
+
+        /// Rebuilds the URLSession when the persisted proxy settings differ
+        /// from what the current session uses. MainActor so it can read
+        /// `SettingsStore`; invoked from `AppStore+Sending.send`.
+        @MainActor
+        func applyProxySettings() {
+            let dict = SettingsStore.shared.settings.proxy.connectionProxyDictionary
+            lock.withLock { _ in
+                let current = dict as NSDictionary?
+                let previous = lastAppliedProxyDict as NSDictionary?
+                guard current != previous else { return }
+                let (session, policy) = Self.makeSession(proxy: dict)
+                self.session = session
+                self.redirectPolicy = policy
+                self.lastAppliedProxyDict = dict
+            }
+        }
+    }
+
+    /// The live URLSession, rebuilt when proxy settings change.
+    private static var session: URLSession { SessionBox.shared.currentSession().session }
+
+    /// Rebuilds the URLSession if the persisted proxy settings changed. Call
+    /// before sending so a toggle in the Settings window takes effect on the
+    /// next request.
+    @MainActor
+    static func applyProxySettings() {
+        SessionBox.shared.applyProxySettings()
+    }
 
     /// Sends the request. `authorization` is the already-resolved effective
     /// settings (the request's own, or the parent collection's when it
@@ -494,6 +549,18 @@ enum HTTPClient {
 
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = request.method
+
+        // Injected Cookie header from the jar, unless the user already set
+        // one manually (a manual Cookie header always wins, Postman-style).
+        let hasUserCookie = request.headers.contains {
+            $0.isEnabled
+                && $0.key.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "cookie"
+        }
+        if !hasUserCookie {
+            if let cookieValue = await CookieStore.shared.cookieHeader(for: url) {
+                urlRequest.setValue(cookieValue, forHTTPHeaderField: "Cookie")
+            }
+        }
         // Per-request idle timeout (Postman's request Settings; 0 = app
         // default). This bounds the gap between data arrivals; the whole
         // exchange stays under the session's resource timeout.
@@ -648,6 +715,15 @@ enum HTTPClient {
                 outcome = try await dataWithTelemetry(for: urlRequest, followsRedirects: request.followRedirects)
             }
         }
+
+        // Persist any `Set-Cookie` headers so later requests to the same
+        // domain send them back (Postman cookie jar behavior).
+        let setCookieHeaders = outcome.response.allHeaderFields.compactMap { (key, value) -> String? in
+            guard let key = key as? String, key.lowercased() == "set-cookie", let value = value as? String else { return nil }
+            return value
+        }
+        await CookieStore.shared.store(setCookieHeaders: setCookieHeaders, for: url)
+
         let duration = Date().timeIntervalSince(start)
 
         // `allHeaderFields` is a dictionary: iterate sorted so the stored
@@ -743,6 +819,11 @@ enum HTTPClient {
         followsRedirects: Bool
     ) async throws -> Outcome {
         let box = DataTaskBox()
+        // One atomic snapshot of (session, redirectPolicy) for the whole
+        // send: taking them from two separate currentSession() calls could
+        // mix a session built before a proxy switch with the redirect-policy
+        // delegate built after it, orphan telemetry, and hang the send.
+        let (session, redirectPolicy) = SessionBox.shared.currentSession()
         let outcome = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 // No completion handler: the body arrives through the

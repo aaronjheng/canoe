@@ -449,6 +449,28 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>6CDD662ED592481CB9DCDBBB</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CookieStore.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E4CB50C3A5A648F389B4483E</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>ProxySettings.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>9350CE255EE025AE7959FE42</key>
 		<dict>
 			<key>isa</key>
@@ -457,6 +479,7 @@
 			<array>
 				<string>EBB11063F5D37FF3F33DE52D</string>
 				<string>AC64FA0CE9C3B946CA8E78B4</string>
+				<string>6CDD662ED592481CB9DCDBBB</string>
 				<string>C0A5E1000000000000000D10</string>
 				<string>C0A5E1000000000000000D50</string>
 			</array>
@@ -1022,6 +1045,17 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>5D4DDF6BEF0E4CB49696EF91</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CookieManagerView.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>69F933A3AE5ACABDC6C04A0E</key>
 		<dict>
 			<key>isa</key>
@@ -1029,6 +1063,7 @@
 			<key>children</key>
 			<array>
 				<string>6CFF6F847D795AFB6A01B50A</string>
+				<string>5D4DDF6BEF0E4CB49696EF91</string>
 				<string>C0A5E1000000000000000003</string>
 			</array>
 			<key>sourceTree</key>
@@ -1396,6 +1431,20 @@
 			<key>fileRef</key>
 			<string>EBB11063F5D37FF3F33DE52D</string>
 		</dict>
+		<key>38CD6916D521463EA054D157</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>6CDD662ED592481CB9DCDBBB</string>
+		</dict>
+		<key>57BB51232D3F41AF880746D7</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E4CB50C3A5A648F389B4483E</string>
+		</dict>
 		<key>472E57AD11EDA8197ADCD7E5</key>
 		<dict>
 			<key>isa</key>
@@ -1549,6 +1598,13 @@
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>6CFF6F847D795AFB6A01B50A</string>
+		</dict>
+		<key>C2CB4A5924504379859F9A74</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>5D4DDF6BEF0E4CB49696EF91</string>
 		</dict>
 		<key>27E20BFB927C6348F54E75A0</key>
 		<dict>
@@ -2226,6 +2282,8 @@
 				<string>BA94F779B6241AF0EE92F8B1</string>
 				<string>63975F865FB84EB13E8AB66D</string>
 				<string>93244121A13F7AE0281016E7</string>
+				<string>38CD6916D521463EA054D157</string>
+				<string>57BB51232D3F41AF880746D7</string>
 				<string>472E57AD11EDA8197ADCD7E5</string>
 				<string>C0A5E2000000000000000D10</string>
 				<string>C0A5E2000000000000000D50</string>
@@ -2248,6 +2306,7 @@
 				<string>FABE62C91458B807024EAB7C</string>
 				<string>452DBCF33422DC441319AA8C</string>
 				<string>5F019EDE10AA7F74D6087E81</string>
+				<string>C2CB4A5924504379859F9A74</string>
 				<string>27E20BFB927C6348F54E75A0</string>
 				<string>C4D2E93AFB40E91A859EA6A2</string>
 				<string>7A1C4E9D2B3F40518263C7A5</string>
@@ -2871,13 +2930,14 @@
 			<array>
 				<string>8FCAA47A2F3E81FE4322D17B</string>
 				<string>6A4FDD33527FCA9E18066D40</string>
+				<string>E4CB50C3A5A648F389B4483E</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 			<key>path</key>
 			<string>Models</string>
 		</dict>
-				<key>38D2CD693F07404E55947698</key>
+		<key>38D2CD693F07404E55947698</key>
 		<dict>
 			<key>isa</key>
 			<string>PBXGroup</string>

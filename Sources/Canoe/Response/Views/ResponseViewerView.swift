@@ -76,6 +76,7 @@ struct ResponseViewerView: View {
         case pretty = "Pretty"
         case raw = "Raw"
         case preview = "Preview"
+        case hex = "Hex"
         var id: String { rawValue }
     }
 
@@ -210,18 +211,19 @@ struct ResponseViewerView: View {
         // needs no text, so it skips the decode entirely.
         let key = "\(response.id)-\(bodyMode)-\(bodyLanguage)"
         let isPreview = bodyMode == .preview
+        let isHex = bodyMode == .hex
         let display: BodyDisplay =
             key == bodyRenderKey
             ? bodyRenderDisplay
-            : (isPreview ? BodyDisplay(text: "", totalCount: nil, language: .text) : bodyDisplay(response))
+            : (isPreview || isHex ? BodyDisplay(text: "", totalCount: nil, language: .text) : bodyDisplay(response))
         let rendered: Text =
             key == bodyRenderKey
             ? bodyRenderText
-            : (isPreview ? Text("") : renderedText(for: display))
+            : (isPreview || isHex ? Text("") : renderedText(for: display))
         let renderedAttributed: AttributedString =
             key == bodyRenderKey
             ? bodyRenderAttributed
-            : (isPreview
+            : (isPreview || isHex
                 ? AttributedString("")
                 : SyntaxHighlight.attributedText(display.text, syntax: display.syntax))
         return VStack(spacing: 0) {
@@ -236,6 +238,8 @@ struct ResponseViewerView: View {
                 cookiesPane(response)
             } else if isPreview {
                 previewContent(response)
+            } else if isHex {
+                hexContent(response)
             } else {
                 bodyContent(response, display, rendered: rendered, renderedAttributed: renderedAttributed)
             }
@@ -745,8 +749,9 @@ struct ResponseViewerView: View {
             Spacer()
             HStack(spacing: AppSpacing.small) {
                 // Word wrap and find are text-mode tools: hidden in Preview
-                // (the web view wraps its own content and has its own find).
-                if bodyMode != .preview {
+                // (the web view wraps its own content and has its own find)
+                // and in Hex (fixed-width columns).
+                if bodyMode != .preview && bodyMode != .hex {
                     // `text.wordwrap` does not exist in this OS's SF Symbols set
                     // (the button renders an empty glyph); `arrow.turn.down.left`
                     // is the wrap-arrow editors use.
@@ -766,7 +771,15 @@ struct ResponseViewerView: View {
                     .help("Find in Response (⌘F)")
                 }
                 Button("Copy Body", systemImage: didCopyBody ? "checkmark" : "doc.on.doc") {
-                    copyBody(bodyMode == .preview ? response.bodyString : fullBodyText(response, display: display))
+                    let copyText: String
+                    if bodyMode == .hex {
+                        copyText = hexCopyText(for: response)
+                    } else if bodyMode == .preview {
+                        copyText = response.bodyString
+                    } else {
+                        copyText = fullBodyText(response, display: display)
+                    }
+                    copyBody(copyText)
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(IconButtonStyle())
@@ -1108,23 +1121,157 @@ struct ResponseViewerView: View {
         }
     }
 
+    // MARK: - Hex dump
+
+    /// Hex dump is only offered for bodies up to this size: a 50 MB body
+    /// would expand to millions of rows and freeze the renderer, and the
+    /// Copy Body text would be ~180 MB. Use Raw for anything larger.
+    private static let maxHexBodyBytes = 5 * 1024 * 1024
+
+    /// One line of the hex dump: 8-byte-grouped hex bytes plus an ASCII
+    /// column (non-printable shown as `.`).
+    private struct HexRow {
+        let offset: String
+        let hex: String
+        let ascii: String
+    }
+
+    /// Splits `data` into 16-byte hex-dump rows.
+    private func hexRows(for data: Data) -> [HexRow] {
+        var rows: [HexRow] = []
+        for offset in stride(from: 0, to: data.count, by: 16) {
+            let end = min(offset + 16, data.count)
+            let bytes = data[offset..<end]
+            var hexParts: [String] = []
+            for (index, byte) in bytes.enumerated() {
+                if index > 0 {
+                    hexParts.append(index % 8 == 0 ? "  " : " ")
+                }
+                hexParts.append(String(format: "%02X", byte))
+            }
+            let hex = hexParts.joined()
+            let ascii = String(
+                bytes.map { byte in
+                    (32...126).contains(byte) ? Character(UnicodeScalar(byte)) : "."
+                }
+            )
+            rows.append(
+                HexRow(
+                    offset: String(format: "%08X", offset),
+                    hex: hex,
+                    ascii: ascii
+                )
+            )
+        }
+        return rows
+    }
+
+    /// Hex-dump rendering of the response body: offset, 16 bytes per row,
+    /// with an ASCII column. Mirrors the layout Postman shows for binary
+    /// bodies in its response viewer.
+    @ViewBuilder
+    private func hexContent(_ response: ResponseModel) -> some View {
+        if response.body.isEmpty {
+            ContentUnavailableView(
+                "Empty Response Body",
+                systemImage: "doc.text",
+                description: Text("This response did not return any body content.")
+            )
+        } else if response.body.count > Self.maxHexBodyBytes {
+            ContentUnavailableView(
+                "Hex Dump Unavailable",
+                systemImage: "eye.slash",
+                description: Text(
+                    "The body is larger than \(Int64(Self.maxHexBodyBytes).formattedByteCount); use Raw to inspect it."
+                )
+            )
+        } else {
+            VStack(spacing: 0) {
+                if response.bodyTruncated {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(AppFont.small)
+                        Text(
+                            "Response body exceeded \(Int64(HTTPClient.maxResponseBytes).formattedByteCount) and was truncated."
+                        )
+                        .font(AppFont.small)
+                    }
+                    .foregroundStyle(AppColor.textSecondary)
+                    .padding(.horizontal, AppSpacing.medium)
+                    .padding(.vertical, AppSpacing.xSmall)
+                    Divider()
+                }
+                ScrollView([.vertical, .horizontal]) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(hexRows(for: response.body).enumerated()), id: \.offset) { _, row in
+                            HStack(spacing: 0) {
+                                Text(row.offset)
+                                    .font(AppFont.monoSubheadline)
+                                    .foregroundStyle(AppColor.textSecondary)
+                                    .frame(width: 80, alignment: .leading)
+                                Text(row.hex)
+                                    .font(AppFont.monoSubheadline)
+                                    .foregroundStyle(AppColor.textPrimary)
+                                Spacer(minLength: 0)
+                                Text(row.ascii)
+                                    .font(AppFont.monoSubheadline)
+                                    .foregroundStyle(AppColor.textSecondary)
+                                    .frame(minWidth: 16, alignment: .leading)
+                            }
+                            .padding(.horizontal, AppSpacing.medium)
+                            .padding(.vertical, 1)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .background(AppColor.codeBackground)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    /// Hex string of the full body for the Copy Body action in Hex mode.
+    /// Returns an empty string when the body is too large to safely dump.
+    private func hexCopyText(for response: ResponseModel) -> String {
+        guard response.body.count <= Self.maxHexBodyBytes else { return "" }
+        return hexRows(for: response.body).map { row in
+            "\(row.offset)  \(row.hex)  \(row.ascii)"
+        }.joined(separator: "\n")
+    }
+
     // MARK: - Cookies
 
     /// Postman-style response Cookies view: every cookie the response set,
-    /// one row per cookie with its attributes. Read-only - Canoe keeps the
-    /// cookie jar empty on purpose (responses are inspected, not a browser
-    /// session), so these describe what the server asked for.
+    /// one row per cookie with its attributes. Read-only - these describe
+    /// what the server asked for. Stored cookies are managed from the Cookie Jar.
+    private var manageCookiesLink: some View {
+        LinkButton("Manage Cookies…") {
+            (NSApp.delegate as? AppDelegate)?.openCookies()
+        }
+        .help("Manage stored cookies")
+    }
+
     @ViewBuilder
     private func cookiesPane(_ response: ResponseModel) -> some View {
         let cookies = response.cookies
         if cookies.isEmpty {
-            ContentUnavailableView(
-                "No Cookies",
-                systemImage: "cookie",
-                description: Text("This response did not set any cookies.")
-            )
+            VStack(spacing: AppSpacing.small) {
+                ContentUnavailableView(
+                    "No Cookies",
+                    systemImage: "cookie",
+                    description: Text("This response did not set any cookies.")
+                )
+                manageCookiesLink
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             VStack(spacing: 0) {
+                HStack {
+                    Spacer(minLength: 0)
+                    manageCookiesLink
+                }
+                .padding(.horizontal, AppSpacing.medium)
+                .padding(.bottom, AppSpacing.xSmall)
                 HStack(spacing: 0) {
                     cookieColumnHeader("Name", width: 160)
                     cookieColumnHeader("Value", width: nil)

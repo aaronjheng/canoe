@@ -4,11 +4,13 @@ import Foundation
 enum SettingsPane: Hashable, CaseIterable {
     case appearance
     case sync
+    case proxy
 
     var title: String {
         switch self {
         case .appearance: "Appearance"
         case .sync: "Sync"
+        case .proxy: "Proxy"
         }
     }
 
@@ -16,6 +18,7 @@ enum SettingsPane: Hashable, CaseIterable {
         switch self {
         case .appearance: "paintbrush"
         case .sync: "arrow.triangle.2.circlepath"
+        case .proxy: "network"
         }
     }
 }

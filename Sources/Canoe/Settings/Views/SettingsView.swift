@@ -36,6 +36,7 @@ struct SettingsView: View {
         switch navigation.pane {
         case .appearance: appearancePane
         case .sync: syncPane
+        case .proxy: proxyPane
         }
     }
 
@@ -198,5 +199,180 @@ struct SettingsView: View {
             }
             isSwitchingLocation = false
         }
+    }
+
+    // MARK: - Proxy
+
+    private var proxyEnabled: Binding<Bool> {
+        Binding(
+            get: { store.settings.proxy.enabled },
+            set: {
+                store.settings.proxy.enabled = $0
+                store.save()
+            }
+        )
+    }
+
+    private var httpHost: Binding<String> {
+        Binding(
+            get: { store.settings.proxy.httpHost },
+            set: {
+                store.settings.proxy.httpHost = $0
+                store.save()
+            }
+        )
+    }
+
+    private var httpPort: Binding<Int> {
+        Binding(
+            get: { store.settings.proxy.httpPort },
+            set: {
+                store.settings.proxy.httpPort = $0
+                store.save()
+            }
+        )
+    }
+
+    private var httpsHost: Binding<String> {
+        Binding(
+            get: { store.settings.proxy.httpsHost },
+            set: {
+                store.settings.proxy.httpsHost = $0
+                store.save()
+            }
+        )
+    }
+
+    private var httpsPort: Binding<Int> {
+        Binding(
+            get: { store.settings.proxy.httpsPort },
+            set: {
+                store.settings.proxy.httpsPort = $0
+                store.save()
+            }
+        )
+    }
+
+    private var proxyUsername: Binding<String> {
+        Binding(
+            get: { store.settings.proxy.username },
+            set: {
+                store.settings.proxy.username = $0
+                store.save()
+            }
+        )
+    }
+
+    private var proxyPassword: Binding<String> {
+        Binding(
+            get: { store.settings.proxy.password },
+            set: {
+                store.settings.proxy.password = $0
+                store.save()
+            }
+        )
+    }
+
+    private var proxyBypassList: Binding<String> {
+        Binding(
+            get: { store.settings.proxy.bypassList },
+            set: {
+                store.settings.proxy.bypassList = $0
+                store.save()
+            }
+        )
+    }
+
+    private var proxyPane: some View {
+        Form {
+            Section {
+                Toggle("Enable proxy", isOn: proxyEnabled)
+            } header: {
+                Text("Proxy")
+            } footer: {
+                Text("When enabled, outgoing requests are routed through the HTTP/HTTPS proxy below. Turned off, Canoe connects directly.")
+            }
+
+            Section {
+                HStack {
+                    Text("HTTP proxy")
+                    Spacer(minLength: AppSpacing.small)
+                    TextField("Host (e.g. 127.0.0.1)", text: httpHost)
+                        .focusEffectDisabled()
+                }
+                HStack {
+                    Text("Port")
+                    Spacer(minLength: AppSpacing.small)
+                    TextField("8080", value: httpPort, formatter: portFormatter)
+                        .focusEffectDisabled()
+                }
+            } header: {
+                Text("HTTP")
+            }
+
+            Section {
+                HStack {
+                    Text("HTTPS proxy")
+                    Spacer(minLength: AppSpacing.small)
+                    TextField("Host (e.g. 127.0.0.1)", text: httpsHost)
+                        .focusEffectDisabled()
+                }
+                HStack {
+                    Text("Port")
+                    Spacer(minLength: AppSpacing.small)
+                    TextField("8080", value: httpsPort, formatter: portFormatter)
+                        .focusEffectDisabled()
+                }
+            } header: {
+                Text("HTTPS")
+            }
+
+            Section {
+                HStack {
+                    Text("Username")
+                    Spacer(minLength: AppSpacing.small)
+                    TextField("Username", text: proxyUsername)
+                        .focusEffectDisabled()
+                }
+                HStack {
+                    Text("Password")
+                    Spacer(minLength: AppSpacing.small)
+                    SecureField("Password", text: proxyPassword)
+                        .focusEffectDisabled()
+                }
+            } header: {
+                Text("Proxy authentication (optional)")
+            }
+
+            Section {
+                HStack(alignment: .top) {
+                    Text("Bypass list")
+                    Spacer(minLength: AppSpacing.small)
+                    TextField("localhost, .example.com", text: proxyBypassList)
+                        .focusEffectDisabled()
+                }
+            } header: {
+                Text("Hosts that bypass the proxy")
+            } footer: {
+                Text(
+                    "Comma-separated host names. A leading dot matches subdomains "
+                    + "(for example `.example.com` matches `api.example.com`). Leave empty to proxy everything."
+                )
+            }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(AppColor.controlBackground)
+        .disabled(!store.settings.proxy.enabled)
+    }
+
+    /// Whole-number formatter for proxy port fields, so the stepper-free
+    /// text field only accepts integers.
+    private var portFormatter: NumberFormatter {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.allowsFloats = false
+        formatter.minimumIntegerDigits = 1
+        return formatter
     }
 }

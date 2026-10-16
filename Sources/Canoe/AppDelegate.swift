@@ -6,6 +6,7 @@ import SwiftUI
 /// window, so opening it again brings the existing window forward.
 private enum UtilityPanel: Hashable {
     case about
+    case cookies
     case license
     case shortcuts
 }
@@ -350,6 +351,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             resizable: true
         ) {
             KeyboardShortcutsView()
+        }
+    }
+
+    @objc func openCookies() {
+        openUtilityWindow(
+            .cookies,
+            title: "Cookie Jar",
+            contentSize: NSSize(width: 780, height: 520),
+            resizable: true
+        ) {
+            CookieManagerView()
         }
     }
 
@@ -811,6 +823,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         consoleItem.state = appStore.showConsole ? .on : .off
         consoleMenuItem = consoleItem
         viewMenu.addItem(consoleItem)
+        let cookiesItem = NSMenuItem(
+            title: "Cookie Jar…",
+            action: #selector(openCookies),
+            keyEquivalent: "")
+        cookiesItem.target = self
+        viewMenu.addItem(cookiesItem)
         let workspacesItem = NSMenuItem(
             title: "Workspaces",
             action: #selector(openWorkspaces),

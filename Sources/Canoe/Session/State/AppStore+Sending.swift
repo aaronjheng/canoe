@@ -97,6 +97,9 @@ extension AppStore {
             // written once before the network call and read after the await
             // returns, so the two sides never race.
             let sentRequest = Mutex<URLRequest?>(nil)
+            // Apply any proxy-settings change before this send, so a toggle in
+            // the Settings window takes effect on the next request.
+            HTTPClient.applyProxySettings()
             do {
                 let response = try await HTTPClient.send(
                     request: request,

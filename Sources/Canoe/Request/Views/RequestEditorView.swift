@@ -260,6 +260,14 @@ struct RequestEditorView: View {
         VariableSuggestion.suggestions(from: store.variableScopesForRequest(draft))
     }
 
+    /// Opens the global cookie manager from the request tab row (Postman's
+    /// trailing Cookies tab). Clearing the editor focus first keeps the
+    /// URL-bar expansion from staying open underneath the utility window.
+    private func openCookieManager() {
+        urlFieldFocused = nil
+        (NSApp.delegate as? AppDelegate)?.openCookies()
+    }
+
     /// Recent URLs for the URL bar's suggestion dropdown: history entries,
     /// newest first, deduped by URL, capped like Postman's list. The panel
     /// filters these by the current text as the user types.
@@ -1098,6 +1106,18 @@ struct RequestEditorView: View {
                 }
             )
             Spacer()
+            // Postman-style Cookies entry: the request tab row ends with a
+            // Cookies tab that opens the global cookie manager.
+            UnderlineTab(
+                title: "Cookies",
+                count: nil,
+                hasContent: false,
+                labelInset: 0,
+                isSelected: false,
+                action: {
+                    openCookieManager()
+                }
+            )
         }
         // The row owns the whole gutter: tabs carry no label inset, so the
         // labels and their underlines sit exactly on the content column

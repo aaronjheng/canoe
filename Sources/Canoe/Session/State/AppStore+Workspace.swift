@@ -166,15 +166,18 @@ extension AppStore {
     /// Replaces a workspace's variables in memory and marks them dirty.
     /// Nothing is written to disk until Save (⌘S / Save button); the edit is
     /// mirrored to drafts.json so it survives relaunches.
+    ///
+    /// Workspace variables are order-sensitive (manual Postman-style order):
+    /// the array order itself is the persisted order, so a drag-to-reorder
+    /// with identical content still counts as an edit. Do NOT compare through
+    /// `canonicalVariables` here - that name-sorts both sides and would
+    /// swallow a pure reorder.
     func updateWorkspaceVariables(_ id: UUID, variables: [Variable]) {
         if persistedWorkspaceVariableBaselines[id] == nil {
             persistedWorkspaceVariableBaselines[id] = vault.workspaces.first(where: { $0.id == id })?.variables
         }
         guard let idx = vault.workspaces.firstIndex(where: { $0.id == id }) else { return }
-        // The workspace/collection tables keep rows sorted by name while the
-        // vault file may store them in any order: compare canonically so
-        // merely opening the editor does not light the Save marker.
-        guard canonicalVariables(vault.workspaces[idx].variables) != canonicalVariables(variables) else { return }
+        guard vault.workspaces[idx].variables != variables else { return }
         vault.workspaces[idx].variables = variables
         pendingWorkspaceVariables[id] = variables
         // Editing pins a live preview tab (same rule as requests).
@@ -183,10 +186,11 @@ extension AppStore {
     }
 
     /// Whether the workspace's variables have unsaved modifications.
+    /// Order-sensitive: a pure drag-to-reorder counts as dirty.
     func hasPendingWorkspaceVariables(for workspaceID: UUID) -> Bool {
         guard let pending = pendingWorkspaceVariables[workspaceID] else { return false }
         guard let baseline = persistedWorkspaceVariableBaselines[workspaceID] else { return true }
-        return canonicalVariables(pending) != canonicalVariables(baseline)
+        return pending != baseline
     }
 
 }
