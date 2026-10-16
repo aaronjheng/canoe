@@ -69,6 +69,8 @@ struct AuthEditor: View {
                 request.authOAuthGrantType = auth.oauthGrantType
                 request.authOAuthAuthURL = auth.oauthAuthURL
                 request.authOAuthTokenURL = auth.oauthTokenURL
+                request.authOAuthUsername = auth.oauthUsername
+                request.authOAuthPassword = auth.oauthPassword
                 request.authOAuthClientID = auth.oauthClientID
                 request.authOAuthClientSecret = auth.oauthClientSecret
                 request.authOAuthScope = auth.oauthScope
@@ -77,6 +79,8 @@ struct AuthEditor: View {
                 request.authOAuthClientAuth = auth.oauthClientAuth
                 request.authOAuthHeaderPrefix = auth.oauthHeaderPrefix
                 request.authOAuthAccessToken = auth.oauthAccessToken
+                request.authOAuthTokens = auth.oauthTokens
+                request.authOAuthSelectedTokenID = auth.oauthSelectedTokenID
             }
         )
     }
@@ -179,7 +183,8 @@ struct AuthorizationForm: View {
         case .apiKey:
             "The key/value pair is added to the selected header or the query string when you send the request."
         case .oauth2:
-            "Fetch an access token with Get New Access Token, then requests send it in the Authorization header with your header prefix."
+            "Fetch an access token with Get New Access Token, then requests send the selected token from"
+                + " Available Tokens in the Authorization header with your header prefix."
         }
     }
 
@@ -303,31 +308,32 @@ struct AuthorizationForm: View {
 
     // MARK: - OAuth 2.0 pane
 
-    /// Postman's Configure New Token section: grant type selector, the
-    /// endpoint/credential fields it needs, client authentication, header
-    /// prefix, the Get New Access Token button, and the resulting token
-    /// (editable, so it can also be pasted by hand).
+    /// Postman's Configure New Token section: the grant type selector, the
+    /// endpoint/credential fields that grant needs, client authentication,
+    /// header prefix, the Get New Access Token button, and the Available
+    /// Tokens list (the selected fetched token is what sends use; with no
+    /// selection the manual Access Token field below applies).
     @State private var isFetchingToken = false
     @State private var tokenFetchError: String?
 
     @ViewBuilder
     private var oauth2Pane: some View {
-        let isPKCE = oauth.oauthGrant == .authorizationCodePKCE
+        let grant = oauth.oauthGrant
         VStack(alignment: .leading, spacing: AppSpacing.medium) {
             fieldRow("Grant Type") {
                 DropdownFieldButton(
                     id: "auth.oauth2.grant",
-                    label: oauth.oauthGrant.label,
+                    label: grant.label,
                     width: 240
                 ) {
-                    OAuth2Grant.allCases.map { grant in
-                        DropdownRow.action(grant.label, isSelected: grant == oauth.oauthGrant) {
-                            oauth.oauthGrant = grant
+                    OAuth2Grant.allCases.map { pickedGrant in
+                        DropdownRow.action(pickedGrant.label, isSelected: pickedGrant == grant) {
+                            oauth.oauthGrant = pickedGrant
                         }
                     }
                 }
             }
-            if isPKCE {
+            if grant.usesBrowserFlow {
                 fieldRow("Callback URL") {
                     OAuthField(
                         text: oauthCallbackBinding,
@@ -353,13 +359,28 @@ struct AuthorizationForm: View {
                     )
                 }
             }
-            fieldRow("Access Token URL") {
-                OAuthField(
-                    text: oauthTokenURLBinding,
-                    variables: variables,
-                    suggestions: suggestions,
-                    placeholder: "https://provider.com/token"
-                )
+            if grant.usesResourceOwnerCredentials {
+                fieldRow("Username") {
+                    OAuthField(
+                        text: oauthUsernameBinding,
+                        variables: variables,
+                        suggestions: suggestions,
+                        placeholder: "Username"
+                    )
+                }
+                fieldRow("Password") {
+                    OAuthSecretField(text: oauthPasswordBinding)
+                }
+            }
+            if grant.usesTokenExchange {
+                fieldRow("Access Token URL") {
+                    OAuthField(
+                        text: oauthTokenURLBinding,
+                        variables: variables,
+                        suggestions: suggestions,
+                        placeholder: "https://provider.com/token"
+                    )
+                }
             }
             fieldRow("Client ID") {
                 OAuthField(
@@ -369,8 +390,10 @@ struct AuthorizationForm: View {
                     placeholder: "Client ID"
                 )
             }
-            fieldRow("Client Secret") {
-                OAuthSecretField(text: oauthClientSecretBinding)
+            if grant.usesTokenExchange {
+                fieldRow("Client Secret") {
+                    OAuthSecretField(text: oauthClientSecretBinding)
+                }
             }
             fieldRow("Scope") {
                 OAuthField(
@@ -380,28 +403,30 @@ struct AuthorizationForm: View {
                     placeholder: "Space-separated scopes"
                 )
             }
-            fieldRow("Client Authentication") {
-                DropdownFieldButton(
-                    id: "auth.oauth2.clientAuth",
-                    label: oauth.oauthSendsBasicAuth ? "Send as Basic Auth header" : "Send client credentials in body",
-                    width: 260
-                ) {
-                    [
-                        DropdownRow.action(
-                            "Send client credentials in body",
-                            isSelected: !oauth.oauthSendsBasicAuth
-                        ) {
-                            oauth.oauthSendsBasicAuth = false
-                        },
-                        DropdownRow.action(
-                            "Send as Basic Auth header",
-                            isSelected: oauth.oauthSendsBasicAuth
-                        ) {
-                            oauth.oauthSendsBasicAuth = true
-                        },
-                    ]
+            if grant.usesTokenExchange {
+                fieldRow("Client Authentication") {
+                    DropdownFieldButton(
+                        id: "auth.oauth2.clientAuth",
+                        label: oauth.oauthSendsBasicAuth ? "Send as Basic Auth header" : "Send client credentials in body",
+                        width: 260
+                    ) {
+                        [
+                            DropdownRow.action(
+                                "Send client credentials in body",
+                                isSelected: !oauth.oauthSendsBasicAuth
+                            ) {
+                                oauth.oauthSendsBasicAuth = false
+                            },
+                            DropdownRow.action(
+                                "Send as Basic Auth header",
+                                isSelected: oauth.oauthSendsBasicAuth
+                            ) {
+                                oauth.oauthSendsBasicAuth = true
+                            },
+                        ]
+                    }
+                    .help("Where the client credentials ride on the token request")
                 }
-                .help("Where the client credentials ride on the token request")
             }
             fieldRow("Header Prefix") {
                 OAuthField(
@@ -411,41 +436,149 @@ struct AuthorizationForm: View {
                     placeholder: "Bearer"
                 )
             }
-            HStack(spacing: AppSpacing.medium) {
-                Button(action: fetchAccessToken) {
+            oauthActionsRow
+            availableTokensSection
+        }
+    }
+
+    /// Fetch/refresh controls plus the last error, shared by the two
+    /// actions (the spinner rides whichever is running).
+    @ViewBuilder
+    private var oauthActionsRow: some View {
+        HStack(spacing: AppSpacing.medium) {
+            Button(action: fetchAccessToken) {
+                HStack(spacing: AppSpacing.xSmall) {
+                    if isFetchingToken {
+                        ProgressView().controlSize(.small)
+                    }
+                    Text(isFetchingToken ? "Fetching…" : "Get New Access Token")
+                }
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .disabled(isFetchingToken)
+            .help("Runs the configured grant and adds the token to Available Tokens")
+            if oauth.selectedOAuthToken?.refreshToken.isEmpty == false {
+                Button(action: refreshAccessToken) {
                     HStack(spacing: AppSpacing.xSmall) {
                         if isFetchingToken {
                             ProgressView().controlSize(.small)
                         }
-                        Text(isFetchingToken ? "Fetching…" : "Get New Access Token")
+                        Text("Refresh")
                     }
                 }
-                .buttonStyle(PrimaryButtonStyle())
+                .buttonStyle(SecondaryButtonStyle(minHeight: AppSize.controlHeight))
                 .disabled(isFetchingToken)
-                .help("Runs the configured grant and stores the token below")
-                if let tokenFetchError {
-                    Text(tokenFetchError)
-                        .font(AppFont.small)
-                        .foregroundStyle(AppColor.error)
-                        .lineLimit(2)
-                        .truncationMode(.tail)
-                        .help(tokenFetchError)
-                }
+                .help("Exchanges the selected token's refresh token for a new access token")
             }
-            fieldRow("Access Token") {
-                OAuthField(
-                    text: oauthAccessTokenBinding,
-                    variables: variables,
-                    suggestions: suggestions,
-                    placeholder: "Fetched here, or paste one"
-                )
+            if let tokenFetchError {
+                Text(tokenFetchError)
+                    .font(AppFont.small)
+                    .foregroundStyle(AppColor.error)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                    .help(tokenFetchError)
             }
         }
     }
 
-    /// Runs the configured grant; the fetched token lands in the access
-    /// token field through the oauth binding (so it persists with ⌘S like
-    /// every other auth field).
+    /// Postman's Available Tokens: every token fetched through Get New
+    /// Access Token, with the selected one marked as what sends use. No
+    /// selection means the manual Access Token field below applies.
+    @ViewBuilder
+    private var availableTokensSection: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.medium) {
+            Text("Available Tokens")
+                .font(AppFont.sectionTitle)
+            fieldRow("Token") {
+                HStack(spacing: AppSpacing.xSmall) {
+                    DropdownFieldButton(
+                        id: "auth.oauth2.tokens",
+                        label: tokenDropdownLabel,
+                        width: 260
+                    ) {
+                        tokenDropdownRows
+                    }
+                    if oauth.oauthSelectedTokenID != nil {
+                        Button {
+                            deleteSelectedToken()
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(AppFont.iconRow)
+                                .foregroundStyle(AppColor.textSecondary)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(IconButtonStyle(inset: 0))
+                        .help("Delete the selected token; the manual Access Token field takes over")
+                    }
+                }
+            }
+            if let selected = oauth.selectedOAuthToken {
+                fieldRow("Access Token") {
+                    OAuthField(
+                        text: .constant(selected.accessToken),
+                        variables: variables,
+                        suggestions: suggestions,
+                        placeholder: "",
+                        isEditable: false
+                    )
+                }
+                HStack(spacing: AppSpacing.small) {
+                    if selected.isExpired {
+                        Badge(text: "Expired")
+                    } else if let expiresAt = selected.expiresAt {
+                        Text("Expires \(expiresAt.formatted(date: .abbreviated, time: .shortened))")
+                            .font(AppFont.small)
+                            .foregroundStyle(AppColor.textSecondary)
+                    }
+                    Spacer(minLength: 0)
+                }
+            } else {
+                fieldRow("Access Token") {
+                    OAuthField(
+                        text: oauthAccessTokenBinding,
+                        variables: variables,
+                        suggestions: suggestions,
+                        placeholder: "Fetched here, or paste one"
+                    )
+                }
+            }
+        }
+    }
+
+    /// The Token dropdown's label: the selected token's name, or the
+    /// manual-entry fallback.
+    private var tokenDropdownLabel: String {
+        oauth.selectedOAuthToken?.displayName ?? "Manually Enter"
+    }
+
+    /// Rows for the Token dropdown: the manual fallback first, then every
+    /// fetched token (expired ones marked inline, like the badge below).
+    private var tokenDropdownRows: [DropdownRow] {
+        var rows: [DropdownRow] = [
+            DropdownRow.action(
+                "Manually Enter",
+                isSelected: oauth.oauthSelectedTokenID == nil
+            ) {
+                oauth.oauthSelectedTokenID = nil
+            }
+        ]
+        for token in oauth.oauthTokens {
+            let label = token.isExpired ? "\(token.displayName) (expired)" : token.displayName
+            rows.append(
+                DropdownRow.action(
+                    label,
+                    isSelected: token.id == oauth.oauthSelectedTokenID
+                ) {
+                    oauth.oauthSelectedTokenID = token.id
+                }
+            )
+        }
+        return rows
+    }
+
+    /// Runs the configured grant; the fetched token joins the Available
+    /// Tokens list and is selected, so sends use it immediately (Postman
+    /// behavior). The list persists with ⌘S like every other auth field.
     private func fetchAccessToken() {
         guard !isFetchingToken else { return }
         isFetchingToken = true
@@ -456,11 +589,53 @@ struct AuthorizationForm: View {
             defer { isFetchingToken = false }
             do {
                 let token = try await OAuth2Service.fetchToken(authorization: fields, variables: variables)
-                oauth.oauthAccessToken = token
+                oauth.oauthTokens.append(token)
+                oauth.oauthSelectedTokenID = token.id
             } catch {
                 tokenFetchError = error.localizedDescription
             }
         }
+    }
+
+    /// Exchanges the selected token's refresh token for a fresh access
+    /// token, updating the entry in place (a rotated refresh token lands
+    /// too). Only offered when the selected token carries one.
+    private func refreshAccessToken() {
+        guard !isFetchingToken, let selected = oauth.selectedOAuthToken, !selected.refreshToken.isEmpty
+        else { return }
+        isFetchingToken = true
+        tokenFetchError = nil
+        let fields = oauth
+        let variables = self.variables
+        let refreshToken = selected.refreshToken
+        let tokenID = selected.id
+        Task {
+            defer { isFetchingToken = false }
+            do {
+                let fresh = try await OAuth2Service.refresh(
+                    authorization: fields, variables: variables, refreshToken: refreshToken)
+                if let index = oauth.oauthTokens.firstIndex(where: { $0.id == tokenID }) {
+                    var updated = oauth.oauthTokens[index]
+                    updated.accessToken = fresh.accessToken
+                    updated.refreshToken = fresh.refreshToken
+                    updated.tokenType = fresh.tokenType
+                    updated.scope = fresh.scope
+                    updated.expiresAt = fresh.expiresAt
+                    updated.fetchedAt = fresh.fetchedAt
+                    oauth.oauthTokens[index] = updated
+                }
+            } catch {
+                tokenFetchError = error.localizedDescription
+            }
+        }
+    }
+
+    /// Deletes the selected managed token; the manual Access Token field
+    /// takes over as the send source.
+    private func deleteSelectedToken() {
+        guard let selectedID = oauth.oauthSelectedTokenID else { return }
+        oauth.oauthTokens.removeAll { $0.id == selectedID }
+        oauth.oauthSelectedTokenID = nil
     }
 
     // Per-field bindings over the oauth struct.
@@ -469,6 +644,12 @@ struct AuthorizationForm: View {
     }
     private var oauthTokenURLBinding: Binding<String> {
         Binding(get: { oauth.oauthTokenURL }, set: { oauth.oauthTokenURL = $0 })
+    }
+    private var oauthUsernameBinding: Binding<String> {
+        Binding(get: { oauth.oauthUsername }, set: { oauth.oauthUsername = $0 })
+    }
+    private var oauthPasswordBinding: Binding<String> {
+        Binding(get: { oauth.oauthPassword }, set: { oauth.oauthPassword = $0 })
     }
     private var oauthClientIDBinding: Binding<String> {
         Binding(get: { oauth.oauthClientID }, set: { oauth.oauthClientID = $0 })
@@ -657,14 +838,16 @@ struct AuthorizationForm: View {
 }
 
 /// One OAuth 2.0 form field: the shared variable-aware editor with its own
-/// focus/hover mirrors (the panel's eleven fields would otherwise need a
+/// focus/hover mirrors (the panel's many fields would otherwise need a
 /// matching pair of `@State` each). Owns the bordered chrome, so callers
-/// only pass the binding and placeholders.
+/// only pass the binding and placeholders; `isEditable: false` renders the
+/// read-only selected-token echo (selectable, so the value can be copied).
 private struct OAuthField: View {
     @Binding var text: String
     let variables: [String: String]
     let suggestions: [VariableSuggestion]
     let placeholder: String
+    var isEditable: Bool = true
     @State private var isFocused = false
     @State private var isHovered = false
 
@@ -675,6 +858,7 @@ private struct OAuthField: View {
             suggestions: suggestions,
             font: .systemSubheadline,
             placeholder: placeholder,
+            isEditable: isEditable,
             onFocusChange: { isFocused = $0 },
             onHoverChanged: { isHovered = $0 }
         )

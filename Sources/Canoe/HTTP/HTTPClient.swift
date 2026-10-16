@@ -733,8 +733,10 @@ enum HTTPClient {
                 break
             case .oauth2:
                 // Postman's Header Prefix (default "Bearer"): an empty
-                // prefix sends the bare token.
-                let token = VariableResolver.resolve(authorization.oauthAccessToken, variables: variables)
+                // prefix sends the bare token. The token is the selected
+                // managed one from the Available Tokens list, or the
+                // manually entered value.
+                let token = VariableResolver.resolve(authorization.effectiveOAuthAccessToken, variables: variables)
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 if !token.isEmpty {
                     let prefix = authorization.oauthHeaderPrefix

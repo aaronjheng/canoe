@@ -5,18 +5,26 @@ import Network
 import Synchronization
 
 /// Fetches OAuth 2.0 access tokens for the auth helper (Postman's "Get New
-/// Access Token"). Two grants:
+/// Access Token"). All of Postman's grants:
 ///
 /// - **Client credentials**: a form-encoded POST to the token endpoint;
 ///   client credentials ride in the body (Postman's default) or as a Basic
 ///   header.
-/// - **Authorization code with PKCE**: a loopback HTTP listener receives
-///   the browser's callback, the authorization URL opens in the user's
-///   default browser, and the code is exchanged with the verifier.
+/// - **Authorization code** and **authorization code with PKCE**: a loopback
+///   HTTP listener receives the browser's callback, the authorization URL
+///   opens in the user's default browser, and the code is exchanged at the
+///   token endpoint (PKCE adds the verifier/challenge pair).
+/// - **Password credentials**: the resource owner's username/password ride
+///   the token request (RFC 6749 §4.3).
+/// - **Implicit**: the token arrives in the redirect's URL fragment, which
+///   browsers never send to the server - the loopback's first response is a
+///   relay page whose script hands the fragment back as a query string.
 ///
-/// Errors surface through `OAuth2Error` with user-facing copy; the raw
-/// token endpoint response body rides along on `tokenRequest` failures so
-/// the sheet can show what the server said.
+/// Tokens come back as full `OAuth2Token` entries (access + refresh + expiry
+/// when the server offers them) for the auth editor's Available Tokens list.
+/// Errors surface through `OAuth2Error` with user-facing copy; the raw token
+/// endpoint response body rides along on `tokenRequest` failures so the
+/// editor can show what the server said.
 enum OAuth2Service {
     enum OAuth2Error: LocalizedError {
         case invalidURL(String)
@@ -49,69 +57,192 @@ enum OAuth2Service {
     /// field values are variable-resolved first, exactly like a send.
     static func fetchToken(
         authorization: Authorization, variables: [String: String]
-    ) async throws -> String {
+    ) async throws -> OAuth2Token {
         let resolve = { (string: String) in
             VariableResolver.resolve(string, variables: variables)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        let tokenURLString = resolve(authorization.oauthTokenURL)
-        guard !tokenURLString.isEmpty else { throw OAuth2Error.missingField("Access Token URL") }
-        guard let tokenURL = URL(string: tokenURLString) else {
-            throw OAuth2Error.invalidURL("Access Token URL")
         }
 
         switch authorization.oauthGrant {
         case .clientCredentials:
             let form = TokenForm(resolve: resolve, authorization: authorization, grant: .clientCredentials)
             return try await exchange(
-                tokenURL: tokenURL,
+                tokenURL: try tokenEndpoint(authorization, resolve: resolve),
                 form: form.fields,
                 clientAuth: authorization.oauthSendsBasicAuth,
                 clientID: resolve(authorization.oauthClientID),
                 clientSecret: resolve(authorization.oauthClientSecret)
             )
-        case .authorizationCodePKCE:
-            let authURLString = resolve(authorization.oauthAuthURL)
-            guard !authURLString.isEmpty else { throw OAuth2Error.missingField("Auth URL") }
-            guard URL(string: authURLString) != nil else { throw OAuth2Error.invalidURL("Auth URL") }
-            let verifier = makeVerifier()
-            let challenge = codeChallenge(verifier)
-            let state =
-                resolve(authorization.oauthState).isEmpty
-                ? makeState()
-                : resolve(authorization.oauthState)
+        case .passwordCredentials:
+            let form = TokenForm(resolve: resolve, authorization: authorization, grant: .passwordCredentials)
+            return try await exchange(
+                tokenURL: try tokenEndpoint(authorization, resolve: resolve),
+                form: form.fields,
+                clientAuth: authorization.oauthSendsBasicAuth,
+                clientID: resolve(authorization.oauthClientID),
+                clientSecret: resolve(authorization.oauthClientSecret)
+            )
+        case .authorizationCode, .authorizationCodePKCE:
             let callback = try await runAuthorizationCodeFlow(
-                authorization: authorization, resolve: resolve, state: state,
-                verifier: verifier, challenge: challenge)
+                authorization: authorization, resolve: resolve,
+                withPKCE: authorization.oauthGrant == .authorizationCodePKCE)
             let form = TokenForm(
                 resolve: resolve, authorization: authorization,
-                grant: .authorizationCodePKCE, code: callback.code,
-                redirectURI: callback.redirectURI, verifier: verifier)
+                grant: authorization.oauthGrant, code: callback.code,
+                redirectURI: callback.redirectURI, verifier: callback.verifier)
             return try await exchange(
-                tokenURL: tokenURL,
+                tokenURL: try tokenEndpoint(authorization, resolve: resolve),
                 form: form.fields,
                 clientAuth: authorization.oauthSendsBasicAuth,
                 clientID: resolve(authorization.oauthClientID),
                 clientSecret: resolve(authorization.oauthClientSecret)
             )
+        case .implicit:
+            return try await runImplicitFlow(authorization: authorization, resolve: resolve)
         }
     }
 
-    // MARK: - Authorization code (PKCE) flow
+    /// Refreshes an access token with a refresh token (RFC 6749 §6): the
+    /// Available Tokens list's Refresh action. The fresh entry carries the
+    /// new access/refresh/expiry values; the caller merges them into the
+    /// token it holds (a rotated refresh token must not be lost).
+    static func refresh(
+        authorization: Authorization, variables: [String: String], refreshToken: String
+    ) async throws -> OAuth2Token {
+        let resolve = { (string: String) in
+            VariableResolver.resolve(string, variables: variables)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        var form: [(String, String)] = [
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refreshToken),
+        ]
+        let scopes = resolve(authorization.oauthScope)
+        if !scopes.isEmpty {
+            form.append(("scope", scopes))
+        }
+        form.append(("client_id", resolve(authorization.oauthClientID)))
+        if !authorization.oauthSendsBasicAuth {
+            form.append(("client_secret", resolve(authorization.oauthClientSecret)))
+        }
+        return try await exchange(
+            tokenURL: try tokenEndpoint(authorization, resolve: resolve),
+            form: form,
+            clientAuth: authorization.oauthSendsBasicAuth,
+            clientID: resolve(authorization.oauthClientID),
+            clientSecret: resolve(authorization.oauthClientSecret)
+        )
+    }
+
+    /// Resolves and validates the token endpoint URL.
+    private static func tokenEndpoint(
+        _ authorization: Authorization, resolve: (String) -> String
+    ) throws -> URL {
+        let tokenURLString = resolve(authorization.oauthTokenURL)
+        guard !tokenURLString.isEmpty else { throw OAuth2Error.missingField("Access Token URL") }
+        guard let tokenURL = URL(string: tokenURLString) else {
+            throw OAuth2Error.invalidURL("Access Token URL")
+        }
+        return tokenURL
+    }
+
+    // MARK: - Authorization code flows
 
     private struct CallbackResult {
         let code: String
         let redirectURI: String
+        let verifier: String
     }
 
-    /// Opens the authorization URL in the default browser and waits for the
-    /// loopback callback. The redirect URI is `http://127.0.0.1:{port}/callback`
-    /// on an ephemeral port; a user-entered callback URL's path is ignored
-    /// (the listener answers any path, like Postman's loopback handling).
+    /// The authorization-code grant (with or without PKCE): browser flow,
+    /// then the code is exchanged at the token endpoint by the caller.
     private static func runAuthorizationCodeFlow(
-        authorization: Authorization, resolve: (String) -> String, state: String,
-        verifier: String, challenge: String
+        authorization: Authorization, resolve: (String) -> String, withPKCE: Bool
     ) async throws -> CallbackResult {
+        guard !resolve(authorization.oauthAuthURL).isEmpty else { throw OAuth2Error.missingField("Auth URL") }
+        let state = resolvedOrRandomState(authorization, resolve: resolve)
+        let verifier = withPKCE ? makeVerifier() : ""
+        let (parameters, redirectURI) = try await awaitBrowserCallback(
+            authURLBase: resolve(authorization.oauthAuthURL),
+            expectedState: state, relay: false
+        ) { redirectURI in
+            var query = [
+                URLQueryItem(name: "response_type", value: "code"),
+                URLQueryItem(name: "client_id", value: resolve(authorization.oauthClientID)),
+                URLQueryItem(name: "redirect_uri", value: redirectURI),
+                URLQueryItem(name: "state", value: state),
+            ]
+            if withPKCE {
+                query.append(URLQueryItem(name: "code_challenge", value: codeChallenge(verifier)))
+                query.append(URLQueryItem(name: "code_challenge_method", value: "S256"))
+            }
+            let scopes = resolve(authorization.oauthScope)
+            if !scopes.isEmpty {
+                query.append(URLQueryItem(name: "scope", value: scopes))
+            }
+            return query
+        }
+        guard let code = parameters["code"], !code.isEmpty else {
+            throw OAuth2Error.callback("the callback carried no authorization code.")
+        }
+        return CallbackResult(code: code, redirectURI: redirectURI, verifier: verifier)
+    }
+
+    /// The implicit grant (RFC 6749 §4.2): the browser flow returns the
+    /// token in the redirect's URL fragment, which browsers never send to
+    /// the server - the loopback's first response is a relay page whose
+    /// script hands the fragment back as a query string.
+    private static func runImplicitFlow(
+        authorization: Authorization, resolve: (String) -> String
+    ) async throws -> OAuth2Token {
+        guard !resolve(authorization.oauthAuthURL).isEmpty else { throw OAuth2Error.missingField("Auth URL") }
+        let state = resolvedOrRandomState(authorization, resolve: resolve)
+        let (parameters, _) = try await awaitBrowserCallback(
+            authURLBase: resolve(authorization.oauthAuthURL),
+            expectedState: state, relay: true
+        ) { redirectURI in
+            var query = [
+                URLQueryItem(name: "response_type", value: "token"),
+                URLQueryItem(name: "client_id", value: resolve(authorization.oauthClientID)),
+                URLQueryItem(name: "redirect_uri", value: redirectURI),
+                URLQueryItem(name: "state", value: state),
+            ]
+            let scopes = resolve(authorization.oauthScope)
+            if !scopes.isEmpty {
+                query.append(URLQueryItem(name: "scope", value: scopes))
+            }
+            return query
+        }
+        guard let accessToken = parameters["access_token"], !accessToken.isEmpty else {
+            throw OAuth2Error.noAccessToken
+        }
+        var token = OAuth2Token(accessToken: accessToken)
+        token.tokenType = parameters["token_type"] ?? ""
+        token.scope = parameters["scope"] ?? ""
+        if let expiresIn = parameters["expires_in"], let seconds = TimeInterval(expiresIn), seconds > 0 {
+            token.expiresAt = Date().addingTimeInterval(seconds)
+        }
+        return token
+    }
+
+    /// The user's state when set, a random opaque one otherwise.
+    private static func resolvedOrRandomState(
+        _ authorization: Authorization, resolve: (String) -> String
+    ) -> String {
+        let state = resolve(authorization.oauthState)
+        return state.isEmpty ? makeState() : state
+    }
+
+    /// The browser flows' shared half: start the loopback listener, build
+    /// the authorization URL from `query` (the redirect URI is filled in
+    /// here once the port is known), open the browser, and await the
+    /// callback's parameters. `relay` enables the implicit grant's fragment
+    /// relay (see `runImplicitFlow`); the listener is cancelled when this
+    /// returns, and a cancelled task cancels the callback wait.
+    private static func awaitBrowserCallback(
+        authURLBase: String, expectedState: String, relay: Bool,
+        query: (String) -> [URLQueryItem]
+    ) async throws -> (parameters: [String: String], redirectURI: String) {
         let listener = try NWListener(using: .tcp)
         let box = CallbackBox()
         listener.stateUpdateHandler = { [box] newState in
@@ -123,10 +254,10 @@ enum OAuth2Service {
             }
         }
         listener.newConnectionHandler = { connection in
-            box.handle(connection: connection, expectedState: state) { result in
+            box.handle(connection: connection, expectedState: expectedState, relay: relay) { result in
                 switch result {
-                case .success(let code):
-                    box.finish(.success(code))
+                case .success(let parameters):
+                    box.finish(.success(parameters))
                 case .failure(let error):
                     box.finish(.failure(error))
                 }
@@ -142,48 +273,31 @@ enum OAuth2Service {
         guard let port = box.boundPort.withLock({ $0 }) else {
             throw OAuth2Error.callback("could not start the loopback listener.")
         }
-
-        guard let authComponentsBase = URLComponents(string: resolve(authorization.oauthAuthURL)) else {
-            throw OAuth2Error.invalidURL("Auth URL")
-        }
         let redirectURI = "http://127.0.0.1:\(port)/callback"
-        let scopes = resolve(authorization.oauthScope)
-        var query = [
-            URLQueryItem(name: "response_type", value: "code"),
-            URLQueryItem(name: "client_id", value: resolve(authorization.oauthClientID)),
-            URLQueryItem(name: "redirect_uri", value: redirectURI),
-            URLQueryItem(name: "state", value: state),
-            URLQueryItem(name: "code_challenge", value: challenge),
-            URLQueryItem(name: "code_challenge_method", value: "S256"),
-        ]
-        if !scopes.isEmpty {
-            query.append(URLQueryItem(name: "scope", value: scopes))
-        }
-        var authComponents = authComponentsBase
-        authComponents.queryItems = query
-        guard let authURL = authComponents.url else {
+        guard var components = URLComponents(string: authURLBase) else {
             throw OAuth2Error.invalidURL("Auth URL")
         }
-
+        components.queryItems = query(redirectURI)
+        guard let authURL = components.url else {
+            throw OAuth2Error.invalidURL("Auth URL")
+        }
         NSWorkspace.shared.open(authURL)
-        // Wait for the callback (or failure); a cancelled task cancels the
-        // box, and the listener's defer cancels the socket.
-        let code: String = try await withTaskCancellationHandler(
-            operation: { () -> String in
+        let parameters: [String: String] = try await withTaskCancellationHandler(
+            operation: {
                 try await box.wait()
             },
             onCancel: {
                 box.cancel()
             })
-        return CallbackResult(code: code, redirectURI: redirectURI)
+        return (parameters, redirectURI)
     }
 
     /// Thread-safe handoff between the listener queue and the awaiting task.
     private final class CallbackBox: @unchecked Sendable {
-        typealias Outcome = Result<String, Error>
+        typealias Outcome = Result<[String: String], Error>
 
         private struct Slot {
-            var continuation: CheckedContinuation<String, Error>?
+            var continuation: CheckedContinuation<[String: String], Error>?
             /// An outcome that arrived before `wait()` stored its
             /// continuation (the listener queue can fail fast — a refused
             /// connection, a cancellation). `wait()` consumes it first, so
@@ -195,12 +309,20 @@ enum OAuth2Service {
         /// The port the listener bound, filled from the state callback (a
         /// Mutex instead of a captured var: the handler runs off-actor).
         let boundPort = Mutex<UInt16?>(nil)
+        /// Relay (implicit) mode: whether the fragment-relay page has been
+        /// served. The first browser hit answers with the page; the token
+        /// arrives on the page script's second request.
+        private let servedRelayPage = Mutex(false)
 
         /// Parses one browser callback request (`GET /callback?code=…&state=…`),
-        /// answers it, and reports the outcome.
+        /// answers it, and reports the outcome. In relay mode the first
+        /// request only receives the relay page (the token rides the
+        /// fragment browsers withhold), and the parameters arrive on the
+        /// script's `/relay` request; stray browser traffic after that
+        /// (favicon & co) is answered and ignored.
         func handle(
-            connection: NWConnection, expectedState: String,
-            onResult: @escaping (Result<String, Error>) -> Void
+            connection: NWConnection, expectedState: String, relay: Bool,
+            onResult: @escaping (Result<[String: String], Error>) -> Void
         ) {
             connection.start(queue: .global())
             connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { data, _, _, error in
@@ -211,41 +333,69 @@ enum OAuth2Service {
                 }
                 let requestText = String(bytes: data, encoding: .utf8) ?? ""
                 guard let requestLine = requestText.split(separator: "\r\n").first,
-                    let url = requestLine.split(separator: " ").dropFirst().first
+                    let target = requestLine.split(separator: " ").dropFirst().first
                 else {
                     onResult(.failure(OAuth2Error.callback("could not read the callback request.")))
                     return
                 }
-                var components = URLComponents(string: "http://127.0.0.1\(url)")
+                if relay {
+                    let shouldServePage = self.servedRelayPage.withLock { served -> Bool in
+                        if served { return false }
+                        served = true
+                        return true
+                    }
+                    if shouldServePage {
+                        self.respond(connection, ok: true, relayPage: true)
+                        return  // Keep waiting for the relayed fragment.
+                    }
+                    guard target.hasPrefix("/relay") else {
+                        self.respond(connection, ok: false)
+                        return  // Stray request: ignore, keep waiting.
+                    }
+                }
+                var components = URLComponents(string: "http://127.0.0.1\(target)")
                 let query = components?.queryItems ?? []
-                if let error = query.first(where: { $0.name == "error" })?.value {
+                var parameters: [String: String] = [:]
+                for item in query {
+                    parameters[item.name] = item.value ?? ""
+                }
+                if let error = parameters["error"], !error.isEmpty {
                     self.respond(connection, ok: false)
                     onResult(.failure(OAuth2Error.callback(error)))
                     return
                 }
-                guard let returnedState = query.first(where: { $0.name == "state" })?.value,
-                    returnedState == expectedState
-                else {
+                guard let returnedState = parameters["state"], returnedState == expectedState else {
                     self.respond(connection, ok: false)
                     onResult(.failure(OAuth2Error.stateMismatch))
                     return
                 }
-                guard let code = query.first(where: { $0.name == "code" })?.value, !code.isEmpty else {
-                    self.respond(connection, ok: false)
-                    onResult(.failure(OAuth2Error.callback("the callback carried no authorization code.")))
-                    return
-                }
                 self.respond(connection, ok: true)
-                onResult(.success(code))
+                onResult(.success(parameters))
             }
         }
 
         /// A minimal success page so the browser tab shows something clean.
-        private func respond(_ connection: NWConnection, ok: Bool) {
-            let body =
-                ok
-                ? "<html><body><h2>Authorization complete.</h2>You can close this tab and return to Canoe.</body></html>"
-                : "<html><body><h2>Authorization failed.</h2>Return to Canoe for details.</body></html>"
+        /// The relay page (implicit) is the first response instead: its
+        /// script hands the URL fragment back as a query string on /relay,
+        /// then swaps in the same completion text.
+        private func respond(_ connection: NWConnection, ok: Bool, relayPage: Bool = false) {
+            let body: String
+            if relayPage {
+                body = """
+                    <html><body><h2>Authorization complete.</h2>Finishing…<script>
+                    const params = new URLSearchParams(location.hash.slice(1));
+                    fetch('/relay?' + params.toString()).then(() => {
+                      document.body.innerHTML =
+                        '<h2>Authorization complete.</h2>You can close this tab and return to Canoe.';
+                    });
+                    </script></body></html>
+                    """
+            } else {
+                body =
+                    ok
+                    ? "<html><body><h2>Authorization complete.</h2>You can close this tab and return to Canoe.</body></html>"
+                    : "<html><body><h2>Authorization failed.</h2>Return to Canoe for details.</body></html>"
+            }
             let response =
                 "HTTP/1.1 \(ok ? "200 OK" : "400 Bad Request")\r\n"
                 + "Content-Type: text/html; charset=utf-8\r\n"
@@ -266,7 +416,7 @@ enum OAuth2Service {
             }
         }
 
-        func wait() async throws -> String {
+        func wait() async throws -> [String: String] {
             try await withCheckedThrowingContinuation { continuation in
                 slot.withLock { current in
                     if let pending = current.pendingOutcome {
@@ -287,7 +437,8 @@ enum OAuth2Service {
 
     // MARK: - Token exchange
 
-    /// The token request's form fields per grant (RFC 6749 §4.1.3 / §4.4.2).
+    /// The token request's form fields per grant (RFC 6749 §4.1.3 / §4.3.2
+    /// / §4.4.2).
     private struct TokenForm {
         let resolve: (String) -> String
         let authorization: Authorization
@@ -301,11 +452,21 @@ enum OAuth2Service {
             switch grant {
             case .clientCredentials:
                 result.append(("grant_type", "client_credentials"))
+            case .passwordCredentials:
+                result.append(("grant_type", "password"))
+                result.append(("username", resolve(authorization.oauthUsername)))
+                result.append(("password", resolve(authorization.oauthPassword)))
+            case .authorizationCode:
+                result.append(("grant_type", "authorization_code"))
+                if let code { result.append(("code", code)) }
+                if let redirectURI { result.append(("redirect_uri", redirectURI)) }
             case .authorizationCodePKCE:
                 result.append(("grant_type", "authorization_code"))
                 if let code { result.append(("code", code)) }
                 if let redirectURI { result.append(("redirect_uri", redirectURI)) }
                 if let verifier { result.append(("code_verifier", verifier)) }
+            case .implicit:
+                break  // No token exchange; the token rides the fragment.
             }
             let scopes = resolve(authorization.oauthScope)
             if !scopes.isEmpty {
@@ -324,7 +485,7 @@ enum OAuth2Service {
     private static func exchange(
         tokenURL: URL, form: [(String, String)], clientAuth: Bool,
         clientID: String, clientSecret: String
-    ) async throws -> String {
+    ) async throws -> OAuth2Token {
         var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
@@ -348,22 +509,52 @@ enum OAuth2Service {
         }
         struct TokenResponse: Decodable {
             let accessToken: String?
+            let refreshToken: String?
+            let tokenType: String?
+            let scope: String?
+            let expiresIn: Int?
 
             enum CodingKeys: String, CodingKey {
                 case accessToken = "access_token"
+                case refreshToken = "refresh_token"
+                case tokenType = "token_type"
+                case scope
+                case expiresIn = "expires_in"
             }
         }
         // Token endpoints answer JSON per RFC 6749 §5.1; some answer
-        // form-encoded. Accept both.
-        if let decoded = try? JSONDecoder().decode(TokenResponse.self, from: data), let token = decoded.accessToken, !token.isEmpty {
+        // form-encoded. Accept both, carrying whatever the response offers
+        // (refresh token, type, scope, expiry) into the token entry.
+        var token = OAuth2Token()
+        let decoded = try? JSONDecoder().decode(TokenResponse.self, from: data)
+        if let tokenText = decoded?.accessToken, !tokenText.isEmpty {
+            token.accessToken = tokenText
+            token.refreshToken = decoded?.refreshToken ?? ""
+            token.tokenType = decoded?.tokenType ?? ""
+            token.scope = decoded?.scope ?? ""
+            if let expiresIn = decoded?.expiresIn, expiresIn > 0 {
+                token.expiresAt = Date().addingTimeInterval(TimeInterval(expiresIn))
+            }
             return token
         }
         if let text = String(data: data, encoding: .utf8) {
+            var parameters: [String: String] = [:]
             for pair in text.split(separator: "&") {
                 let halves = pair.split(separator: "=", maxSplits: 1)
-                if halves.first == "access_token", halves.count > 1 {
-                    return String(halves[1]).removingPercentEncoding ?? String(halves[1])
+                if halves.count == 2 {
+                    parameters[String(halves[0])] =
+                        String(halves[1]).removingPercentEncoding ?? String(halves[1])
                 }
+            }
+            if let tokenText = parameters["access_token"], !tokenText.isEmpty {
+                token.accessToken = tokenText
+                token.refreshToken = parameters["refresh_token"] ?? ""
+                token.tokenType = parameters["token_type"] ?? ""
+                token.scope = parameters["scope"] ?? ""
+                if let expiresIn = parameters["expires_in"], let seconds = TimeInterval(expiresIn), seconds > 0 {
+                    token.expiresAt = Date().addingTimeInterval(seconds)
+                }
+                return token
             }
         }
         throw OAuth2Error.noAccessToken

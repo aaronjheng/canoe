@@ -264,9 +264,11 @@ enum CodeSnippetGenerator {
                     digestCredentials = (username, password)
                 }
             case .oauth2:
-                // The stored access token rides the header with the user's
-                // prefix (Postman exports the same shape).
-                let token = resolve(authorization.oauthAccessToken)
+                // The effective access token - the selected managed token
+                // from the Available Tokens list, or the manually entered
+                // value - rides the header with the user's prefix (Postman
+                // exports the same shape).
+                let token = resolve(authorization.effectiveOAuthAccessToken)
                 if !token.isEmpty {
                     let prefix = authorization.oauthHeaderPrefix
                         .trimmingCharacters(in: .whitespacesAndNewlines)

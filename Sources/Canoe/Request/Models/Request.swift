@@ -40,6 +40,9 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
     var authOAuthGrantType: String = "client_credentials"
     var authOAuthAuthURL: String = ""
     var authOAuthTokenURL: String = ""
+    /// Password Credentials grant: the resource owner's login.
+    var authOAuthUsername: String = ""
+    var authOAuthPassword: String = ""
     var authOAuthClientID: String = ""
     var authOAuthClientSecret: String = ""
     var authOAuthScope: String = ""
@@ -48,6 +51,10 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
     var authOAuthClientAuth: String = "body"
     var authOAuthHeaderPrefix: String = "Bearer"
     var authOAuthAccessToken: String = ""
+    /// Tokens fetched through Get New Access Token (see `Authorization`);
+    /// the selected one is what sends use.
+    var authOAuthTokens: [OAuth2Token] = []
+    var authOAuthSelectedTokenID: UUID?
     /// Free-form request documentation (Postman's description), shown
     /// under the name bar and saved with ⌘S like the rest of the request.
     var requestDescription: String = ""
@@ -111,9 +118,11 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
         case authType, authUsername, authPassword, authToken
         case authApiKey, authApiValue, authApiKeyIn
         case authOAuthGrantType, authOAuthAuthURL, authOAuthTokenURL
+        case authOAuthUsername, authOAuthPassword
         case authOAuthClientID, authOAuthClientSecret, authOAuthScope
         case authOAuthCallbackURL, authOAuthState, authOAuthClientAuth
         case authOAuthHeaderPrefix, authOAuthAccessToken
+        case authOAuthTokens, authOAuthSelectedTokenID
         case requestDescription
         case followRedirects, timeoutSeconds, maxRedirects
         case useCookieJar, verifySSLCertificate
@@ -152,6 +161,8 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
             try container.decodeIfPresent(String.self, forKey: .authOAuthGrantType) ?? "client_credentials"
         authOAuthAuthURL = try container.decodeIfPresent(String.self, forKey: .authOAuthAuthURL) ?? ""
         authOAuthTokenURL = try container.decodeIfPresent(String.self, forKey: .authOAuthTokenURL) ?? ""
+        authOAuthUsername = try container.decodeIfPresent(String.self, forKey: .authOAuthUsername) ?? ""
+        authOAuthPassword = try container.decodeIfPresent(String.self, forKey: .authOAuthPassword) ?? ""
         authOAuthClientID = try container.decodeIfPresent(String.self, forKey: .authOAuthClientID) ?? ""
         authOAuthClientSecret = try container.decodeIfPresent(String.self, forKey: .authOAuthClientSecret) ?? ""
         authOAuthScope = try container.decodeIfPresent(String.self, forKey: .authOAuthScope) ?? ""
@@ -160,6 +171,9 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
         authOAuthClientAuth = try container.decodeIfPresent(String.self, forKey: .authOAuthClientAuth) ?? "body"
         authOAuthHeaderPrefix = try container.decodeIfPresent(String.self, forKey: .authOAuthHeaderPrefix) ?? "Bearer"
         authOAuthAccessToken = try container.decodeIfPresent(String.self, forKey: .authOAuthAccessToken) ?? ""
+        authOAuthTokens = try container.decodeLossyArray(forKey: .authOAuthTokens)
+        authOAuthSelectedTokenID =
+            try container.decodeIfPresent(UUID.self, forKey: .authOAuthSelectedTokenID)
         requestDescription = try container.decodeIfPresent(String.self, forKey: .requestDescription) ?? ""
         followRedirects = try container.decodeIfPresent(Bool.self, forKey: .followRedirects) ?? true
         timeoutSeconds = try container.decodeIfPresent(Double.self, forKey: .timeoutSeconds) ?? 0
@@ -244,6 +258,8 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
             && authOAuthGrantType == other.authOAuthGrantType
             && authOAuthAuthURL == other.authOAuthAuthURL
             && authOAuthTokenURL == other.authOAuthTokenURL
+            && authOAuthUsername == other.authOAuthUsername
+            && authOAuthPassword == other.authOAuthPassword
             && authOAuthClientID == other.authOAuthClientID
             && authOAuthClientSecret == other.authOAuthClientSecret
             && authOAuthScope == other.authOAuthScope
@@ -252,6 +268,8 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
             && authOAuthClientAuth == other.authOAuthClientAuth
             && authOAuthHeaderPrefix == other.authOAuthHeaderPrefix
             && authOAuthAccessToken == other.authOAuthAccessToken
+            && authOAuthTokens == other.authOAuthTokens
+            && authOAuthSelectedTokenID == other.authOAuthSelectedTokenID
             && requestDescription == other.requestDescription
             && followRedirects == other.followRedirects
             && timeoutSeconds == other.timeoutSeconds

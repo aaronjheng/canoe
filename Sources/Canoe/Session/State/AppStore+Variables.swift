@@ -112,7 +112,11 @@ extension AppStore {
         case .apiKey:
             sources += [effectiveAuth.apiKey, effectiveAuth.apiKeyValue]
         case .oauth2:
-            sources += [effectiveAuth.oauthAccessToken, effectiveAuth.oauthClientSecret]
+            sources += [effectiveAuth.effectiveOAuthAccessToken, effectiveAuth.oauthClientSecret]
+            sources += [effectiveAuth.oauthPassword]
+            for token in effectiveAuth.oauthTokens {
+                sources += [token.accessToken, token.refreshToken]
+            }
         case .none, .inherit:
             break
         }

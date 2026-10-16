@@ -186,7 +186,7 @@ struct RequestEditorView: View {
         case .apiKey:
             return nil
         case .oauth2:
-            let token = VariableResolver.resolve(authorization.oauthAccessToken, variables: resolvedVariables)
+            let token = VariableResolver.resolve(authorization.effectiveOAuthAccessToken, variables: resolvedVariables)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard !token.isEmpty else { return nil }
             // The table masks the value; only the presence matters here.
