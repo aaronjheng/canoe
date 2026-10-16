@@ -137,6 +137,13 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
     /// Computed: static stored properties are unsupported on generic types.
     private var multiLineMaxHeight: CGFloat { 96 }
 
+    /// Floor of the auto-grow editor height: an empty (or short)
+    /// description field keeps a comfortable two-line-ish height instead of
+    /// collapsing to the bare text line - which squeezed the field's border
+    /// right against the content and made the placeholder read as sunk to
+    /// the bottom (the collection/folder Description fields).
+    private var multiLineMinHeight: CGFloat { 40 }
+
     @State private var contentHeight: CGFloat = 40
     @State private var urlContentHeight: CGFloat = 24
 
@@ -239,22 +246,37 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
             } else {
                 multiLine
                     .frame(
-                        height: fillsContainer ? nil : min(max(contentHeight, 1), multiLineMaxHeight)
+                        height: fillsContainer
+                            ? nil
+                            : min(max(contentHeight, multiLineMinHeight), multiLineMaxHeight)
                     )
             }
         }
         .overlay(alignment: .topLeading) {
             // Multi-line placeholder; the single-line field uses NSTextField's
-            // native placeholder.
+            // native placeholder. The top offset follows the field's own text
+            // origin (see `placeholderTopPadding`), so the hint sits exactly
+            // where the first typed line will.
             if !isSingleLine, text.isEmpty, let placeholder {
                 Text(placeholder)
                     .font(font.swiftUIFont)
                     .foregroundStyle(AppColor.tertiaryText)
                     .padding(.leading, placeholderLeadingPadding)
-                    .padding(.top, AppSpacing.xSmall)
+                    .padding(.top, placeholderTopPadding)
                     .allowsHitTesting(false)
             }
         }
+    }
+
+    /// The placeholder overlay's top offset: the URL bar centers its
+    /// collapsed line inside the fixed-height field (see
+    /// `WrappingURLField.applyBarGeometry`), so the hint matches that
+    /// inset; every other multi-line editor starts its text view at the
+    /// frame's top (zero container inset) and the hint must too - a fixed
+    /// padding here made the hint read lower than the typed text, worst in
+    /// a collapsed empty field where it hugged the bottom edge.
+    private var placeholderTopPadding: CGFloat {
+        wrapsWhenFocused ? AppSpacing.xSmall : 0
     }
 
     private var multiLine: some View {
