@@ -46,6 +46,13 @@ struct ResponseViewerView: View {
     /// toolbar/content hairline (Postman draws the same line once the
     /// content scrolls under the toolbar).
     @State private var isBodyScrolledPastTop = false
+    /// Media staging for the Preview pane (audio / video / PDF): the temp
+    /// file the player or PDF view reads from, the response it was staged
+    /// for (guards against re-staging on task restarts), and whether the
+    /// last stage attempt failed. See `stageMediaForPreview`.
+    @State private var stagedMediaID: UUID?
+    @State private var stagedMediaURL: URL?
+    @State private var mediaStageFailed = false
     /// Hover-panel machinery shared by the metrics-row entries (network
     /// chip, time metric, size metric): a panel stays up while its anchor
     /// or itself is under the cursor, and hides after a short grace once
@@ -207,8 +214,8 @@ struct ResponseViewerView: View {
         // response or a mode switch) computes synchronously so the first
         // paint is correct, and the task below publishes it for later
         // frames. State is only written from the task, never during view
-        // evaluation. Preview mode renders in a web view / image view and
-        // needs no text, so it skips the decode entirely.
+        // evaluation. Preview mode renders in a player / PDF view / image
+        // view and needs no text, so it skips the decode entirely.
         let key = "\(response.id)-\(bodyMode)-\(bodyLanguage)"
         let isPreview = bodyMode == .preview
         let isHex = bodyMode == .hex
@@ -250,21 +257,36 @@ struct ResponseViewerView: View {
             // here would pay for values already in hand. A task cancelled
             // before it first ran still executes its body, so the stale ones
             // (the id moved on) must not land in the cache.
-            guard !Task.isCancelled, key != bodyRenderKey else { return }
-            bodyRenderDisplay = display
-            bodyRenderText = rendered
-            bodyRenderAttributed = renderedAttributed
-            bodyRenderKey = key
+            guard !Task.isCancelled else { return }
+            if key != bodyRenderKey {
+                bodyRenderDisplay = display
+                bodyRenderText = rendered
+                bodyRenderAttributed = renderedAttributed
+                bodyRenderKey = key
+            }
+            // Media previews stream from a staged file, not from `body`
+            // (see `stageMediaForPreview`). Runs on every task start so a
+            // file removed on disappear is re-staged on reappear, even when
+            // the render cache above is already current.
+            await stageMediaForPreview(response)
         }
         .onChange(of: response.id) { _, _ in
             saveError = nil
             // The acknowledgement belongs to the response it was copied
             // from: a fresh response must not wear a stale checkmark.
             didCopyBody = false
+            // The staged media file belongs to the old response; the next
+            // preview (if media again) stages its own.
+            removeStagedMedia()
             findVisible = false
             findQuery = ""
             findCurrentIndex = 0
             dismissPanels()
+        }
+        .onDisappear {
+            // Stop playback and drop the staged file; a reappear re-stages
+            // it (the render task above runs on every task start).
+            removeStagedMedia()
         }
         .overlay(alignment: .topTrailing) {
             switch visiblePanel {
@@ -1059,15 +1081,18 @@ struct ResponseViewerView: View {
         )
     }
 
-    // MARK: - Preview (HTML / image)
+    // MARK: - Preview (image / audio / video / PDF)
 
     /// Bodies above this skip the image render: a preview is a rendering
     /// convenience, not a reason to decode a 50 MB bitmap into memory.
+    /// Audio/video/PDF previews are exempt - they stream from a staged
+    /// file instead of decoding the whole body.
     private static let maxPreviewBodyBytes = 4 * 1024 * 1024
 
-    /// Postman-style Preview, image-only by design: responses typed as
-    /// images render through `NSImage` (pure native); HTML and everything
-    /// else point back to Pretty/Raw instead of hosting a web view.
+    /// Postman-style Preview: images render through `NSImage` (pure
+    /// native, decode-capped), audio/video through the system player and
+    /// PDFs through PDFKit (both streaming from a staged temp file);
+    /// everything else points back to Pretty/Raw.
     @ViewBuilder
     private func previewContent(_ response: ResponseModel) -> some View {
         if response.body.isEmpty {
@@ -1085,40 +1110,133 @@ struct ResponseViewerView: View {
                         + " preview needs the complete content."
                 )
             )
-        } else if response.body.count > Self.maxPreviewBodyBytes {
-            ContentUnavailableView(
-                "Preview Unavailable",
-                systemImage: "eye.slash",
-                description: Text(
-                    "The body is larger than \(Int64(Self.maxPreviewBodyBytes).formattedByteCount); use Raw to inspect it."
+        } else if response.isVideoBody || response.isAudioBody {
+            if MediaPlayerPreview.isPlayable(mimeType: response.mimeType) {
+                mediaPreview(response)
+            } else {
+                ContentUnavailableView(
+                    "Preview Unavailable",
+                    systemImage: "eye.slash",
+                    description: Text(
+                        "The system cannot decode \(response.mimeType ?? "this media type") content; use Raw to inspect it."
+                    )
                 )
-            )
-        } else if response.isImageBody, let image = NSImage(data: response.body) {
-            ScrollView([.horizontal, .vertical]) {
-                Image(nsImage: image)
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFit()
-                    .frame(minWidth: 100, maxWidth: .infinity, minHeight: 100, maxHeight: .infinity)
-                    .padding(AppSpacing.medium)
             }
-            .background(AppColor.codeBackground)
+        } else if response.isPDFBody {
+            mediaPreview(response)
         } else if response.isImageBody {
-            // Image-typed but undecodable (corrupt bytes).
-            ContentUnavailableView(
-                "Preview Unavailable",
-                systemImage: "eye.slash",
-                description: Text("The image data could not be decoded; use Raw to inspect it.")
-            )
+            if response.body.count > Self.maxPreviewBodyBytes {
+                ContentUnavailableView(
+                    "Preview Unavailable",
+                    systemImage: "eye.slash",
+                    description: Text(
+                        "The image is larger than \(Int64(Self.maxPreviewBodyBytes).formattedByteCount); use Raw to inspect it."
+                    )
+                )
+            } else if let image = NSImage(data: response.body) {
+                ScrollView([.horizontal, .vertical]) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .frame(minWidth: 100, maxWidth: .infinity, minHeight: 100, maxHeight: .infinity)
+                        .padding(AppSpacing.medium)
+                }
+                .background(AppColor.codeBackground)
+            } else {
+                // Image-typed but undecodable (corrupt bytes).
+                ContentUnavailableView(
+                    "Preview Unavailable",
+                    systemImage: "eye.slash",
+                    description: Text("The image data could not be decoded; use Raw to inspect it.")
+                )
+            }
         } else {
             ContentUnavailableView(
                 "Preview Unavailable",
                 systemImage: "eye.slash",
                 description: Text(
-                    "Canoe previews image responses. This body is \(response.mimeType ?? "of unknown type"); use Pretty or Raw."
+                    "Canoe previews image, audio, video, and PDF responses."
+                        + " This body is \(response.mimeType ?? "of unknown type"); use Pretty or Raw."
                 )
             )
         }
+    }
+
+    /// The staged-media preview: the player (audio/video) or PDF view once
+    /// the body has landed in its temp file, a loading state while the
+    /// write runs, and a failure notice if it never does.
+    @ViewBuilder
+    private func mediaPreview(_ response: ResponseModel) -> some View {
+        if let url = stagedMediaURL, stagedMediaID == response.id {
+            if response.isPDFBody {
+                PDFPreview(url: url)
+            } else {
+                MediaPlayerPreview(url: url)
+            }
+        } else if mediaStageFailed {
+            ContentUnavailableView(
+                "Preview Unavailable",
+                systemImage: "eye.slash",
+                description: Text("The media could not be staged for playback; use Raw to inspect it.")
+            )
+        } else {
+            LoadingState(message: "Preparing preview…")
+        }
+    }
+
+    // MARK: - Media staging (audio / video / PDF)
+
+    /// Writes the body to a temp file so AVKit and PDFKit can read it (they
+    /// load from URLs, not in-memory `Data`). Called from the body render
+    /// task; the write itself hops to a detached task, so a 50 MB body
+    /// never blocks the main actor. The previous response's file is removed
+    /// first, so staged files don't pile up, and re-staging is skipped while
+    /// this response's file still exists (task restarts on mode switches
+    /// would otherwise rewrite it on every toggle).
+    private func stageMediaForPreview(_ response: ResponseModel) async {
+        guard bodyMode == .preview,
+            response.isVideoBody || response.isAudioBody || response.isPDFBody
+        else { return }
+        if stagedMediaID == response.id,
+            let url = stagedMediaURL,
+            FileManager.default.fileExists(atPath: url.path)
+        {
+            return
+        }
+        removeStagedMedia()
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "canoe-response-\(response.id).\(MediaPlayerPreview.fileExtension(forMimeType: response.mimeType))"
+            )
+        let body = response.body
+        let wrote = await Task.detached(priority: .userInitiated) {
+            (try? body.write(to: url, options: .atomic)) != nil
+        }.value
+        guard !Task.isCancelled else {
+            // Stale stage (the response or mode moved on while the write
+            // ran): drop the file so it doesn't linger unnoticed.
+            try? FileManager.default.removeItem(at: url)
+            return
+        }
+        if wrote {
+            stagedMediaURL = url
+            stagedMediaID = response.id
+            mediaStageFailed = false
+        } else {
+            mediaStageFailed = true
+        }
+    }
+
+    /// Deletes the staged file (if any) and forgets it: before a new stage,
+    /// when the response changes, and when the viewer goes away.
+    private func removeStagedMedia() {
+        if let url = stagedMediaURL {
+            try? FileManager.default.removeItem(at: url)
+        }
+        stagedMediaURL = nil
+        stagedMediaID = nil
+        mediaStageFailed = false
     }
 
     // MARK: - Hex dump

@@ -113,6 +113,25 @@ struct ResponseModel: Identifiable, Sendable {
         (mimeType ?? "").lowercased().hasPrefix("image/")
     }
 
+    /// Whether the body is audio the Preview pane can play (via
+    /// `AVPlayerView`; playability still depends on the system's codecs,
+    /// checked separately in the viewer).
+    var isAudioBody: Bool {
+        (mimeType ?? "").lowercased().hasPrefix("audio/")
+    }
+
+    /// Whether the body is a video the Preview pane can play (via
+    /// `AVPlayerView`; playability still depends on the system's codecs,
+    /// checked separately in the viewer).
+    var isVideoBody: Bool {
+        (mimeType ?? "").lowercased().hasPrefix("video/")
+    }
+
+    /// Whether the body is a PDF the Preview pane can render (via PDFKit).
+    var isPDFBody: Bool {
+        (mimeType ?? "").lowercased() == "application/pdf"
+    }
+
     /// Cookies carried by the response's `Set-Cookie` headers (Postman's
     /// response Cookies view). The headers arrive through
     /// `HTTPURLResponse.allHeaderFields`, which merges repeated fields
