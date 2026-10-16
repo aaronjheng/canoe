@@ -345,15 +345,21 @@ struct KeyValueEditor<T: KVItem>: View {
     /// at the end, in their original order, so toggling in the table and
     /// editing in text never destroy each other.
     ///
-    /// Existing enabled rows are reused by `(key, value)` so steady-state
-    /// typing does not churn row identity (SwiftUI row diffing, drag
-    /// state) — a line only materializes a fresh row when no enabled row
-    /// with the same pair exists anymore.
+    /// Existing enabled rows are reused so steady-state typing does not
+    /// churn row identity (SwiftUI row diffing, drag state) — a line only
+    /// materializes a fresh row when no enabled row matches anymore.
+    /// Tables without a secret column (params, headers) match by
+    /// `(key, value)`: duplicate keys are legal there, so only the exact
+    /// pair proves a line is the same row. Variable tables (the ones with
+    /// a secret column) match by key alone: keys are unique, and rows
+    /// carry flags outside the text (the secret eye) that would be
+    /// silently reset if an edited value spun up a fresh row.
     private func applyBulkText(_ text: String) {
         var parsed: [T] = []
         parsed.reserveCapacity(text.count / 8 + 1)
         // Reuse pool: the enabled rows currently in the model, in order.
         var reusable = items.filter(\.isEnabled)
+        let reuseByKey = secretKeyPath != nil
         for line in text.components(separatedBy: "\n") {
             let trimmedLine = line.trimmingCharacters(in: .whitespaces)
             guard !trimmedLine.isEmpty else { continue }
@@ -367,8 +373,10 @@ struct KeyValueEditor<T: KVItem>: View {
                 value = ""
             }
             let row: T
-            if let index = reusable.firstIndex(where: { $0.key == key && $0.value == value }) {
-                row = reusable.remove(at: index)
+            if let index = reusable.firstIndex(where: reuseByKey ? { $0.key == key } : { $0.key == key && $0.value == value }) {
+                var reused = reusable.remove(at: index)
+                if reuseByKey { reused.value = value }
+                row = reused
             } else {
                 var fresh = makeNew()
                 fresh.key = key
@@ -592,7 +600,7 @@ struct KeyValueEditor<T: KVItem>: View {
     }
 
     /// Finder-style key comparison (case-insensitive, numeric-aware) with
-    /// the id as a tiebreaker, matching `Array.sortByName` for variables.
+    /// the id as a tiebreaker so equal keys keep a stable order.
     private func applyKeySort(ascending: Bool) {
         items.sort { lhs, rhs in
             let order = lhs.key.localizedStandardCompare(rhs.key)

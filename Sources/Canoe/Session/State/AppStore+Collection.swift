@@ -264,12 +264,17 @@ extension AppStore {
     /// Replaces a collection's variables in memory and marks them dirty.
     /// Nothing is written to disk until Save (⌘S / Save button); the edit is
     /// mirrored to drafts.json so it survives relaunches.
+    ///
+    /// Collection variables are order-sensitive (manual Postman-style order):
+    /// the array order itself is the persisted order, so a drag-to-reorder
+    /// with identical content still counts as an edit. Do NOT compare through
+    /// a canonical form here - that would swallow a pure reorder.
     func updateCollectionVariables(_ id: UUID, variables: [Variable]) {
         if persistedCollectionVariableBaselines[id] == nil {
             persistedCollectionVariableBaselines[id] = vault.collections.first(where: { $0.id == id })?.variables
         }
         guard let idx = vault.collections.firstIndex(where: { $0.id == id }) else { return }
-        guard canonicalVariables(vault.collections[idx].variables) != canonicalVariables(variables) else { return }
+        guard vault.collections[idx].variables != variables else { return }
         vault.collections[idx].variables = variables
         pendingCollectionVariables[id] = variables
         if previewTab == .collection(id) { previewTab = nil }
@@ -333,19 +338,11 @@ extension AppStore {
     }
 
     /// Whether the collection's variables have unsaved modifications.
+    /// Order-sensitive: a pure drag-to-reorder counts as dirty.
     func hasPendingCollectionVariables(for collectionID: UUID) -> Bool {
         guard let pending = pendingCollectionVariables[collectionID] else { return false }
         guard let baseline = persistedCollectionVariableBaselines[collectionID] else { return true }
-        return canonicalVariables(pending) != canonicalVariables(baseline)
-    }
-
-    /// Name-sorted canonical form for the workspace/collection tables (which
-    /// keep rows sorted by name): order-only differences are not edits.
-    /// Environments stay order-sensitive (manual Postman-style order).
-    func canonicalVariables(_ variables: [Variable]) -> [Variable] {
-        var copy = variables
-        copy.sortByName()
-        return copy
+        return pending != baseline
     }
 
     /// Renames a collection (sidebar has no inline editor, so this backs the

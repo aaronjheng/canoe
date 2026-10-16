@@ -33,19 +33,6 @@ extension Variable {
 }
 
 extension Array where Element == Variable {
-    /// Sorts in place by key ascending - Finder-style (case-insensitive,
-    /// numeric-aware) - with the id as a tiebreaker so equal keys keep a
-    /// stable order. The collection variables table keeps its rows in this
-    /// order; workspace and environment variables are manually ordered.
-    mutating func sortByName() {
-        sort { lhs, rhs in
-            let order = lhs.key.localizedStandardCompare(rhs.key)
-            return order == .orderedSame
-                ? lhs.id.uuidString < rhs.id.uuidString
-                : order == .orderedAscending
-        }
-    }
-
     /// Enabled variables as a flat dictionary. Blank keys are skipped and
     /// surrounding whitespace is trimmed (matching placeholder parsing), so
     /// `{{ host }}` finds a key stored as `host`. Later entries win.

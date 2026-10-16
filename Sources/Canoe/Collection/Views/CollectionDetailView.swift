@@ -21,8 +21,6 @@ struct CollectionDetailView: View {
     }
 
     init(collection: Collection) {
-        var collection = collection
-        collection.variables.sortByName()
         _draft = State(initialValue: collection)
     }
 
@@ -33,10 +31,6 @@ struct CollectionDetailView: View {
 
     var body: some View {
         editorContent
-            // Keep rows ordered by name (see EnvironmentDetailView).
-            .onChange(of: draft.variables.map(\.key)) { _, _ in
-                draft.variables.sortByName()
-            }
             .onAppear { applyRequestedSection() }
             .onChange(of: store.selectedTab) { _, _ in applyRequestedSection() }
             // The deep link also lands while this tab is already frontmost (the
@@ -64,9 +58,7 @@ struct CollectionDetailView: View {
                 guard let newVariables, !store.hasPendingCollectionVariables(for: draft.id),
                     newVariables != draft.variables
                 else { return }
-                var adopted = newVariables
-                adopted.sortByName()
-                draft.variables = adopted
+                draft.variables = newVariables
             }
             .onChange(of: liveCollectionAuthorization) { _, newAuthorization in
                 guard let newAuthorization, !store.hasPendingCollectionAuthorization(for: draft.id),
@@ -153,7 +145,14 @@ struct CollectionDetailView: View {
                     keyHeader: "Variable",
                     valueHeader: "Value",
                     headerBackground: nil,
-                    secretKeyPath: \.isSecret
+                    secretKeyPath: \.isSecret,
+                    // Manual order (Postman-style): rows resolve and display in
+                    // this order, so no auto-sort may rewrite it. The header
+                    // still offers an explicit A→Z / Z→A sort, and Bulk Edit
+                    // swaps the grid for key-value text lines.
+                    allowsReorder: true,
+                    allowsKeySort: true,
+                    allowsBulkEdit: true
                 )
                 .id(draft.id)
                 // The section divider must not sit flush on the header row:
