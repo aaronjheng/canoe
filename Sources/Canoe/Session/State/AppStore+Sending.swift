@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Synchronization
 
@@ -54,7 +55,14 @@ extension AppStore {
 
     /// Sends a request, attributing the in-flight state and the result to the
     /// given tab so other tabs keep their own spinners and responses.
-    func send(_ request: Request) {
+    /// Send, then save the response body straight to a file (Postman's
+    /// "Send and Download"): the response still lands in the tab's viewer,
+    /// and a save panel picks the destination once the body is in.
+    func sendAndDownload(_ request: Request) {
+        send(request, downloadResponse: true)
+    }
+
+    func send(_ request: Request, downloadResponse: Bool = false) {
         let tab = selectedTab ?? .request(request.id)
         // Drop misfires: a Send within the quiescence window after a cancel
         // is the morphing button swapping under the click, not intent.
@@ -142,6 +150,12 @@ extension AppStore {
                         httpVersion: response.network?.httpVersion
                     )
                 )
+                // Last, after every send-side record is in: the modal panel
+                // parks this task until the user picks a destination, and
+                // nothing downstream needs to wait for it.
+                if downloadResponse {
+                    presentDownloadPanel(response)
+                }
             } catch is CancellationError {
                 return
             } catch let error as URLError where error.code == .cancelled {
@@ -224,6 +238,22 @@ extension AppStore {
         // showing a different response.
         if dropped, viewingHistoryIndexByTab[tab] != nil {
             viewingHistoryIndexByTab[tab] = nil
+        }
+    }
+
+    /// Save panel for Send and Download. The response still renders in the
+    /// viewer; this writes the body to the chosen file. The suggested name
+    /// comes from the sent URL and the response's Content-Type
+    /// (`users.json`), like a browser download.
+    private func presentDownloadPanel(_ response: ResponseModel) {
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = response.downloadFilename
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try response.body.write(to: url)
+        } catch {
+            AppLogger.error("Failed to save downloaded response body: \(error)", category: "Send")
         }
     }
 

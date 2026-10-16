@@ -41,17 +41,23 @@ enum HTTPClient {
         /// Follow at most this many redirects (0 = unlimited); the last 3xx
         /// response is returned as-is once the limit is hit.
         var maxRedirects: Int = 0
+        /// Send the Authorization header to redirected hosts (including
+        /// HTTPS → HTTP downgrades). Off - the safe default - strips it
+        /// cross-host (Postman's "Follow Authorization header").
+        var followsAuthorizationHeader: Bool = false
         var useCookieJar: Bool = true
         var verifySSLCertificate: Bool = true
 
         init(
             followsRedirects: Bool = true,
             maxRedirects: Int = 0,
+            followsAuthorizationHeader: Bool = false,
             useCookieJar: Bool = true,
             verifySSLCertificate: Bool = true
         ) {
             self.followsRedirects = followsRedirects
             self.maxRedirects = maxRedirects
+            self.followsAuthorizationHeader = followsAuthorizationHeader
             self.useCookieJar = useCookieJar
             self.verifySSLCertificate = verifySSLCertificate
         }
@@ -61,6 +67,7 @@ enum HTTPClient {
             self.init(
                 followsRedirects: request.followRedirects,
                 maxRedirects: request.maxRedirects,
+                followsAuthorizationHeader: request.followAuthorizationHeader,
                 useCookieJar: request.useCookieJar,
                 verifySSLCertificate: request.verifySSLCertificate
             )
@@ -81,6 +88,8 @@ enum HTTPClient {
         let response: HTTPURLResponse
         let metrics: URLSessionTaskMetrics?
         let certificate: CertificateSnapshot?
+        /// Redirects this send actually followed (the Network panel's row).
+        let redirects: Int
     }
 
     /// Joins the data-task completion with `didFinishCollecting` (metrics
@@ -131,15 +140,25 @@ enum HTTPClient {
         }
 
         /// Whether one more redirect may be followed: counts the redirects
-        /// already performed for this task against `options.maxRedirects`
+        /// ALREADY FOLLOWED for this task against `options.maxRedirects`
         /// (0 = unlimited). The delegate calls this once per redirect
-        /// response; `false` makes it hand the 3xx back to the caller.
+        /// response; `false` makes it hand the 3xx back to the caller. Only
+        /// followed redirects increment the counter, so a capped send
+        /// reports the number that actually happened.
         func allowAnotherRedirect() -> Bool {
-            guard options.maxRedirects > 0 else { return true }
-            return state.withLock { current -> Bool in
+            state.withLock { current -> Bool in
+                if options.maxRedirects > 0, current.redirectCount >= options.maxRedirects {
+                    return false
+                }
                 current.redirectCount += 1
-                return current.redirectCount <= options.maxRedirects
+                return true
             }
+        }
+
+        /// How many redirects this task has followed so far (read at
+        /// completion for the Network panel).
+        var followedRedirects: Int {
+            state.withLock { $0.redirectCount }
         }
 
         func setCertificate(_ snapshot: CertificateSnapshot) {
@@ -311,7 +330,8 @@ enum HTTPClient {
                         truncated: current.truncated,
                         response: response,
                         metrics: current.metrics,
-                        certificate: current.certificate
+                        certificate: current.certificate,
+                        redirects: current.redirectCount
                     )
                 )
             }
@@ -366,12 +386,21 @@ enum HTTPClient {
             let to = request.url
             let crossHost = from?.host?.lowercased() != to?.host?.lowercased()
             let downgraded = from?.scheme?.lowercased() == "https" && to?.scheme?.lowercased() == "http"
-            if crossHost || downgraded {
-                redirected.setValue(nil, forHTTPHeaderField: "Authorization")
-            }
             guard let telemetry = self.telemetry(for: task) else {
+                // No telemetry registered (cannot happen for our tasks):
+                // keep the safe default - strip credentials cross-host - and
+                // follow.
+                if crossHost || downgraded {
+                    redirected.setValue(nil, forHTTPHeaderField: "Authorization")
+                }
                 completionHandler(redirected)
                 return
+            }
+            // Per-request "Follow Authorization header" off (the default):
+            // the helper's credentials never reach a redirected host or a
+            // plaintext downgrade.
+            if crossHost || downgraded, !telemetry.options.followsAuthorizationHeader {
+                redirected.setValue(nil, forHTTPHeaderField: "Authorization")
             }
             // Per-request "Follow Redirects" off: pass nil so URLSession
             // returns the 3xx response itself, body included.
@@ -829,7 +858,8 @@ enum HTTPClient {
             requestURL: url.absoluteString,
             network: Self.makeNetworkInfo(
                 metrics: outcome.metrics,
-                certificate: outcome.certificate
+                certificate: outcome.certificate,
+                redirects: outcome.redirects
             ),
             size: Self.makeSizeInfo(
                 request: urlRequest,
@@ -956,7 +986,8 @@ enum HTTPClient {
     /// Postman-style Network panel fields from transaction metrics + trust.
     private static func makeNetworkInfo(
         metrics: URLSessionTaskMetrics?,
-        certificate: CertificateSnapshot?
+        certificate: CertificateSnapshot?,
+        redirects: Int
     ) -> NetworkInfo {
         let transaction = metrics?.transactionMetrics.last
         return NetworkInfo(
@@ -967,7 +998,8 @@ enum HTTPClient {
             cipherName: transaction?.negotiatedTLSCipherSuite.map(displayCipherSuite),
             certificateCN: certificate?.subjectCN,
             issuerCN: certificate?.issuerCN,
-            validUntil: certificate?.notAfter
+            validUntil: certificate?.notAfter,
+            redirects: redirects
         )
     }
 

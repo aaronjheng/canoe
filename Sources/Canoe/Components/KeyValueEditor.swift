@@ -868,6 +868,32 @@ private struct KVRow: View {
         focus.wrappedValue == keyFocus || focus.wrappedValue == valueFocus
     }
 
+    /// Secret values render as a fixed-length mask while the value cell
+    /// does NOT own keyboard focus - the same idle masking the variables
+    /// inspector uses. Display-only: the eye still toggles the persisted
+    /// secret flag, and a click (or Tab) swaps the real editor in, exactly
+    /// where the typed text would have been. The ghost row has no flag.
+    private var isValueMasked: Bool {
+        guard let isSecret, !isGhostRow else { return false }
+        return isSecret.wrappedValue && !isCellFocused(.value)
+    }
+
+    /// The idle mask for a secret value: fixed-length dots (never the real
+    /// length), clickable to start editing.
+    private var maskedValueCell: some View {
+        Text("••••••••")
+            .font(AppFont.small)
+            .foregroundStyle(AppColor.textSecondary)
+            .opacity(isEnabled ? 1 : AppOpacity.disabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard isEnabled else { return }
+                focus.wrappedValue = valueFocus
+            }
+            .help("Secret value (click to edit)")
+    }
+
     private var isDeleteVisible: Bool { isHovering || isRowFocused }
 
     var body: some View {
@@ -943,6 +969,8 @@ private struct KVRow: View {
             cell(.value) {
                 if isFileRow {
                     fileValueCell
+                } else if isValueMasked {
+                    maskedValueCell
                 } else {
                     VariableHighlightEditor(
                         text: $value,

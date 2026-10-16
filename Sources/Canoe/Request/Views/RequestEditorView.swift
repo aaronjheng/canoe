@@ -896,7 +896,14 @@ struct RequestEditorView: View {
                 } else {
                     Button {
                         urlFieldFocused = nil
-                        store.send(draft)
+                        // Postman's split Send: a plain click sends, an
+                        // Option-click (or the right-click menu) sends and
+                        // saves the body straight to a file.
+                        if NSEvent.modifierFlags.contains(.option) {
+                            store.sendAndDownload(draft)
+                        } else {
+                            store.send(draft)
+                        }
                     } label: {
                         // Lifts the label so the styled button lands on the
                         // shared 30pt row height; the text itself is untouched.
@@ -906,7 +913,13 @@ struct RequestEditorView: View {
                     .buttonStyle(SendButtonStyle())
                     .disabled(draft.urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .keyboardShortcut(.return, modifiers: [.command])
-                    .help("Send Request (⌘↩)")
+                    .contextMenu {
+                        Button("Send and Download") {
+                            urlFieldFocused = nil
+                            store.sendAndDownload(draft)
+                        }
+                    }
+                    .help("Send Request (⌘↩) · ⌥-click or right-click to Send and Download")
                 }
             }
             .anchorPreference(key: MethodMenuAnchorKey.self, value: .bounds) { $0 }
@@ -1236,6 +1249,13 @@ struct RequestEditorView: View {
                     isOn: $draft.followRedirects
                 )
                 settingsMaxRedirectsRow
+                settingsToggleRow(
+                    title: "Follow Authorization header",
+                    description:
+                        "Send the Authorization header to redirected hosts, including HTTPS → HTTP"
+                        + " downgrades. Off strips it, so helper credentials never reach a third party.",
+                    isOn: $draft.followAuthorizationHeader
+                )
                 settingsTimeoutRow
                 settingsToggleRow(
                     title: "Use cookie jar",

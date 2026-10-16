@@ -1532,6 +1532,19 @@ private struct HistoryRow: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contextMenu {
+            if requestExists, let id = entry.requestID, let request = store.request(withID: id) {
+                Button("Send Again") {
+                    // Opens the request's tab, then re-sends the stored
+                    // request there (Postman's history "run again").
+                    store.openRequest(id)
+                    store.send(request)
+                }
+            }
+            Button("Remove from History", role: .destructive) {
+                store.removeHistoryEntry(entry)
+            }
+        }
         // A dead entry (its request was deleted) gets no hover fill either:
         // the same rule every disabled control in the app follows.
         .background(

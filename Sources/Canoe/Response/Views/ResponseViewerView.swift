@@ -5,6 +5,10 @@ struct ResponseViewerView: View {
     /// Shorthand for the response data type (defined on the model).
     typealias BodyLanguage = ResponseModel.BodyLanguage
 
+    /// The request whose response this viewer shows: Copy as cURL needs the
+    /// same definition the send path resolved.
+    let request: Request
+
     @Environment(AppStore.self) private var store
     @State private var bodyMode: BodyMode = .pretty
     /// Data type selector (Postman): auto-detect by default; user can pin
@@ -31,6 +35,9 @@ struct ResponseViewerView: View {
     /// copy, so a second copy restarts the window instead of being cut short
     /// by the first one's timer (same pattern as the console's Copy action).
     @State private var copyResetTask: Task<Void, Never>?
+    /// Copy as cURL's in-place acknowledgement - same pattern as Copy Body's.
+    @State private var didCopyCURL = false
+    @State private var cURLCopyResetTask: Task<Void, Never>?
     /// Response-body find (⌘F): query, bar visibility, and which match is
     /// the current one (index into the match list, cycled by ⌘G/⇧⌘G).
     @State private var findVisible = false
@@ -275,6 +282,7 @@ struct ResponseViewerView: View {
             // The acknowledgement belongs to the response it was copied
             // from: a fresh response must not wear a stale checkmark.
             didCopyBody = false
+            didCopyCURL = false
             // The staged media file belongs to the old response; the next
             // preview (if media again) stages its own.
             removeStagedMedia()
@@ -444,6 +452,7 @@ struct ResponseViewerView: View {
             if let network = response.network {
                 let connectionRows: [(String, String?)] = [
                     ("HTTP Version", network.httpVersion),
+                    ("Redirects", network.redirects > 0 ? "\(network.redirects) followed" : nil),
                     ("Local Address", network.localAddress),
                     ("Remote Address", network.remoteAddress),
                 ]
@@ -792,6 +801,13 @@ struct ResponseViewerView: View {
                     .foregroundStyle(findVisible ? AppColor.accent : AppColor.textSecondary)
                     .help("Find in Response (⌘F)")
                 }
+                Button("Copy as cURL", systemImage: didCopyCURL ? "checkmark" : "terminal") {
+                    copyCURL()
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(IconButtonStyle())
+                .foregroundStyle(didCopyCURL ? AppColor.success : AppColor.textPrimary)
+                .help("Copy the request as a cURL command (resolved like a send)")
                 Button("Copy Body", systemImage: didCopyBody ? "checkmark" : "doc.on.doc") {
                     let copyText: String
                     if bodyMode == .hex {
@@ -1574,6 +1590,34 @@ struct ResponseViewerView: View {
         }
     }
 
+    /// The request Copy as cURL mirrors: the editor's live draft (the
+    /// store's pending snapshot - exactly what Send would put on the wire),
+    /// falling back to the vault copy for a clean request.
+    private var cURLSourceRequest: Request {
+        store.pendingRequestSnapshots[request.id] ?? request
+    }
+
+    /// Copies the request as a cURL command (Postman's Copy as cURL),
+    /// resolved through the same variable scope and auth inheritance a real
+    /// send uses.
+    private func copyCURL() {
+        let source = cURLSourceRequest
+        let command = CodeSnippetGenerator.generate(
+            request: source,
+            variables: store.variablesForRequest(source),
+            authorization: store.authorizationForRequest(source),
+            language: .curl
+        )
+        copyToPasteboard(command)
+        didCopyCURL = true
+        cURLCopyResetTask?.cancel()
+        cURLCopyResetTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1500))
+            guard !Task.isCancelled else { return }
+            didCopyCURL = false
+        }
+    }
+
     /// The full body text for the current mode (not the truncated preview):
     /// Copy and Save both act on everything the server returned.
     private func fullBodyText(_ response: ResponseModel, display: BodyDisplay) -> String {
@@ -1594,7 +1638,7 @@ struct ResponseViewerView: View {
         panel.canCreateDirectories = true
         let timestamp = Int(response.timestamp.timeIntervalSince1970)
         let idSuffix = response.id.uuidString.prefix(8)
-        let ext = fileExtension(for: response)
+        let ext = response.fileExtension
         panel.nameFieldStringValue = "response-\(response.statusCode)-\(timestamp)-\(idSuffix).\(ext)"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
@@ -1604,15 +1648,6 @@ struct ResponseViewerView: View {
             AppLogger.error("Failed to save response body: \(error)", category: "Response")
             saveError = "Could not save the response body: \(error.localizedDescription)"
         }
-    }
-
-    private func fileExtension(for response: ResponseModel) -> String {
-        let mime = (response.mimeType ?? "").lowercased()
-        if mime.contains("json") { return "json" }
-        if mime.contains("xml") { return "xml" }
-        if mime.contains("html") { return "html" }
-        if mime.hasPrefix("text/") { return "txt" }
-        return "bin"
     }
 }
 

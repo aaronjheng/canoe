@@ -558,7 +558,7 @@ struct RequestWorkspaceView: View {
                 pendingMethodPick: $pendingMethodPick
             )
             .frame(minHeight: AppSize.requestEditorMinHeight)
-            ResponseViewerView()
+            ResponseViewerView(request: request)
                 .frame(minHeight: AppSize.responseViewerMinHeight)
         }
         // VSplitView otherwise collapses to its panes' ideal heights, and a

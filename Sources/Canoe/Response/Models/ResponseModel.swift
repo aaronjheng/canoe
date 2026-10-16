@@ -11,6 +11,9 @@ struct NetworkInfo: Sendable, Equatable {
     var certificateCN: String?
     var issuerCN: String?
     var validUntil: Date?
+    /// Redirects the send actually followed (0 = none; the Network panel
+    /// shows the row only above zero).
+    var redirects: Int = 0
 
     var formattedValidUntil: String? {
         guard let validUntil else { return nil }
@@ -256,6 +259,32 @@ struct ResponseModel: Identifiable, Sendable {
     /// bytes alone.
     var formattedSize: String {
         Int64(size?.responseTotal ?? body.count).formattedByteCount
+    }
+
+    /// Extension for saving the body to a file, from the Content-Type
+    /// ("json", "xml", "html", "txt", else "bin"). Shared by Save
+    /// Response and Send and Download.
+    var fileExtension: String {
+        let mime = (mimeType ?? "").lowercased()
+        if mime.contains("json") { return "json" }
+        if mime.contains("xml") { return "xml" }
+        if mime.contains("html") { return "html" }
+        if mime.hasPrefix("text/") { return "txt" }
+        return "bin"
+    }
+
+    /// Suggested filename for Send and Download: the sent URL's last path
+    /// segment (falling back to "response") plus the Content-Type's
+    /// extension - e.g. `users.json` from `GET …/users` answered as JSON.
+    var downloadFilename: String {
+        let base =
+            requestURL
+            .flatMap(URL.init(string:))
+            .map { $0.lastPathComponent }
+            .flatMap { $0.isEmpty ? nil : $0 }
+            ?? "response"
+        let ext = fileExtension
+        return base.hasSuffix(".\(ext)") ? base : "\(base).\(ext)"
     }
 }
 

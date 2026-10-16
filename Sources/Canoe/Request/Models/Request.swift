@@ -66,6 +66,11 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
     /// timeout stays the session's 120 s.
     var followRedirects: Bool = true
     var timeoutSeconds: Double = 0
+    /// Send the Authorization header to redirected hosts (including HTTPS
+    /// → HTTP downgrades). Off - the safe default - strips it cross-host,
+    /// so helper credentials never leak to a third party (Postman's
+    /// "Follow Authorization header").
+    var followAuthorizationHeader: Bool = false
     /// Send cookies the jar holds for the domain and store the response's
     /// `Set-Cookie` headers back into it. Off skips both directions - the
     /// request goes out bare and nothing is recorded.
@@ -124,7 +129,7 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
         case authOAuthHeaderPrefix, authOAuthAccessToken
         case authOAuthTokens, authOAuthSelectedTokenID
         case requestDescription
-        case followRedirects, timeoutSeconds, maxRedirects
+        case followRedirects, timeoutSeconds, maxRedirects, followAuthorizationHeader
         case useCookieJar, verifySSLCertificate
         case orderIndex, folderID, createdAt, updatedAt, headers, params
         case pathVariables
@@ -177,6 +182,8 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
         requestDescription = try container.decodeIfPresent(String.self, forKey: .requestDescription) ?? ""
         followRedirects = try container.decodeIfPresent(Bool.self, forKey: .followRedirects) ?? true
         timeoutSeconds = try container.decodeIfPresent(Double.self, forKey: .timeoutSeconds) ?? 0
+        followAuthorizationHeader =
+            try container.decodeIfPresent(Bool.self, forKey: .followAuthorizationHeader) ?? false
         useCookieJar = try container.decodeIfPresent(Bool.self, forKey: .useCookieJar) ?? true
         verifySSLCertificate =
             try container.decodeIfPresent(Bool.self, forKey: .verifySSLCertificate) ?? true
@@ -273,6 +280,7 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
             && requestDescription == other.requestDescription
             && followRedirects == other.followRedirects
             && timeoutSeconds == other.timeoutSeconds
+            && followAuthorizationHeader == other.followAuthorizationHeader
             && useCookieJar == other.useCookieJar
             && verifySSLCertificate == other.verifySSLCertificate
             && maxRedirects == other.maxRedirects
