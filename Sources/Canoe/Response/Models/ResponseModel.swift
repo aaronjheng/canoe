@@ -223,10 +223,12 @@ struct ResponseModel: Identifiable, Sendable {
     /// XML returns nil and the caller shows the body verbatim (still
     /// highlighted).
     private static func prettyXML(_ data: Data, raw: String) -> String? {
-        guard let document = try? XMLDocument(data: data, options: [.nodeLoadExternalEntitiesNever]),
-            let prettyData = try? document.xmlData(options: [.nodePrettyPrint]),
-            let pretty = String(data: prettyData, encoding: .utf8)
+        guard let document = try? XMLDocument(data: data, options: [.nodeLoadExternalEntitiesNever])
         else { return nil }
+        // `xmlData` is non-throwing in this SDK; the parse above is what can
+        // fail, and an unparseable body returns nil (shown verbatim).
+        let prettyData = document.xmlData(options: [.nodePrettyPrint])
+        guard let pretty = String(data: prettyData, encoding: .utf8) else { return nil }
         var lines = pretty.split(separator: "\n", omittingEmptySubsequences: false)
         guard lines.first?.hasPrefix("<?xml") == true else { return pretty }
         let trimmedSource = raw.trimmingCharacters(in: .whitespacesAndNewlines)

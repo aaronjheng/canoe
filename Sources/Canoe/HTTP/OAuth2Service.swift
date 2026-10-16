@@ -263,11 +263,11 @@ enum OAuth2Service {
                 }
             }
         }
-        try listener.start(queue: DispatchQueue(label: "canoe.oauth2.listener"))
+        listener.start(queue: DispatchQueue(label: "canoe.oauth2.listener"))
         defer { listener.cancel() }
         // The state callback fires on the listener queue once the socket is
         // ready; a short bounded wait keeps startup failures visible.
-        for _ in 0..<100 where box.boundPort.withLock { $0 } == nil {
+        for _ in 0..<100 where box.boundPort.withLock({ $0 }) == nil {
             usleep(10_000)
         }
         guard let port = box.boundPort.withLock({ $0 }) else {
@@ -322,56 +322,59 @@ enum OAuth2Service {
         /// (favicon & co) is answered and ignored.
         func handle(
             connection: NWConnection, expectedState: String, relay: Bool,
-            onResult: @escaping (Result<[String: String], Error>) -> Void
+            onResult: @escaping @Sendable (Result<[String: String], Error>) -> Void
         ) {
             connection.start(queue: .global())
-            connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { data, _, _, error in
-                defer { connection.cancel() }
-                guard let data, error == nil else {
-                    onResult(.failure(OAuth2Error.callback("the callback connection failed.")))
-                    return
-                }
-                let requestText = String(bytes: data, encoding: .utf8) ?? ""
-                guard let requestLine = requestText.split(separator: "\r\n").first,
-                    let target = requestLine.split(separator: " ").dropFirst().first
-                else {
-                    onResult(.failure(OAuth2Error.callback("could not read the callback request.")))
-                    return
-                }
-                if relay {
-                    let shouldServePage = self.servedRelayPage.withLock { served -> Bool in
-                        if served { return false }
-                        served = true
-                        return true
+            connection.receive(
+                minimumIncompleteLength: 1,
+                maximumLength: 64 * 1024,
+                completion: { data, _, _, error in
+                    defer { connection.cancel() }
+                    guard let data, error == nil else {
+                        onResult(.failure(OAuth2Error.callback("the callback connection failed.")))
+                        return
                     }
-                    if shouldServePage {
-                        self.respond(connection, ok: true, relayPage: true)
-                        return  // Keep waiting for the relayed fragment.
+                    let requestText = String(bytes: data, encoding: .utf8) ?? ""
+                    guard let requestLine = requestText.split(separator: "\r\n").first,
+                        let target = requestLine.split(separator: " ").dropFirst().first
+                    else {
+                        onResult(.failure(OAuth2Error.callback("could not read the callback request.")))
+                        return
                     }
-                    guard target.hasPrefix("/relay") else {
+                    if relay {
+                        let shouldServePage = self.servedRelayPage.withLock { served -> Bool in
+                            if served { return false }
+                            served = true
+                            return true
+                        }
+                        if shouldServePage {
+                            self.respond(connection, ok: true, relayPage: true)
+                            return  // Keep waiting for the relayed fragment.
+                        }
+                        guard target.hasPrefix("/relay") else {
+                            self.respond(connection, ok: false)
+                            return  // Stray request: ignore, keep waiting.
+                        }
+                    }
+                    let components = URLComponents(string: "http://127.0.0.1\(target)")
+                    let query = components?.queryItems ?? []
+                    var parameters: [String: String] = [:]
+                    for item in query {
+                        parameters[item.name] = item.value ?? ""
+                    }
+                    if let error = parameters["error"], !error.isEmpty {
                         self.respond(connection, ok: false)
-                        return  // Stray request: ignore, keep waiting.
+                        onResult(.failure(OAuth2Error.callback(error)))
+                        return
                     }
-                }
-                var components = URLComponents(string: "http://127.0.0.1\(target)")
-                let query = components?.queryItems ?? []
-                var parameters: [String: String] = [:]
-                for item in query {
-                    parameters[item.name] = item.value ?? ""
-                }
-                if let error = parameters["error"], !error.isEmpty {
-                    self.respond(connection, ok: false)
-                    onResult(.failure(OAuth2Error.callback(error)))
-                    return
-                }
-                guard let returnedState = parameters["state"], returnedState == expectedState else {
-                    self.respond(connection, ok: false)
-                    onResult(.failure(OAuth2Error.stateMismatch))
-                    return
-                }
-                self.respond(connection, ok: true)
-                onResult(.success(parameters))
-            }
+                    guard let returnedState = parameters["state"], returnedState == expectedState else {
+                        self.respond(connection, ok: false)
+                        onResult(.failure(OAuth2Error.stateMismatch))
+                        return
+                    }
+                    self.respond(connection, ok: true)
+                    onResult(.success(parameters))
+                })
         }
 
         /// A minimal success page so the browser tab shows something clean.

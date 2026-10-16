@@ -58,7 +58,7 @@ enum CURLImporter {
             if tokens.isEmpty { throw ImportError.empty }
             throw ImportError.notCURL
         }
-        var arguments = Array(tokens[(curlIndex + 1)...])
+        let arguments = Array(tokens[(curlIndex + 1)...])
         if arguments.isEmpty { throw ImportError.notCURL }
 
         var state = ParseState()

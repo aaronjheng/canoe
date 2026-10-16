@@ -72,7 +72,14 @@ struct VariablesSidebarView: View {
         let usedKeys = Set(store.placeholdersUsedByRequest(request))
         let resolvedVars = store.variablesForRequest(request)
         let resolvedKeys = Set(resolvedVars.keys)
-        let unresolvedAll = usedKeys.subtracting(resolvedKeys).sorted()
+        // Dynamic variables ({{$guid}} & co) always resolve fresh at send
+        // time with no definition, so they are neither resolved rows nor
+        // unresolved warnings - they simply do not appear here.
+        let unresolvedAll =
+            usedKeys
+            .subtracting(resolvedKeys)
+            .filter { !DynamicVariables.isDynamic($0) }
+            .sorted()
         let unresolved = query.isEmpty ? unresolvedAll : unresolvedAll.filter { $0.localizedCaseInsensitiveContains(query) }
         // Placeholders that resolve toward a reference cycle: defined, so
         // not "unresolved", but the wire still carries literal `{{...}}`.

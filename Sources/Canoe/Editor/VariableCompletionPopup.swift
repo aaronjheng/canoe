@@ -6,12 +6,20 @@ import SwiftUI
 /// controller; hover mirrors it so mouse and keyboard share one state.
 struct VariableSuggestionList: View {
     let suggestions: [VariableSuggestion]
-    let selectedIndex: Int
+    /// Binding, not a value: selection changes (arrows, hover) mutate it in
+    /// place, so SwiftUI only re-renders the affected rows - rebuilding the
+    /// whole list per selection reset the scroll offset and made the rows
+    /// visibly jump once the list overflowed the panel (dynamic variables
+    /// pushed it past the visible cap).
+    @Binding var selectedIndex: Int
     let onHover: (Bool, Int) -> Void
     let onPick: (Int) -> Void
 
     static let rowHeight: CGFloat = 24
     static let footerHeight: CGFloat = 20
+    /// The dynamic section's header strip (fixed, so the panel's height
+    /// math can include it exactly).
+    static let dynamicSectionHeaderHeight: CGFloat = 22
     /// Rows shown before the list scrolls internally.
     static let maxVisibleRows = 8
 
@@ -21,6 +29,12 @@ struct VariableSuggestionList: View {
                 ScrollView {
                     VStack(spacing: 0) {
                         ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, suggestion in
+                            // Postman-style grouping: the dynamic generators
+                            // get their own section header once the list
+                            // reaches them (type `$` to filter down to them).
+                            if startsDynamicSection(at: index) {
+                                dynamicSectionHeader
+                            }
                             row(index, suggestion)
                         }
                     }
@@ -44,6 +58,34 @@ struct VariableSuggestionList: View {
         .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
     }
 
+    /// Whether row `index` opens the dynamic section: it is a dynamic
+    /// candidate and the previous row (if any) is not.
+    private func startsDynamicSection(at index: Int) -> Bool {
+        guard suggestions.indices.contains(index), suggestions[index].isDynamic else { return false }
+        return index == 0 || !suggestions[index - 1].isDynamic
+    }
+
+    /// Non-interactive section header before the dynamic candidates. The
+    /// rows keep their own selection indices - headers are decoration only.
+    private var dynamicSectionHeader: some View {
+        HStack(spacing: AppSpacing.xxSmall) {
+            Image(systemName: "bolt.fill")
+                .font(AppFont.completionMetaSmall)
+            Text("Dynamic Variables")
+                .font(AppFont.microHeader)
+            Spacer(minLength: 0)
+            Text("fresh value per send")
+                .font(AppFont.small)
+                .foregroundStyle(AppColor.tertiaryText)
+        }
+        .foregroundStyle(AppColor.textSecondary)
+        .padding(.horizontal, AppSpacing.small)
+        .frame(maxWidth: .infinity)
+        .frame(height: Self.dynamicSectionHeaderHeight, alignment: .leading)
+        .background(AppColor.subtleBackground)
+        .help("Generates a fresh value every time it resolves; no definition needed")
+    }
+
     private func row(_ index: Int, _ suggestion: VariableSuggestion) -> some View {
         HStack(spacing: AppSpacing.xSmall) {
             Text("{{\(suggestion.name)}}")
@@ -57,7 +99,16 @@ struct VariableSuggestionList: View {
                     .help("Secret variable")
             }
             Spacer(minLength: AppSpacing.small)
-            if let kind = suggestion.scopeKind {
+            if suggestion.isDynamic {
+                HStack(spacing: AppSpacing.xxSmall) {
+                    Image(systemName: "bolt.fill")
+                        .font(AppFont.completionMetaSmall)
+                    Text("Dynamic")
+                        .font(AppFont.small)
+                }
+                .foregroundStyle(AppColor.textSecondary)
+                .help("Dynamic variable: a fresh value every time the request is sent")
+            } else if let kind = suggestion.scopeKind {
                 HStack(spacing: AppSpacing.xxSmall) {
                     Image(systemName: kind.systemImage)
                         .font(AppFont.completionMetaSmall)
@@ -71,6 +122,7 @@ struct VariableSuggestionList: View {
         .frame(maxWidth: .infinity, minHeight: Self.rowHeight, maxHeight: Self.rowHeight, alignment: .leading)
         .background(index == selectedIndex ? AppColor.selectionBackground : Color.clear)
         .contentShape(Rectangle())
+        .helpIf(suggestion.summary != nil, suggestion.summary ?? "")
         .onHover { hovering in onHover(hovering, index) }
         .onTapGesture { onPick(index) }
         .clickCursor()
@@ -198,8 +250,10 @@ final class VariableCompletionController: NSObject {
     private func moveSelection(_ delta: Int) {
         guard var session, !session.matches.isEmpty else { return }
         session.selectedIndex = (session.selectedIndex + delta + session.matches.count) % session.matches.count
+        // Selection only: the list observes the binding and updates its rows
+        // (and scrolls to the new selection) in place - rebuilding the
+        // rootView here would reset the scroll offset on every arrow press.
         self.session = session
-        refreshContent()
     }
 
     /// Inserts the selected (or clicked) suggestion: `{{fragment` becomes
@@ -227,7 +281,10 @@ final class VariableCompletionController: NSObject {
         _ = ensurePanel()
         hostingView?.rootView = VariableSuggestionList(
             suggestions: session.matches,
-            selectedIndex: session.selectedIndex,
+            selectedIndex: Binding(
+                get: { [weak self] in self?.session?.selectedIndex ?? 0 },
+                set: { [weak self] index in self?.session?.selectedIndex = index }
+            ),
             onHover: { [weak self] hovering, index in
                 self?.hoverRow(hovering, index: index)
             },
@@ -240,17 +297,16 @@ final class VariableCompletionController: NSObject {
 
     private func hoverRow(_ hovering: Bool, index: Int) {
         // Only hover-enter moves the selection; hover-exit events (which the
-        // re-render itself produces) must not undo it.
-        guard hovering, var session, session.selectedIndex != index else { return }
-        session.selectedIndex = index
-        self.session = session
-        refreshContent()
+        // re-render itself produces) must not undo it. Binding-driven, like
+        // the arrow keys - no rootView rebuild (see moveSelection).
+        guard hovering, let session, session.selectedIndex != index else { return }
+        self.session?.selectedIndex = index
     }
 
     private func positionPanel() {
         guard let session, let textView, let window = textView.window else { return }
         let panel = ensurePanel()
-        let height = listHeight(for: session.matches.count)
+        let height = listHeight(for: session.matches)
         guard let frame = anchoredFrame(for: textView, height: height) else {
             hide()
             return
@@ -264,9 +320,16 @@ final class VariableCompletionController: NSObject {
         registerDismissWatchers()
     }
 
-    private func listHeight(for matchCount: Int) -> CGFloat {
-        CGFloat(min(matchCount, VariableSuggestionList.maxVisibleRows)) * VariableSuggestionList.rowHeight
-            + VariableSuggestionList.footerHeight
+    /// Rows (capped at the visible count) plus the footer, and the dynamic
+    /// section's header strip whenever dynamic candidates are in the list -
+    /// the header lives inside the scrolling content, so the panel must be
+    /// taller by exactly its height or the rows clip at the bottom.
+    private func listHeight(for matches: [VariableSuggestion]) -> CGFloat {
+        let rows =
+            CGFloat(min(matches.count, VariableSuggestionList.maxVisibleRows))
+            * VariableSuggestionList.rowHeight
+        let header = matches.contains(where: \.isDynamic) ? VariableSuggestionList.dynamicSectionHeaderHeight : 0
+        return rows + header + VariableSuggestionList.footerHeight
     }
 
     /// Screen-space frame for the panel: just below the caret when there is
@@ -354,7 +417,7 @@ final class VariableCompletionController: NSObject {
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.fullScreenAuxiliary]
         let hosting = NSHostingView(
-            rootView: VariableSuggestionList(suggestions: [], selectedIndex: 0, onHover: { _, _ in }, onPick: { _ in })
+            rootView: VariableSuggestionList(suggestions: [], selectedIndex: .constant(0), onHover: { _, _ in }, onPick: { _ in })
         )
         panel.contentView = hosting
         hostingView = hosting

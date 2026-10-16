@@ -161,7 +161,7 @@ extension AppStore {
             // writeCollection, not the upserting saveCollection - same rule
             // as persistEnvironment (no clobber, no resurrection).
             didWrite = await self.vault.writeCollection(toSave)
-        }
+        }.value
         guard didWrite else { return false }
         // Same delete-race correction as the other persist helpers.
         if let current = vault.collections.firstIndex(where: { $0.id == collectionID }) {

@@ -1624,7 +1624,6 @@ private struct SidebarDropDelegate: DropDelegate {
         guard let provider = info.itemProviders(for: [.plainText]).first else { return false }
         let kind = self.kind
         let collectionID = self.collectionID
-        let targetID = self.targetID
         _ = provider.loadObject(ofClass: NSString.self) { object, _ in
             guard let payload = object as? String else { return }
             // maxSplits: 1 - UUIDs contain hyphens of their own.

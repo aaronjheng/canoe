@@ -340,7 +340,10 @@ private enum VariablePlaceholderStyling {
     }
 
     static func tint(_ name: String, in variables: [String: String]) -> NSColor {
-        NSColor(variables[name] != nil ? AppColor.success : AppColor.warning)
+        // Dynamic variables ({{$guid}} & co) always resolve, so they carry
+        // the success tint even though no definition holds them.
+        let resolved = variables[name] != nil || DynamicVariables.isDynamic(name)
+        return NSColor(resolved ? AppColor.success : AppColor.warning)
             .withAlphaComponent(AppOpacity.variableHighlight)
     }
 

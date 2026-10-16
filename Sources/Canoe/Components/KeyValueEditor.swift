@@ -879,13 +879,15 @@ private struct KVRow: View {
     }
 
     /// The idle mask for a secret value: fixed-length dots (never the real
-    /// length), clickable to start editing.
+    /// length), clickable to start editing. The frame matches the editor's
+    /// (stretched, text vertically centered) so swapping mask → editor on
+    /// selection never shifts the text within the row.
     private var maskedValueCell: some View {
         Text("••••••••")
             .font(AppFont.small)
             .foregroundStyle(AppColor.textSecondary)
             .opacity(isEnabled ? 1 : AppOpacity.disabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .onTapGesture {
                 guard isEnabled else { return }

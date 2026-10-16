@@ -65,6 +65,17 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>A70F1001A1B1000000000012</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>DynamicVariablesHelpView.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>A70F1001A1B1000000000003</key>
 		<dict>
 			<key>isa</key>
@@ -93,6 +104,13 @@
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>A70F1001A1B1000000000011</string>
+		</dict>
+		<key>A70F1002A1B1000000000012</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>A70F1001A1B1000000000012</string>
 		</dict>
 		<key>A70F1002A1B1000000000001</key>
 		<dict>
@@ -142,6 +160,7 @@
 			<key>children</key>
 			<array>
 				<string>A70F1001A1B1000000000011</string>
+				<string>A70F1001A1B1000000000012</string>
 							</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -1116,6 +1135,17 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>C0A5E1000000000000000007</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>DynamicVariables.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>CF3C9A91331FA873D4423927</key>
 		<dict>
 			<key>isa</key>
@@ -1702,6 +1732,13 @@
 			<key>fileRef</key>
 			<string>75C26B269161178565F28163</string>
 		</dict>
+		<key>C0A5E1000000000000000008</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>C0A5E1000000000000000007</string>
+		</dict>
 		<key>24C3CDFB754F796FF538600B</key>
 		<dict>
 			<key>isa</key>
@@ -2268,6 +2305,7 @@
 			<key>children</key>
 			<array>
 				<string>75C26B269161178565F28163</string>
+				<string>C0A5E1000000000000000007</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -2347,6 +2385,7 @@
 				<string>AB81AEB3E65D2FB732696153</string>
 				<string>EAA6535D2D87C6F2DC883BA7</string>
 				<string>4CB87040A6EF11C11DC338BA</string>
+				<string>C0A5E1000000000000000008</string>
 				<string>24C3CDFB754F796FF538600B</string>
 				<string>E0548EA4809C24D9CE35DD9A</string>
 				<string>D6AFF4D9B954BD6ACCE452DD</string>
@@ -2380,6 +2419,7 @@
 				<string>A70F1002A1B1000000000002</string>
 				<string>A70F1002A1B1000000000003</string>
 				<string>A70F1002A1B1000000000011</string>
+				<string>A70F1002A1B1000000000012</string>
 		</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>

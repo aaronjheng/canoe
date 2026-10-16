@@ -11,11 +11,31 @@ struct VariableSuggestion: Identifiable, Hashable, Sendable {
     let scopeKind: VariableScope.Kind?
     let scopeName: String?
     let isSecret: Bool
+    /// Postman-style dynamic generator ({{$guid}} & co): resolved fresh per
+    /// occurrence, no scope to show. The prefix filter only surfaces these
+    /// once the typed fragment starts with `$`.
+    var isDynamic: Bool = false
+    /// One-line explanation (dynamic variables only): the row's tooltip.
+    var summary: String?
 
     var id: String { name }
 }
 
 extension VariableSuggestion {
+    /// The dynamic-variable candidates, appended to every `{{` popup's
+    /// list (scope metadata is meaningless for them - they resolve fresh at
+    /// send time without any definition).
+    private static let dynamic: [VariableSuggestion] = DynamicVariables.entries.map { entry in
+        VariableSuggestion(
+            name: entry.key,
+            scopeKind: nil,
+            scopeName: nil,
+            isSecret: false,
+            isDynamic: true,
+            summary: entry.summary
+        )
+    }
+
     /// Builds candidates from the request's variable scopes, lowest
     /// precedence first (workspace → collection → environment): a key defined
     /// in several scopes appears once, attributed to the scope whose value
@@ -36,6 +56,7 @@ extension VariableSuggestion {
             }
         }
         return byName.values.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            + dynamic
     }
 
     /// Names-only fallback for editors that only know the resolved
@@ -44,6 +65,7 @@ extension VariableSuggestion {
         variables.keys
             .map { VariableSuggestion(name: $0, scopeKind: nil, scopeName: nil, isSecret: false) }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            + dynamic
     }
 }
 

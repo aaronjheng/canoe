@@ -5,8 +5,10 @@ import Foundation
 ///
 /// Scoping is Postman-style: workspace variables are the widest scope,
 /// collection variables override them, and environment variables win over
-/// both. Unknown placeholders are left untouched so the user can see what
-/// is missing.
+/// both. Dynamic variables ({{$guid}}, {{$timestamp}}, … - see
+/// `DynamicVariables`) generate a fresh value per occurrence when the key
+/// is not user-defined. Unknown placeholders are left untouched so the user
+/// can see what is missing.
 enum VariableResolver {
     private static let pattern = #"\{\{\s*([^}]+?)\s*\}\}"#
 
@@ -84,7 +86,7 @@ enum VariableResolver {
     }
 
     static func resolve(_ string: String, variables: [String: String]) -> String {
-        guard !variables.isEmpty, string.contains("{{"), let regex else { return string }
+        guard string.contains("{{"), let regex else { return string }
 
         // Resolve recursively so a variable whose value references another
         // variable (e.g. base={{host}}/v1) still expands. Bounded to avoid
@@ -101,7 +103,10 @@ enum VariableResolver {
                     let fullRange = Range(match.range, in: result)
                 else { continue }
                 let key = String(result[keyRange]).trimmingCharacters(in: .whitespacesAndNewlines)
-                guard let value = variables[key] else { continue }
+                // Dynamic variables ({{$guid}} & co) generate a fresh value
+                // per occurrence and only apply when no user variable took
+                // the name - an in-scope definition always wins.
+                guard let value = variables[key] ?? DynamicVariables.value(for: key) else { continue }
                 next.replaceSubrange(fullRange, with: value)
                 changed = true
             }

@@ -1323,7 +1323,7 @@ extension AppStore {
                     self.vault.collections.contains(where: { $0.requests.contains { $0.id == request.id } })
                 else { return }
                 didWrite = await self.vault.writeCollection(toSave)
-            }
+            }.value
             guard didWrite else { return false }
             // The write may also have raced a delete that landed AFTER it:
             // correct the vault so the just-landed file cannot resurrect the
@@ -1368,7 +1368,7 @@ extension AppStore {
             // would (a) revert newer in-memory drafts, (b) resurrect a
             // deleted environment and defeat the post-write correction.
             didWrite = await self.vault.writeEnvironment(environment)
-        }
+        }.value
         guard didWrite else { return false }
         // Same delete-race correction as persistRequest: a delete landing
         // before this write would otherwise be resurrected by it.
@@ -1403,7 +1403,7 @@ extension AppStore {
             // writeWorkspace, not the upserting saveWorkspace - same rule
             // as persistEnvironment (no clobber, no resurrection).
             didWrite = await self.vault.writeWorkspace(toSave)
-        }
+        }.value
         guard didWrite else { return false }
         // Same delete-race correction as persistEnvironment: a delete
         // landing before this write would otherwise be resurrected by it.
@@ -1440,7 +1440,7 @@ extension AppStore {
             // writeCollection, NOT the upserting saveCollection - same rule
             // as persistEnvironment (no clobber, no resurrection).
             didWrite = await self.vault.writeCollection(toSave)
-        }
+        }.value
         guard didWrite else { return false }
         if !vault.collections.contains(where: { $0.id == id }) {
             await vault.deleteCollection(id)
@@ -1474,7 +1474,7 @@ extension AppStore {
             // writeCollection, NOT the upserting saveCollection - same rule
             // as persistEnvironment (no clobber, no resurrection).
             didWrite = await self.vault.writeCollection(toSave)
-        }
+        }.value
         guard didWrite else { return false }
         if !vault.collections.contains(where: { $0.id == id }) {
             await vault.deleteCollection(id)

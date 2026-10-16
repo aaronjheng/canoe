@@ -9,6 +9,7 @@ private enum UtilityPanel: Hashable {
     case cookies
     case license
     case shortcuts
+    case dynamicVariables
 }
 
 @MainActor
@@ -351,6 +352,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             resizable: true
         ) {
             KeyboardShortcutsView()
+        }
+    }
+
+    /// The Help-sheet listing of the Postman-style {{$dynamic}} generators
+    /// (click a row to copy its placeholder).
+    @objc func openDynamicVariables() {
+        openUtilityWindow(
+            .dynamicVariables,
+            title: "Dynamic Variables",
+            contentSize: NSSize(
+                width: AppSize.shortcutsPanelWidth,
+                height: AppSize.shortcutsPanelHeight
+            ),
+            resizable: true
+        ) {
+            DynamicVariablesHelpView()
         }
     }
 
@@ -888,6 +905,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         shortcutsItem.keyEquivalentModifierMask = [.command]
         shortcutsItem.target = self
         helpMenu.addItem(shortcutsItem)
+        let dynamicVariablesItem = NSMenuItem(
+            title: "Dynamic Variables",
+            action: #selector(openDynamicVariables),
+            keyEquivalent: "")
+        dynamicVariablesItem.target = self
+        helpMenu.addItem(dynamicVariablesItem)
         helpMenu.addItem(.separator())
         let helpItem = NSMenuItem(title: "Canoe Help", action: #selector(openHelp), keyEquivalent: "?")
         helpItem.keyEquivalentModifierMask = [.command]
