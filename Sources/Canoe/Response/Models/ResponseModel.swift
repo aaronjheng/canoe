@@ -175,15 +175,21 @@ struct ResponseModel: Identifiable, Sendable {
 
     /// Decodes the body once. `prettify` is the pretty mode's request -
     /// parsing and re-serializing is the expensive half, so raw mode (and any
-    /// caller that only wants the text) never pays it, and it applies to
-    /// JSON bodies only (Postman pretty-prints JSON; XML/HTML render as-is,
+    /// caller that only wants the text) never pays it. It applies to JSON
+    /// and XML bodies (Postman pretty-prints both; HTML renders as-is,
     /// highlighted). `language` is the data-type selector; Auto resolves to
     /// the detected type. The returned language is the resolved one, so the
     /// viewer knows which highlight grammar applies.
     func bodyText(prettify: Bool, language: BodyLanguage = .auto) -> BodyText {
         let resolved = resolvedBodyLanguage(language)
         let raw = bodyString
-        guard prettify, resolved == .json, body.count <= Self.maxDecodedBodyBytes else {
+        guard prettify, body.count <= Self.maxDecodedBodyBytes else {
+            return BodyText(text: raw, language: resolved)
+        }
+        if resolved == .xml, let pretty = Self.prettyXML(body, raw: raw) {
+            return BodyText(text: pretty, language: resolved)
+        }
+        guard resolved == .json else {
             return BodyText(text: raw, language: resolved)
         }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -204,6 +210,29 @@ struct ResponseModel: Identifiable, Sendable {
             return BodyText(text: raw, language: resolved)
         }
         return BodyText(text: String(data: pretty, encoding: .utf8) ?? raw, language: resolved)
+    }
+
+    /// Pretty-printed XML (Postman pretty-prints XML like JSON): re-serialized
+    /// with indentation, external entity loading disabled. The source's own
+    /// declaration line is put back verbatim, because the serializer rewrites
+    /// it - it appends `standalone="yes"` to a declaration that had none and
+    /// invents a whole declaration when the source carries none. Unparseable
+    /// XML returns nil and the caller shows the body verbatim (still
+    /// highlighted).
+    private static func prettyXML(_ data: Data, raw: String) -> String? {
+        guard let document = try? XMLDocument(data: data, options: [.nodeLoadExternalEntitiesNever]),
+            let prettyData = try? document.xmlData(options: [.nodePrettyPrint]),
+            let pretty = String(data: prettyData, encoding: .utf8)
+        else { return nil }
+        var lines = pretty.split(separator: "\n", omittingEmptySubsequences: false)
+        guard lines.first?.hasPrefix("<?xml") == true else { return pretty }
+        let trimmedSource = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedSource.hasPrefix("<?xml"), let declarationRange = trimmedSource.range(of: "?>") {
+            lines[0] = Substring(trimmedSource[..<declarationRange.lowerBound] + ">")
+        } else {
+            lines.removeFirst()
+        }
+        return lines.joined(separator: "\n")
     }
 
     var isSuccess: Bool { (200..<300).contains(statusCode) }
