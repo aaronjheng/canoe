@@ -90,6 +90,11 @@ final class AppStore {
         if let data = defaults.data(forKey: OpenTabStateKeys.openTabs) {
             openTabs = (try? JSONDecoder().decode([OpenTab].self, from: data)) ?? []
         }
+        // Restored request tabs start without a response, like freshly
+        // opened ones: nothing to show until the request is sent again.
+        for tab in openTabs where tab.requestID != nil {
+            resetResponseTabs.insert(tab)
+        }
         if let data = defaults.data(forKey: OpenTabStateKeys.selectedTab) {
             let tab = try? JSONDecoder().decode(OpenTab.self, from: data)
             if let tab, openTabs.contains(tab) {
@@ -140,6 +145,12 @@ final class AppStore {
 
     /// Open tabs (requests and/or environments) in the workspace detail area.
     var openTabs: [OpenTab] = []
+    /// Tabs freshly opened whose response viewer starts empty until the
+    /// request is sent again. Response history itself is untouched: it
+    /// belongs to the request and survives tab close/relaunch; only the
+    /// display is reset. Set on fresh open (and on launch restore),
+    /// cleared when a new response lands for the request.
+    var resetResponseTabs: Set<OpenTab> = []
     /// The single-click preview tab (VSCode-style): shown in italic, reused
     /// by the next previewed tab, pinned on double-click or first edit.
     /// Transient - never persisted; after a relaunch every tab opens pinned.

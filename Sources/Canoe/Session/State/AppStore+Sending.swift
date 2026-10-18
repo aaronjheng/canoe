@@ -11,9 +11,13 @@ extension AppStore {
     /// older entry picked from the response panel's History menu. The single
     /// source of truth is `responseHistoryByRequest` - "latest" IS the first
     /// entry (index nil), so there is no second copy of the current response
-    /// to keep in sync.
+    /// to keep in sync. A freshly opened tab (`resetResponseTabs`) starts
+    /// empty until the request is sent again.
     var displayedResponse: ResponseModel? {
-        guard let requestID = selectedTab?.requestID else { return nil }
+        guard let tab = selectedTab, case .request = tab,
+            !resetResponseTabs.contains(tab),
+            let requestID = tab.requestID
+        else { return nil }
         let index = viewingHistoryIndexByRequest[requestID]
         let history = responseHistoryByRequest[requestID] ?? []
         if let index, history.indices.contains(index) {
@@ -237,6 +241,8 @@ extension AppStore {
             dropped = true
         }
         responseHistoryByRequest[request.id] = history
+        // A fresh tab that started empty now has a response to show.
+        resetResponseTabs.remove(.request(request.id))
         // An index picked against the longer array no longer names the entry
         // it was chosen for; fall back to the latest instead of quietly
         // showing a different response.

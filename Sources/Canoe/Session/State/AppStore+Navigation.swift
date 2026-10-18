@@ -172,6 +172,11 @@ extension AppStore {
         }
         previewTab = tab
         selectedTab = tab
+        // A fresh preview tab starts empty too; reusing an existing one
+        // (selected again) must not discard its response.
+        if case .request = tab {
+            resetResponseTabs.insert(tab)
+        }
         persistOpenTabs()
     }
 
@@ -187,10 +192,12 @@ extension AppStore {
         if previewTab == tab {
             previewTab = nil
         }
-        if !openTabs.contains(tab) {
-            openTabs.append(tab)
-        }
+        let isFresh = !openTabs.contains(tab)
+        if isFresh { openTabs.append(tab) }
         selectedTab = tab
+        if isFresh, case .request = tab {
+            resetResponseTabs.insert(tab)
+        }
         persistOpenTabs()
     }
 
@@ -206,8 +213,14 @@ extension AppStore {
 
     /// Opens (or focuses) a request or environment tab (sidebar selection).
     func openTab(_ tab: OpenTab) {
-        if !openTabs.contains(tab) { openTabs.append(tab) }
+        let isFresh = !openTabs.contains(tab)
+        if isFresh { openTabs.append(tab) }
         selectedTab = tab
+        // A freshly opened request tab starts with an empty response;
+        // merely re-selecting an already open tab must not discard it.
+        if isFresh, case .request = tab {
+            resetResponseTabs.insert(tab)
+        }
         persistOpenTabs()
     }
 
@@ -251,6 +264,7 @@ extension AppStore {
     /// reopening shows no modifications (and the drafts mirror is pruned).
     func closeTab(_ tab: OpenTab) {
         clearTabState(tab)
+        resetResponseTabs.remove(tab)
         if previewTab == tab { previewTab = nil }
         discardPendingEdits(for: tab)
         guard let idx = openTabs.firstIndex(of: tab) else { return }
