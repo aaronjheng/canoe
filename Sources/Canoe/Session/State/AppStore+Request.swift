@@ -176,6 +176,9 @@ extension AppStore {
         closeTab(.request(id))
         pendingRequestSnapshots[id] = nil
         persistedRequestBaselines[id] = nil
+        // Deleting the request ends its response history too (tab close no
+        // longer drops it - it must only end here or on a workspace delete).
+        purgeResponseHistory(for: id)
         for collection in vault.collections where collection.requests.contains(where: { $0.id == id }) {
             var updated = collection
             updated.requests.removeAll { $0.id == id }
@@ -371,8 +374,12 @@ extension AppStore {
             applyFolderAuthorizationDrafts(drafts.folderAuthorizations)
         }
         // Restores the per-device request history mirrored by the last
-        // session (machine-local, like the drafts above).
+        // session (machine-local, like the drafts above), then the per-
+        // request response history - also machine-local, and what reusable
+        // tabs show as their latest response after a relaunch.
         history = await vault.loadHistory(limit: historyLimit)
+        responseHistoryByRequest = await vault.loadResponseHistory(
+            limit: Self.responseHistoryLimit)
         // The one-time auth migration writes vault.json: it must not run on
         // a failed load, where config is the default and persisting it would
         // clobber the user's real vault.json (active workspace/environment).
@@ -796,9 +803,10 @@ extension AppStore {
     }
 
     /// Quit path: waits for the in-flight Save pass AND every serialized
-    /// structural write to land, then flushes the draft mirror and the
-    /// history mirror and calls `completion`. Drafts are flushed last so the
-    /// mirror reflects the post-save state (empty when everything saved).
+    /// structural write to land, then flushes the draft mirror, the history
+    /// mirror and the response-history mirror and calls `completion`. Drafts
+    /// are flushed last so the mirror reflects the post-save state (empty
+    /// when everything saved).
     /// (Sidebar expansion state needs no flush: it is written through to
     /// UserDefaults on every toggle.)
     func flushAllWritesForQuit(completion: @escaping () -> Void) {
@@ -806,6 +814,8 @@ extension AppStore {
         draftSaveTask = nil
         historySaveTask?.cancel()
         historySaveTask = nil
+        responseHistorySaveTask?.cancel()
+        responseHistorySaveTask = nil
         let save = saveAllTask
         Task { [weak self] in
             await save?.value
@@ -815,6 +825,7 @@ extension AppStore {
             }
             await self.structuralWriteTask?.value
             await self.vault.saveHistory(self.history)
+            await self.vault.saveResponseHistory(self.responseHistoryByRequest)
             // A failed load leaves the pending maps holding only PART of the
             // drafts (the filed sections were never applied): writing the
             // mirror now would erase the unapplied sections for good. The

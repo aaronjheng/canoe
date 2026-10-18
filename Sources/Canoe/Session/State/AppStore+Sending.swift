@@ -2,41 +2,40 @@ import AppKit
 import Foundation
 import Synchronization
 
-/// AppStore request sending: per-tab responses and history, global history,
-/// and the console (network log).
+/// AppStore request sending: per-request responses and history (persisted),
+/// global history, and the console (network log).
 @MainActor
 extension AppStore {
 
-    var currentResponse: ResponseModel? {
-        get { selectedTab.flatMap { responsesByTab[$0] } }
-        set { if let tab = selectedTab { responsesByTab[tab] = newValue } }
-    }
-
-    /// The response displayed for the selected tab: the latest one, or an
-    /// older entry picked from the response panel's History menu.
+    /// The response displayed for the request's tab: the latest one, or an
+    /// older entry picked from the response panel's History menu. The single
+    /// source of truth is `responseHistoryByRequest` - "latest" IS the first
+    /// entry (index nil), so there is no second copy of the current response
+    /// to keep in sync.
     var displayedResponse: ResponseModel? {
-        guard let tab = selectedTab else { return nil }
-        let index = viewingHistoryIndexByTab[tab]
-        let history = responseHistoryByTab[tab]
-        if let index, let history, history.indices.contains(index) {
+        guard let requestID = selectedTab?.requestID else { return nil }
+        let index = viewingHistoryIndexByRequest[requestID]
+        let history = responseHistoryByRequest[requestID] ?? []
+        if let index, history.indices.contains(index) {
             return history[index]
         }
-        return responsesByTab[tab]
+        return history.first
     }
 
     var responseHistoryForSelectedTab: [ResponseModel] {
-        selectedTab.flatMap { responseHistoryByTab[$0] } ?? []
+        guard let requestID = selectedTab?.requestID else { return [] }
+        return responseHistoryByRequest[requestID] ?? []
     }
 
     var isViewingLatestResponse: Bool {
-        guard let tab = selectedTab else { return true }
-        return viewingHistoryIndexByTab[tab] == nil
+        guard let requestID = selectedTab?.requestID else { return true }
+        return viewingHistoryIndexByRequest[requestID] == nil
     }
 
     /// Shows the latest response (nil index) or a historical entry.
     func selectResponseHistoryEntry(at index: Int?) {
-        guard let tab = selectedTab else { return }
-        viewingHistoryIndexByTab[tab] = index
+        guard let requestID = selectedTab?.requestID else { return }
+        viewingHistoryIndexByRequest[requestID] = index
     }
 
     var sendError: String? {
@@ -78,7 +77,7 @@ extension AppStore {
         // flipping the button back.
         sendingTabs.insert(tab)
         errorsByTab[tab] = nil
-        viewingHistoryIndexByTab[tab] = nil
+        if let requestID = tab.requestID { viewingHistoryIndexByRequest[requestID] = nil }
         sendTasks[tab] = Task {
             // A task cancelled before it first ran still executes its body;
             // without this guard it would write state for a send that no
@@ -117,8 +116,10 @@ extension AppStore {
                 )
                 guard sendTokens[tab] == token else { return }
                 guard !Task.isCancelled else { return }
-                responsesByTab[tab] = response
-                recordResponseHistory(response, for: tab)
+                // The response becomes history's newest entry, which IS what
+                // the tab displays (latest = index nil = history[0]). No
+                // separate current-response copy exists to keep in sync.
+                recordResponseHistory(response, for: request)
                 // The console logs the address actually requested:
                 // variables resolved (and query params merged) by the HTTP
                 // client, with a resolved fallback so it never shows
@@ -167,8 +168,11 @@ extension AppStore {
                 guard sendTokens[tab] == token else { return }
                 guard !Task.isCancelled else { return }
                 errorsByTab[tab] = error.localizedDescription
-                responsesByTab[tab] = nil
-                viewingHistoryIndexByTab[tab] = nil
+                // The failed send replaces nothing: the previous response
+                // (and its history) stays in place, so after dismissing the
+                // error banner the last good response is what is shown -
+                // like an old response kept in Postman.
+                if let requestID = tab.requestID { viewingHistoryIndexByRequest[requestID] = nil }
                 recordHistory(request: request, error: true)
                 // Failures before onRequest (invalid URL, body build) never
                 // capture the assembled URLRequest - resolve the URL so the
@@ -205,14 +209,14 @@ extension AppStore {
         }
     }
 
-    func recordResponseHistory(_ response: ResponseModel, for tab: OpenTab) {
-        var history = responseHistoryByTab[tab] ?? []
+    func recordResponseHistory(_ response: ResponseModel, for request: Request) {
+        var history = responseHistoryByRequest[request.id] ?? []
         history.insert(response, at: 0)
         // A History entry picked while the send was in flight names the
         // previously-latest response: shift the selection so it keeps
         // pointing at the same entry (the drop reset below guards overflow).
-        if let index = viewingHistoryIndexByTab[tab] {
-            viewingHistoryIndexByTab[tab] = index + 1
+        if let index = viewingHistoryIndexByRequest[request.id] {
+            viewingHistoryIndexByRequest[request.id] = index + 1
         }
         var dropped = false
         if history.count > Self.responseHistoryLimit {
@@ -232,12 +236,70 @@ extension AppStore {
             history.removeLast()
             dropped = true
         }
-        responseHistoryByTab[tab] = history
+        responseHistoryByRequest[request.id] = history
         // An index picked against the longer array no longer names the entry
         // it was chosen for; fall back to the latest instead of quietly
         // showing a different response.
-        if dropped, viewingHistoryIndexByTab[tab] != nil {
-            viewingHistoryIndexByTab[tab] = nil
+        if dropped, viewingHistoryIndexByRequest[request.id] != nil {
+            viewingHistoryIndexByRequest[request.id] = nil
+        }
+        trimResponseHistoryGlobalBudget()
+        scheduleResponseHistoryPersistence()
+    }
+
+    /// Evicts the globally oldest response-history entry until the retained
+    /// bodies across all requests fit `responseHistoryGlobalByteLimit`. The
+    /// per-request cap cannot see cross-request accumulation: histories
+    /// survive tab closes and relaunches now, so without this bound N
+    /// requests pin N x 16 MB forever. Each request always keeps at least
+    /// its newest entry - the one its tab displays.
+    private func trimResponseHistoryGlobalBudget() {
+        var total = responseHistoryByRequest.values.reduce(0) { total, history in
+            total + history.reduce(0) { $0 + $1.bodySize }
+        }
+        guard total > Self.responseHistoryGlobalByteLimit else { return }
+        while total > Self.responseHistoryGlobalByteLimit {
+            // The next entry to lose is the LAST (oldest) one of the request
+            // holding the globally oldest entry; only requests with a spare
+            // entry participate, so every request keeps its displayed newest.
+            guard
+                let target =
+                    responseHistoryByRequest
+                    .filter({ $0.value.count > 1 })
+                    .min(by: {
+                        ($0.value.last?.timestamp ?? .distantPast)
+                            < ($1.value.last?.timestamp ?? .distantPast)
+                    })
+            else { break }
+            var history = target.value
+            guard let oldest = history.last else { break }
+            total -= oldest.bodySize
+            history.removeLast()
+            responseHistoryByRequest[target.key] = history
+        }
+    }
+
+    /// Drops one request's stored responses (on request deletion): the
+    /// deletion, not a tab close, is what ends a history's life now.
+    func purgeResponseHistory(for requestID: UUID) {
+        guard
+            responseHistoryByRequest[requestID] != nil
+                || viewingHistoryIndexByRequest[requestID] != nil
+        else { return }
+        responseHistoryByRequest[requestID] = nil
+        viewingHistoryIndexByRequest[requestID] = nil
+        scheduleResponseHistoryPersistence()
+    }
+
+    /// Mirrors the per-request response history to response-history.json
+    /// (debounced, like the drafts and history mirrors) so it survives
+    /// relaunches.
+    func scheduleResponseHistoryPersistence() {
+        responseHistorySaveTask?.cancel()
+        responseHistorySaveTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled, let self else { return }
+            await self.vault.saveResponseHistory(self.responseHistoryByRequest)
         }
     }
 

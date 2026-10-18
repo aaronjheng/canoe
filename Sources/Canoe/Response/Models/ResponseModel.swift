@@ -1,8 +1,10 @@
 import Foundation
 
 /// Connection details shown by the response Network panel (Postman-style).
-/// Transient like `ResponseModel` - never persisted to the vault.
-struct NetworkInfo: Sendable, Equatable {
+/// Codable so the response's persisted snapshot keeps its Network panel
+/// data; only ever written to the machine-local response-history mirror,
+/// never to the synced vault.
+struct NetworkInfo: Sendable, Equatable, Codable {
     var httpVersion: String?
     var localAddress: String?
     var remoteAddress: String?
@@ -26,9 +28,8 @@ struct NetworkInfo: Sendable, Equatable {
 }
 
 /// Request/response byte breakdown shown by the response Size panel
-/// (Postman-style). Transient like `ResponseModel` - never persisted to
-/// the vault.
-struct SizeInfo: Sendable, Equatable {
+/// (Postman-style). Codable like `NetworkInfo` for the persisted snapshot.
+struct SizeInfo: Sendable, Equatable, Codable {
     var requestHeaders: Int
     var requestBody: Int
     var responseHeaders: Int
@@ -39,10 +40,10 @@ struct SizeInfo: Sendable, Equatable {
 }
 
 /// Request timing breakdown shown by the response Time panel (Chrome
-/// DevTools-style phases, from task metrics). Transient like
-/// `ResponseModel` - never persisted to the vault. Absent phases (e.g. no
-/// DNS on a reused connection) stay nil and are omitted from the panel.
-struct TimingInfo: Sendable, Equatable {
+/// DevTools-style phases, from task metrics). Codable like `NetworkInfo`
+/// for the persisted snapshot. Absent phases (e.g. no DNS on a reused
+/// connection) stay nil and are omitted from the panel.
+struct TimingInfo: Sendable, Equatable, Codable {
     var dns: TimeInterval?
     var tcp: TimeInterval?
     var tls: TimeInterval?
@@ -51,8 +52,11 @@ struct TimingInfo: Sendable, Equatable {
     var download: TimeInterval?
 }
 
-/// A transient HTTP response used for display. Not persisted to the vault.
-struct ResponseModel: Identifiable, Sendable {
+/// A transient HTTP response used for display. Persisted only to the
+/// machine-local response-history mirror (never the synced vault): the
+/// identity is regenerated on every decode, so `id` is excluded from the
+/// JSON entirely - the shape sent to disk is exactly the stored fields.
+struct ResponseModel: Identifiable, Sendable, Codable {
     let id = UUID()
     let statusCode: Int
     let headers: [HTTPHeader]
@@ -70,6 +74,54 @@ struct ResponseModel: Identifiable, Sendable {
     let network: NetworkInfo?
     let size: SizeInfo?
     let timing: TimingInfo?
+
+    private enum CodingKeys: String, CodingKey {
+        case statusCode, headers, body, bodyTruncated, duration, timestamp
+        case mimeType, requestURL, network, size, timing
+    }
+
+    init(
+        statusCode: Int,
+        headers: [HTTPHeader],
+        body: Data,
+        bodyTruncated: Bool,
+        duration: TimeInterval,
+        timestamp: Date,
+        mimeType: String?,
+        requestURL: String?,
+        network: NetworkInfo?,
+        size: SizeInfo?,
+        timing: TimingInfo?
+    ) {
+        self.statusCode = statusCode
+        self.headers = headers
+        self.body = body
+        self.bodyTruncated = bodyTruncated
+        self.duration = duration
+        self.timestamp = timestamp
+        self.mimeType = mimeType
+        self.requestURL = requestURL
+        self.network = network
+        self.size = size
+        self.timing = timing
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            statusCode: try container.decode(Int.self, forKey: .statusCode),
+            headers: try container.decode([HTTPHeader].self, forKey: .headers),
+            body: try container.decode(Data.self, forKey: .body),
+            bodyTruncated: try container.decode(Bool.self, forKey: .bodyTruncated),
+            duration: try container.decode(TimeInterval.self, forKey: .duration),
+            timestamp: try container.decode(Date.self, forKey: .timestamp),
+            mimeType: try container.decodeIfPresent(String.self, forKey: .mimeType),
+            requestURL: try container.decodeIfPresent(String.self, forKey: .requestURL),
+            network: try container.decodeIfPresent(NetworkInfo.self, forKey: .network),
+            size: try container.decodeIfPresent(SizeInfo.self, forKey: .size),
+            timing: try container.decodeIfPresent(TimingInfo.self, forKey: .timing)
+        )
+    }
 
     var bodySize: Int { body.count }
 

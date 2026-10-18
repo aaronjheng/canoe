@@ -97,6 +97,13 @@ final class VaultStore {
     private var historyFileURL: URL? {
         localRoot()?.appendingPathComponent("history.json")
     }
+    /// Per-request response history (with bodies), mirrored so a request's
+    /// reopen/relaunch shows what it last showed. Machine-local like drafts
+    /// and history: bodies are heavy, per-device activity - their whole-file
+    /// rewrites (one per send) would fight across synced devices.
+    private var responseHistoryFileURL: URL? {
+        localRoot()?.appendingPathComponent("response-history.json")
+    }
 
     // MARK: - Derived
 
@@ -636,6 +643,57 @@ final class VaultStore {
             // sending), so it is logged only - a failure here must not
             // raise the same banner a lost collection edit would.
             AppLogger.error("Failed to save history: \(error)", category: "Vault")
+        }
+    }
+
+    // MARK: - Response history persistence
+
+    /// Reads the per-request response history persisted by a previous
+    /// session, trimmed to the per-request cap (in case an older build
+    /// saved more). Per-element tolerant: one entry a newer build wrote
+    /// with an unknown field is skipped, not the whole file; unparsable
+    /// request keys drop that request's section, not the file.
+    func loadResponseHistory(limit: Int) async -> [UUID: [ResponseModel]] {
+        guard let responseHistoryFileURL else { return [:] }
+        guard
+            let data = try? await FileStore.readDataIfExists(at: responseHistoryFileURL),
+            !data.isEmpty
+        else { return [:] }
+        do {
+            let wrapped = try JSONDecoder.iso.decode(
+                [String: [Lossy<ResponseModel>]].self, from: data)
+            var histories: [UUID: [ResponseModel]] = [:]
+            for (key, entries) in wrapped {
+                guard let id = UUID(uuidString: key) else { continue }
+                let responses = entries.compactMap(\.value).prefix(limit)
+                if !responses.isEmpty { histories[id] = Array(responses) }
+            }
+            return histories
+        } catch {
+            AppLogger.error("Failed to load response history: \(error)", category: "Vault")
+            return [:]
+        }
+    }
+
+    /// Mirrors the per-request response history to disk (atomic; the caller
+    /// decides when - debounced on each recorded entry, immediate on quit).
+    func saveResponseHistory(_ histories: [UUID: [ResponseModel]]) async {
+        guard let responseHistoryFileURL else {
+            noteMissingDirectory(
+                "response history", id: "response-history.json", subject: "response history")
+            return
+        }
+        do {
+            let wrappers = histories.reduce(into: [String: [ResponseModel]]()) { result, pair in
+                result[pair.key.uuidString] = pair.value
+            }
+            try await FileStore.write(wrappers, to: responseHistoryFileURL)
+        } catch {
+            // Response history is a convenience like history (it is
+            // machine-local and rebuilt by sending), so it is logged only -
+            // a failure here must not raise the same banner a lost
+            // collection edit would.
+            AppLogger.error("Failed to save response history: \(error)", category: "Vault")
         }
     }
 

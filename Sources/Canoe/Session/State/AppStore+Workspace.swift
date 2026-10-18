@@ -44,6 +44,8 @@ extension AppStore {
                 closeTab(.request(request.id))
                 pendingRequestSnapshots[request.id] = nil
                 persistedRequestBaselines[request.id] = nil
+                // Deleting the request ends its response history too.
+                purgeResponseHistory(for: request.id)
             }
         }
         // Environment tabs of the doomed workspace close with it; the vault
@@ -102,9 +104,11 @@ extension AppStore {
         persistOpenTabs()
     }
 
-    /// Cancels every in-flight send and drops the tabs of the workspace
-    /// being left, along with their cached responses (used when switching
-    /// workspaces). Scratch (unfiled) request tabs survive the switch: they
+    /// Cancels every in-flight send and closes the tabs of the workspace
+    /// being left (used when switching workspaces). Response histories are
+    /// kept untouched: they are keyed by request and persisted, so switching
+    /// workspaces - unlike deleting a request - discards nothing. Scratch
+    /// (unfiled) request tabs survive the switch: they
     /// belong to no workspace, so there is nothing to leave behind - and
     /// they stay out of the way of the next workspace's own tabs because
     /// nothing else is kept.
@@ -118,10 +122,7 @@ extension AppStore {
                 guard let id = tab.requestID else { return false }
                 return unfiledRequests[id] != nil
             })
-        responsesByTab = responsesByTab.filter { surviving.contains($0.key) }
         errorsByTab = errorsByTab.filter { surviving.contains($0.key) }
-        responseHistoryByTab = responseHistoryByTab.filter { surviving.contains($0.key) }
-        viewingHistoryIndexByTab = viewingHistoryIndexByTab.filter { surviving.contains($0.key) }
         openTabs = openTabs.filter { surviving.contains($0) }
         if let selected = selectedTab, !surviving.contains(selected) {
             selectedTab = openTabs.last

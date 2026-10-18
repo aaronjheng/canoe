@@ -145,13 +145,16 @@ final class AppStore {
     /// Transient - never persisted; after a relaunch every tab opens pinned.
     var previewTab: OpenTab?
     /// Response/error/send state, keyed by tab so each tab keeps its own.
-    var responsesByTab: [OpenTab: ResponseModel] = [:]
     var errorsByTab: [OpenTab: String] = [:]
-    /// Per-tab response history (newest first), backing the History menu in
-    /// the response panel. The first entry mirrors `responsesByTab`.
-    var responseHistoryByTab: [OpenTab: [ResponseModel]] = [:]
-    /// Which historical entry the tab is currently viewing (nil = the latest).
-    var viewingHistoryIndexByTab: [OpenTab: Int] = [:]
+    /// Per-request response history (newest first), backing the History menu
+    /// in the response panel. Keyed by request id rather than tab: the same
+    /// request cannot open twice, and history belongs to the REQUEST - it
+    /// survives tab closes, workspace switches, and relaunches (the
+    /// machine-local mirror in `response-history.json`).
+    var responseHistoryByRequest: [UUID: [ResponseModel]] = [:]
+    /// Which historical entry the request's tab is currently viewing
+    /// (nil = the latest).
+    var viewingHistoryIndexByRequest: [UUID: Int] = [:]
     /// The right-edge inspector to reopen from the status bar's symmetric
     /// toggle. Tracked so hide/show round-trips restore the same panel.
     var lastRightInspectorPanel: RightInspectorPanel = .variables
@@ -215,12 +218,19 @@ final class AppStore {
     @ObservationIgnored var persistedFolderAuthorizationBaselines: [UUID: Authorization] = [:]
     let historyLimit = 100
     static let responseHistoryLimit = 20
-    /// Total bytes of response bodies one tab's response history may keep;
-    /// the oldest entries drop out once it is passed. The entry count alone
-    /// is not a memory bound: 20 full responses per tab, each up to
-    /// `HTTPClient.maxResponseBytes`, reach a gigabyte. Bodies are the whole
-    /// cost of an entry, so the budget is counted in bytes.
+    /// Total bytes of response bodies one request's response history may
+    /// keep; the oldest entries drop out once it is passed. The entry count
+    /// alone is not a memory bound: 20 full responses per request, each up
+    /// to `HTTPClient.maxResponseBytes`, reach a gigabyte. Bodies are the
+    /// whole cost of an entry, so the budget is counted in bytes.
     static let responseHistoryByteLimit = 16 * 1024 * 1024
+    /// Total bytes of retained response bodies across ALL requests (the
+    /// base64 disk mirror costs ~1.33x). The per-request budget above is
+    /// not enough once history is persisted: every closed tab's history
+    /// stays in the map for relaunch, so unbounded requests would pin
+    /// unbounded memory and disk. Exceeding it evicts the globally oldest
+    /// entry, per request.
+    static let responseHistoryGlobalByteLimit = 32 * 1024 * 1024
     /// Console (network log) entries, newest last; session-scoped and capped.
     var consoleEntries: [ConsoleEntry] = []
     static let consoleEntryLimit = 200
@@ -238,6 +248,10 @@ final class AppStore {
     /// Debounced writer for the history mirror; rescheduled on every
     /// recorded entry so a burst of sends rewrites history.json once.
     @ObservationIgnored var historySaveTask: Task<Void, Never>?
+    /// Debounced writer for the response-history mirror; rescheduled on
+    /// every recorded (or purged) entry so a burst of sends rewrites
+    /// response-history.json once.
+    @ObservationIgnored var responseHistorySaveTask: Task<Void, Never>?
     /// In-flight Save (⌘S) task, if any. Tracked so the quit path can
     /// wait for the vault writes to land before the process exits: the
     /// pending snapshots are cleared up front, so quitting mid-save would

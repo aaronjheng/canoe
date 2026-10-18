@@ -243,9 +243,10 @@ extension AppStore {
         lastCancelAt[tab] = Date()
     }
 
-    /// Closes a tab, cancelling its in-flight send and dropping its cached
-    /// response. Activates the left neighbor (or the new first tab).
-    /// Unsaved edits are discarded: their pending snapshots are dropped and
+    /// Closes a tab, cancelling its in-flight send. The request's response
+    /// history is intentionally kept - it belongs to the request and is
+    /// persisted, so reopening the tab restores what it showed. Unsaved
+    /// edits are discarded: their pending snapshots are dropped and
     /// the in-memory vault is restored to the last saved content, so
     /// reopening shows no modifications (and the drafts mirror is pruned).
     func closeTab(_ tab: OpenTab) {
@@ -266,19 +267,21 @@ extension AppStore {
         persistOpenTabs()
     }
 
-    /// Drops a tab's per-tab runtime state (in-flight send, cached
-    /// response, errors, history position) without touching the tab strip.
-    /// Shared by closeTab and preview replacement.
+    /// Drops a tab's per-tab runtime state (in-flight send, errors, history
+    /// position) without touching the tab strip. The response history is
+    /// deliberately NOT dropped: it is keyed by request and persisted
+    /// (`response-history.json`), so it belongs to the request, not the
+    /// tab. Shared by closeTab and preview replacement.
     private func clearTabState(_ tab: OpenTab) {
         sendTasks[tab]?.cancel()
         sendTasks[tab] = nil
         sendTokens[tab] = nil
         sendingTabs.remove(tab)
         lastCancelAt[tab] = nil
-        responsesByTab[tab] = nil
         errorsByTab[tab] = nil
-        responseHistoryByTab[tab] = nil
-        viewingHistoryIndexByTab[tab] = nil
+        if let requestID = tab.requestID {
+            viewingHistoryIndexByRequest[requestID] = nil
+        }
     }
 
     func closeSelectedTab() {
@@ -619,10 +622,18 @@ extension AppStore {
             }
         }
         let open = Set(openTabs)
-        responsesByTab = responsesByTab.filter { open.contains($0.key) }
         errorsByTab = errorsByTab.filter { open.contains($0.key) }
-        responseHistoryByTab = responseHistoryByTab.filter { open.contains($0.key) }
-        viewingHistoryIndexByTab = viewingHistoryIndexByTab.filter { open.contains($0.key) }
+        // Response histories belong to the request, not the tab: only the
+        // histories of requests that no longer exist (deleted here or
+        // vanished via sync) are dropped.
+        let droppedRequestIDs = Set(responseHistoryByRequest.keys).subtracting(requestIDs)
+        if !droppedRequestIDs.isEmpty {
+            for id in droppedRequestIDs {
+                responseHistoryByRequest[id] = nil
+                viewingHistoryIndexByRequest[id] = nil
+            }
+            scheduleResponseHistoryPersistence()
+        }
         if let preview = previewTab, !open.contains(preview) { previewTab = nil }
         if let selected = selectedTab, !open.contains(selected) {
             selectedTab = openTabs.last

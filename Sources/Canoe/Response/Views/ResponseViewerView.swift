@@ -49,6 +49,10 @@ struct ResponseViewerView: View {
     /// it instead of rescanning a 200K body.
     @State private var findMatchRangesKey = ""
     @State private var findMatchRanges: [Range<String.Index>] = []
+    /// Per-tab response-history dropdown (Postman's history switcher):
+    /// open state only - the entries and the selection live in the store,
+    /// keyed by tab, so no per-tab view state is duplicated here.
+    @State private var isHistoryPanelOpen = false
     /// Whether the body scroll view has moved away from the top: drives the
     /// toolbar/content hairline (Postman draws the same line once the
     /// content scrolls under the toolbar).
@@ -114,6 +118,38 @@ struct ResponseViewerView: View {
             content
         }
         .background(AppColor.controlBackground)
+        // Click-away catcher for the History dropdown: applied first, so it
+        // sits under every panel and above the content. It swallows any
+        // click outside the panel - the entry button included, so a second
+        // press there reads as toggle-close.
+        .overlay {
+            if isHistoryPanelOpen {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { isHistoryPanelOpen = false }
+            }
+        }
+        // The dropdown anchors under whichever row hosts the History entry:
+        // flush leading in the pre-response bar ("History ∨" beside the
+        // title), trailing in the response metrics row (the icon button).
+        .overlay(alignment: historyPanelAnchor) {
+            if isHistoryPanelOpen {
+                historyPanel
+                    .padding(.top, AppSize.toolbarHeight + AppSpacing.xSmall)
+                    .padding(
+                        historyPanelAnchor == .topLeading ? .leading : .trailing,
+                        AppSpacing.medium
+                    )
+                    .zIndex(2)
+            }
+        }
+    }
+
+    /// Which edge the dropdown hangs from: the pre-response bar's History
+    /// control sits at the leading edge, the response view's at the
+    /// trailing metrics.
+    private var historyPanelAnchor: Alignment {
+        store.displayedResponse == nil ? Alignment.topLeading : Alignment.topTrailing
     }
 
     // MARK: - Content
@@ -171,6 +207,11 @@ struct ResponseViewerView: View {
             // with (and as the inspectors' headers).
             Text("Response")
                 .font(AppFont.panelTitle)
+            // Postman keeps the history entry here too: icon + label +
+            // chevron beside the title, same dropdown as the response
+            // view's icon button. Available before the first send so the
+            // entry point never moves between the two states.
+            historyEntryButton(showsLabel: true)
             if store.isSending {
                 statusDot
                 ProgressView().controlSize(.small)
@@ -289,6 +330,10 @@ struct ResponseViewerView: View {
             findVisible = false
             findQuery = ""
             findCurrentIndex = 0
+            // The dropdown is stale the moment the response under it
+            // changes: a pick, or a finished send replacing the newest
+            // entry (the store shifts the selection, the menu rows move).
+            isHistoryPanelOpen = false
             dismissPanels()
         }
         .onDisappear {
@@ -395,7 +440,6 @@ struct ResponseViewerView: View {
             )
             Spacer()
             HStack(spacing: AppSpacing.small) {
-                statusDot
                 StatusCapsule(statusCode: response.statusCode, statusText: response.statusText)
                 statusDot
                 statusMetric(
@@ -413,6 +457,12 @@ struct ResponseViewerView: View {
                     })
                 statusDot
                 networkStatus
+                statusDot
+                // The history entry closes the metrics row, after the
+                // network icon - always present once a response exists (the
+                // dropdown's "Current" row alone still answers "what did the
+                // tab show before this one?").
+                historyEntryButton(showsLabel: false)
             }
         }
         .padding(.horizontal, AppSpacing.medium)
@@ -433,6 +483,124 @@ struct ResponseViewerView: View {
                     .foregroundStyle(AppColor.textSecondary)
             }
         )
+    }
+
+    // MARK: - Response history (per tab)
+
+    /// The History entry point, styled per context like Postman's: an icon
+    /// alone leading the response metrics row (a response is on screen),
+    /// icon + label + chevron beside the "Response" title in the
+    /// pre-response bar. Both open the same dropdown.
+    private func historyEntryButton(showsLabel: Bool) -> some View {
+        HistoryEntryButton(
+            showsLabel: showsLabel,
+            isMarked: !store.isViewingLatestResponse,
+            isOpen: isHistoryPanelOpen
+        ) {
+            isHistoryPanelOpen.toggle()
+        }
+    }
+
+    /// Postman-style per-tab response history: every retained response for
+    /// the selected tab, newest first, with the one on screen highlighted.
+    /// The top row is the response the viewer shows by default (Postman's
+    /// "Current"), so picking it clears the selection (index nil) rather
+    /// than pinning "row zero" - keeps isViewingLatestResponse honest.
+    private var historyPanel: some View {
+        let history = store.responseHistoryForSelectedTab
+        let currentID = store.displayedResponse?.id
+        return VStack(alignment: .leading, spacing: 0) {
+            if history.isEmpty {
+                // Reachable only from the pre-response bar, before this
+                // tab has ever sent a request.
+                Text("Responses sent from this tab will appear here.")
+                    .font(AppFont.small)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .padding(.horizontal, AppSpacing.medium)
+                    .padding(.vertical, AppSpacing.small)
+            } else {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(Array(history.enumerated()), id: \.element.id) { index, entry in
+                            historyRow(index: index, entry: entry, isCurrent: entry.id == currentID)
+                            if index < history.count - 1 {
+                                Divider()
+                            }
+                        }
+                    }
+                }
+                // A handful of rows reads as a menu; the cap keeps 20
+                // entries from towering over the pane below the toolbar.
+                .frame(maxHeight: 336)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
+        .frame(width: AppSize.responsePanelWidth, alignment: .leading)
+        .popupPanel()
+        .onExitCommand { isHistoryPanelOpen = false }
+    }
+
+    private func historyRow(index: Int, entry: ResponseModel, isCurrent: Bool) -> some View {
+        Button {
+            store.selectResponseHistoryEntry(at: index == 0 ? nil : index)
+            isHistoryPanelOpen = false
+        } label: {
+            HStack(spacing: AppSpacing.small) {
+                if index == 0 {
+                    // Postman's wording: the newest entry is "Current".
+                    Text("Current")
+                        .font(AppFont.small.weight(.medium))
+                        .foregroundStyle(AppColor.textPrimary)
+                } else {
+                    Text(Self.historyDateLabel(entry.timestamp))
+                        .font(AppFont.small)
+                        .foregroundStyle(AppColor.textSecondary)
+                }
+                Spacer(minLength: AppSpacing.medium)
+                Text("\(entry.statusCode)")
+                    .font(AppFont.small.weight(.medium))
+                    .monospacedDigit()
+                    .foregroundStyle(AppColor.statusColor(entry.statusCode))
+            }
+            .padding(.horizontal, AppSpacing.medium)
+            .padding(.vertical, AppSpacing.compact)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                if isCurrent {
+                    AppColor.subtleBackground
+                        .padding(.horizontal, AppSpacing.xSmall)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .clickCursor(isEnabled: true)
+        .accessibilityLabel(
+            index == 0
+                ? "Current response"
+                : "View response from \(Self.historyDateLabel(entry.timestamp))"
+        )
+    }
+
+    /// Postman row wording: today collapses to "Today, 10:27 AM"; anything
+    /// older reads like "11 Oct 2026, 5:13 PM" (localized templates).
+    private static let historyTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("jm")
+        return formatter
+    }()
+
+    private static let historyDayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("dMMM y")
+        return formatter
+    }()
+
+    private static func historyDateLabel(_ date: Date) -> String {
+        if Calendar.current.isDateInToday(date) {
+            return "Today, \(historyTimeFormatter.string(from: date))"
+        }
+        return "\(historyDayFormatter.string(from: date)), \(historyTimeFormatter.string(from: date))"
     }
 
     /// Postman-style Network panel: connection details for the displayed
@@ -1672,5 +1840,50 @@ private struct MetricHoverChip<Content: View>: View {
                 onHover?(hovering)
             }
             .animation(AppMotion.quick, value: isHovering)
+    }
+}
+
+/// The response-history entry point, styled per context like Postman: an
+/// icon-only button leading the response metrics row (while a response is
+/// on screen), or icon + label + chevron beside the "Response" title in
+/// the pre-response bar. Both open the same dropdown. The wash stays on
+/// while the panel is up; the icon tints accent while an older entry is
+/// on screen.
+private struct HistoryEntryButton: View {
+    var showsLabel: Bool
+    /// True while an older entry is on screen - the icon reads accent.
+    var isMarked: Bool
+    var isOpen: Bool
+    var action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: AppSpacing.xSmall) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(AppFont.iconCompact)
+                    .foregroundStyle(isMarked ? AppColor.accent : AppColor.textSecondary)
+                if showsLabel {
+                    Text("History")
+                        .font(AppFont.small)
+                        .foregroundStyle(AppColor.textPrimary)
+                    Image(systemName: "chevron.down")
+                        .font(AppFont.completionMeta)
+                        .foregroundStyle(AppColor.tertiaryText)
+                }
+            }
+            .padding(.horizontal, AppSpacing.compact)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                    .fill(isHovering || isOpen ? AppColor.subtleBackground : .clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .clickCursor(isEnabled: true)
+        .onHover { isHovering = $0 }
+        .animation(AppMotion.quick, value: isHovering)
+        .help("Switch between this tab's response history")
     }
 }
