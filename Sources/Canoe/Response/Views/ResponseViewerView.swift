@@ -1906,7 +1906,7 @@ private struct HistoryEntryButton: View {
                 }
             }
             .padding(.horizontal, AppSpacing.compact)
-            .padding(.vertical, 2)
+            .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
                     .fill(isHovering || isOpen ? AppColor.subtleBackground : .clear)
