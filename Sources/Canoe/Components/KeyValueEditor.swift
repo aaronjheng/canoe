@@ -158,14 +158,18 @@ struct KeyValueEditor<T: KVItem>: View {
     }
 
     /// Fixed widths for the non-text columns; Key and Value split the
-    /// remaining width equally, matching the header labels above. Reorder
-    /// tables merge the drag grip and the checkbox into one leading column
-    /// (two icons, one cell); the secret eye and the delete button merge
-    /// the same way into one trailing column. Neither icon column carries
-    /// an inner hairline: they open toward the text columns (the leading
-    /// column drops its right rule, the trailing its left), so the action
-    /// glyphs read as floating on the row, not as cells of the grid.
-    private let toggleColumnWidth: CGFloat = 32
+    /// remaining width equally, matching the header labels above. Every
+    /// table merges the drag grip and the checkbox into one leading column
+    /// (two icons, one cell — tables without reorder render an empty grip
+    /// slot), and merges the secret eye and the delete button the same way
+    /// into one trailing column. Holding the leading width constant keeps
+    /// tables that stack in one pane (the Params tab's query table above
+    /// the path variables table) sharing identical column geometry - same
+    /// Key column start, same checkbox position. Neither icon column
+    /// carries an inner hairline: they open toward the text columns (the
+    /// leading column drops its right rule, the trailing its left), so the
+    /// action glyphs read as floating on the row, not as cells of the grid.
+    private let mergedLeadingColumnWidth: CGFloat = 38
     /// Width of the header's Bulk Edit cell (rule + button). Body rows
     /// reserve the same trailing space, so the header's Key/Value columns
     /// and their rules line up with the rows' dividers.
@@ -178,8 +182,7 @@ struct KeyValueEditor<T: KVItem>: View {
     private var secretColumnWidth: CGFloat { secretKeyPath == nil ? 0 : 26 }
     private var showsKindMenu: Bool { kindKeyPath != nil }
     private var leadingColumnWidth: CGFloat {
-        guard showsIconColumns else { return 0 }
-        return allowsReorder ? 38 : toggleColumnWidth
+        showsIconColumns ? mergedLeadingColumnWidth : 0
     }
     /// Merged trailing icon column. Eye and trash share one fixed glyph box
     /// each (18pt, squared so SF Symbols of different widths match) with the
@@ -413,7 +416,6 @@ struct KeyValueEditor<T: KVItem>: View {
                     showsIconColumns: showsIconColumns,
                     leadingColumnWidth: leadingColumnWidth,
                     trailingColumnWidth: trailingColumnWidth,
-                    showsGrip: allowsReorder,
                     gripWidth: gripGlyphWidth
                 )
             }
@@ -812,8 +814,9 @@ private struct KVRow: View {
     let focus: Binding<CellFocus?>
     let keyFocus: CellFocus
     let valueFocus: CellFocus
-    /// Width of the merged leading column: drag grip (when reorder is on)
-    /// plus the enabled checkbox share one cell; no right hairline.
+    /// Width of the merged leading column: drag grip (when reorder is on;
+    /// an empty slot otherwise) plus the enabled checkbox share one cell;
+    /// no right hairline.
     let leadingColumnWidth: CGFloat
     /// Width of the merged trailing column: secret eye (variables tables
     /// only) plus the delete button share one cell; no left hairline.
@@ -904,36 +907,36 @@ private struct KVRow: View {
             // and the enabled checkbox share a single column, with no
             // right hairline opening the key cell next to it.
             // The frame centers the icon group so the grip's left inset
-            // mirrors the checkbox's right inset. The trailing ghost row
-            // keeps an empty grip slot - nothing to drag yet - so its
-            // checkbox lines up with the real rows.
+            // mirrors the checkbox's right inset. The grip glyph is the
+            // group's only connection to reorder: ghost rows and
+            // non-reorder tables render an empty slot of the same width
+            // instead, so their checkbox - and the Key column after it -
+            // sits exactly where a reorder row's does.
             HStack(spacing: AppSpacing.xxSmall) {
-                if allowsReorder {
-                    if isGhostRow {
-                        Color.clear
-                            .frame(width: gripGlyphWidth)
-                    } else {
-                        Image(systemName: "line.3.horizontal")
-                            .font(AppFont.iconRow)
-                            .foregroundStyle(AppColor.textSecondary)
-                            .frame(width: gripGlyphWidth)
-                            .frame(maxHeight: .infinity)
-                            .contentShape(Rectangle())
-                            .opacity(isHovering || isDragging ? 1 : 0)
-                            .onDrag {
-                                guard let onGripDrag else { return NSItemProvider() }
-                                return onGripDrag()
-                            }
-                            // The grip drags the row, so the pointer becomes a
-                            // hand over it - through the shared `clickCursor`
-                            // pointer machinery, not `NSCursor.push()/pop()`.
-                            // Push/pop strands a hand cursor whenever the view
-                            // disappears before its exit event arrives, and
-                            // the grip does exactly that: the drag hides the
-                            // glyph and the row leaves its slot. The tracking
-                            // is AppKit's, so it unwinds on its own.
-                            .clickCursor()
-                    }
+                if allowsReorder && !isGhostRow {
+                    Image(systemName: "line.3.horizontal")
+                        .font(AppFont.iconRow)
+                        .foregroundStyle(AppColor.textSecondary)
+                        .frame(width: gripGlyphWidth)
+                        .frame(maxHeight: .infinity)
+                        .contentShape(Rectangle())
+                        .opacity(isHovering || isDragging ? 1 : 0)
+                        .onDrag {
+                            guard let onGripDrag else { return NSItemProvider() }
+                            return onGripDrag()
+                        }
+                        // The grip drags the row, so the pointer becomes a
+                        // hand over it - through the shared `clickCursor`
+                        // pointer machinery, not `NSCursor.push()/pop()`.
+                        // Push/pop strands a hand cursor whenever the view
+                        // disappears before its exit event arrives, and
+                        // the grip does exactly that: the drag hides the
+                        // glyph and the row leaves its slot. The tracking
+                        // is AppKit's, so it unwinds on its own.
+                        .clickCursor()
+                } else {
+                    Color.clear
+                        .frame(width: gripGlyphWidth)
                 }
                 // The trailing ghost row has nothing to enable yet: no
                 // checkbox until it materializes into a real row.
@@ -1240,7 +1243,6 @@ private struct ReadOnlyKVRow: View {
     let showsIconColumns: Bool
     let leadingColumnWidth: CGFloat
     let trailingColumnWidth: CGFloat
-    let showsGrip: Bool
     let gripWidth: CGFloat
 
     var body: some View {
@@ -1268,11 +1270,12 @@ private struct ReadOnlyKVRow: View {
 
     private var readOnlyLeadingCell: some View {
         HStack(spacing: AppSpacing.xxSmall) {
-            if showsGrip {
-                Color.clear
-                    .frame(width: gripWidth)
-                    .frame(maxHeight: .infinity)
-            }
+            // Empty grip slot: mirrors the editable rows' leading column
+            // (grip + checkbox) so read-only rows' checkboxes and Key cells
+            // line up with everything else in the table.
+            Color.clear
+                .frame(width: gripWidth)
+                .frame(maxHeight: .infinity)
             Toggle(
                 "",
                 isOn: onToggle == nil
