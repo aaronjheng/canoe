@@ -48,7 +48,8 @@ struct AuthEditor: View {
             variables: resolvedVariables,
             suggestions: requestSuggestions,
             inheritedSource: inheritanceSource,
-            onEditInParent: editInParent
+            onEditInParent: editInParent,
+            onTokenListChanged: { store.updateRequest(request) }
         )
     }
 
@@ -116,6 +117,9 @@ struct AuthorizationForm: View {
     /// Types offered in the picker. The collection is the top of the
     /// inheritance chain, so (Postman-style) it is not offered inherit there.
     var availableTypes: [AuthType] = AuthType.allCases
+    /// Fired after the token list changes (fetch / refresh / delete) so the
+    /// owner can push the request through the draft pipeline right away.
+    var onTokenListChanged: (() -> Void)?
     /// Focus/hover mirrors for the bordered fields below: the AppKit-backed
     /// editors report via `onFocusChange`/`onHoverChanged`, the SecureField
     /// via `@FocusState`/`.onHover`. Without these the shared border language
@@ -560,6 +564,7 @@ struct AuthorizationForm: View {
                 isSelected: oauth.oauthSelectedTokenID == nil
             ) {
                 oauth.oauthSelectedTokenID = nil
+                onTokenListChanged?()
             }
         ]
         for token in oauth.oauthTokens {
@@ -591,6 +596,7 @@ struct AuthorizationForm: View {
                 let token = try await OAuth2Service.fetchToken(authorization: fields, variables: variables)
                 oauth.oauthTokens.append(token)
                 oauth.oauthSelectedTokenID = token.id
+                onTokenListChanged?()
             } catch {
                 tokenFetchError = error.localizedDescription
             }
@@ -624,6 +630,7 @@ struct AuthorizationForm: View {
                     updated.fetchedAt = fresh.fetchedAt
                     oauth.oauthTokens[index] = updated
                 }
+                onTokenListChanged?()
             } catch {
                 tokenFetchError = error.localizedDescription
             }
@@ -636,6 +643,7 @@ struct AuthorizationForm: View {
         guard let selectedID = oauth.oauthSelectedTokenID else { return }
         oauth.oauthTokens.removeAll { $0.id == selectedID }
         oauth.oauthSelectedTokenID = nil
+        onTokenListChanged?()
     }
 
     // Per-field bindings over the oauth struct.

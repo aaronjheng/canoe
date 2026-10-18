@@ -1094,7 +1094,8 @@ struct ResponseViewerView: View {
                                         .textSelection(.enabled)
                                         .frame(
                                             maxWidth: wordWrap ? .infinity : nil,
-                                            alignment: .leading)
+                                            alignment: .leading
+                                        )
                                         .fixedSize(horizontal: !wordWrap, vertical: false)
                                 }
                             }

@@ -23,10 +23,11 @@ actor CookieStore {
     private var loaded = false
 
     private init() {
-        let appSupport = FileManager.default.urls(
-            for: .applicationSupportDirectory, in: .userDomainMask
-        ).first ??
-            URL(fileURLWithPath: NSHomeDirectory())
+        let appSupport =
+            FileManager.default.urls(
+                for: .applicationSupportDirectory, in: .userDomainMask
+            ).first
+            ?? URL(fileURLWithPath: NSHomeDirectory())
             .appendingPathComponent("Library/Application Support", isDirectory: true)
         let canoeDir = appSupport.appendingPathComponent("Canoe", isDirectory: true)
         self.url = canoeDir.appendingPathComponent("cookies.json")
@@ -35,15 +36,23 @@ actor CookieStore {
     /// Cookie header value for `url`, or `nil` when there are no matching
     /// cookies. All cookie state stays inside the actor; callers only receive
     /// a `String`, so nothing non-`Sendable` crosses the actor boundary.
+    ///
+    /// Matching follows RFC 6265 as far as a client-side jar can: domain
+    /// suffix match, path prefix match, secure-only cookies stay off plain
+    /// HTTP, and expired cookies never go out (they are also swept from the
+    /// jar on load and on write so they cannot accumulate forever).
     func cookieHeader(for url: URL) -> String? {
         loadIfNeeded()
         let host = url.host?.lowercased() ?? ""
         guard !host.isEmpty else { return nil }
         let now = Date()
+        let requestPath = url.path
+        let isSecure = url.scheme?.lowercased() == "https"
         let fit = cookies.filter { cookie in
             guard cookie.domainMatches(host) else { return false }
             if let expires = cookie.expires, expires <= now { return false }
-            return true
+            if cookie.secure && !isSecure { return false }
+            return cookie.pathMatches(requestPath)
         }
         .sorted {
             if $0.path.count != $1.path.count { return $0.path.count > $1.path.count }
@@ -56,10 +65,14 @@ actor CookieStore {
 
     /// Parses `Set-Cookie` header values and persists the cookies. Accepts
     /// raw header strings (already extracted from `HTTPURLResponse`) so no
-    /// non-`Sendable` response object crosses the actor boundary.
+    /// non-`Sendable` response object crosses the actor boundary. Expired
+    /// cookies already in the jar are swept here so the file never grows
+    /// with dead entries.
     func store(setCookieHeaders: [String], for url: URL) {
         loadIfNeeded()
         guard !setCookieHeaders.isEmpty else { return }
+        let now = Date()
+        cookies.removeAll { $0.expires.map { $0 <= now } ?? false }
         let newCookies = HTTPCookie.cookies(
             withResponseHeaderFields: ["Set-Cookie": setCookieHeaders.joined(separator: "\n")],
             for: url
@@ -68,15 +81,16 @@ actor CookieStore {
         var next = cookies
         for cookie in newCookies {
             next.removeAll { $0.name == cookie.name && $0.domain.lowercased() == cookie.domain.lowercased() && $0.path == cookie.path }
-            next.append(StoredCookie(
-                name: cookie.name,
-                value: cookie.value,
-                domain: cookie.domain,
-                path: cookie.path,
-                secure: cookie.isSecure,
-                httpOnly: cookie.isHTTPOnly,
-                expires: cookie.expiresDate
-            ))
+            next.append(
+                StoredCookie(
+                    name: cookie.name,
+                    value: cookie.value,
+                    domain: cookie.domain,
+                    path: cookie.path,
+                    secure: cookie.isSecure,
+                    httpOnly: cookie.isHTTPOnly,
+                    expires: cookie.expiresDate
+                ))
         }
         cookies = next
         schedulePersistence()
@@ -132,7 +146,12 @@ actor CookieStore {
     private func loadIfNeeded() {
         guard !loaded else { return }
         guard let data = try? Data(contentsOf: url) else { return }
-        cookies = (try? JSONDecoder().decode([StoredCookie].self, from: data)) ?? []
+        var cookies = (try? JSONDecoder().decode([StoredCookie].self, from: data)) ?? []
+        // Sweep expired cookies swept in from an old jar: they can never be
+        // sent again, so there is no reason to keep them around.
+        let now = Date()
+        cookies.removeAll { $0.expires.map { $0 <= now } ?? false }
+        self.cookies = cookies
         loaded = true
     }
 }
@@ -143,6 +162,17 @@ extension StoredCookie {
         if lowercasedDomain == host { return true }
         if lowercasedDomain.hasPrefix("."), host.hasSuffix(lowercasedDomain.dropFirst()) { return true }
         return false
+    }
+
+    /// RFC 6265 path match: the request URI path must equal the cookie path,
+    /// or start with it where the cookie path ends with "/" or the next
+    /// request-path character is "/". "/" matches everything.
+    func pathMatches(_ requestPath: String) -> Bool {
+        if path == "/" { return true }
+        if requestPath == path { return true }
+        guard requestPath.count > path.count, requestPath.hasPrefix(path) else { return false }
+        if path.hasSuffix("/") { return true }
+        return requestPath[requestPath.index(after: path.endIndex)] == "/"
     }
 
     func makeHTTPCookie(for url: URL) -> HTTPCookie? {

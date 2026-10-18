@@ -256,6 +256,14 @@ struct RequestEditorView: View {
             || draft.maxRedirects > 0
     }
 
+    /// Whether Send is disabled: nothing addressable to send to. An empty
+    /// base URL is still fine when enabled query parameters exist (`?a=1`
+    /// targets the current origin), so params keep Send live.
+    private var isSendDisabled: Bool {
+        draft.urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && draft.params.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.isEmpty
+    }
+
     /// Merged variable scope for `{{placeholder}}` highlighting in every
     /// editable request field (Postman-style green/red highlighting).
     private var resolvedVariables: [String: String] {
@@ -918,7 +926,10 @@ struct RequestEditorView: View {
                             .frame(minHeight: 22)
                     }
                     .buttonStyle(SendButtonStyle())
-                    .disabled(draft.urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    // An empty base URL is fine when enabled query parameters
+                    // exist (`?a=1` still targets the current origin) -
+                    // disable only when there is nothing addressable at all.
+                    .disabled(isSendDisabled)
                     .keyboardShortcut(.return, modifiers: [.command])
                     .contextMenu {
                         Button("Send and Download") {
@@ -1009,7 +1020,7 @@ struct RequestEditorView: View {
             scrollsInternally: false,
             allowsDelete: false,
             disablesKeyCell: true,
-            allowsBulkEdit: true
+            allowsBulkEdit: false
         )
         .onChange(of: pathVariableKeys) { _, keys in
             syncPathVariableRows(keys)

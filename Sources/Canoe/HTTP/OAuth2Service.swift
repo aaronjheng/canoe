@@ -247,14 +247,13 @@ enum OAuth2Service {
         let string = resolve(authorization.oauthCallbackURL)
         guard !string.isEmpty else { return nil }
         guard let url = URL(string: string),
-              url.scheme.flatMap({ $0 == "http" }) ?? false,
-              let host = url.host?.lowercased(),
-              host == "127.0.0.1" || host == "localhost",
-              let port = url.port, port > 0
+            url.scheme.flatMap({ $0 == "http" }) ?? false,
+            let host = url.host?.lowercased(),
+            host == "127.0.0.1" || host == "localhost",
+            let port = url.port, port > 0
         else {
             throw OAuth2Error.callback(
-                "the callback URL must be a loopback address with an explicit port " +
-                "(e.g. http://127.0.0.1:8080/callback).")
+                "the callback URL must be a loopback address with an explicit port " + "(e.g. http://127.0.0.1:8080/callback).")
         }
         return url
     }
