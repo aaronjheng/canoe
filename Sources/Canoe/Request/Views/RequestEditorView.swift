@@ -243,10 +243,17 @@ struct RequestEditorView: View {
 
     /// Whether any request setting differs from its default (Postman's
     /// Settings tab dot): drives the tab's green content marker, so a
-    /// request at defaults reads as unmodified. Keep in sync with the
-    /// defaults when adding settings rows.
+    /// request at defaults reads as unmodified. Defaults: follow redirects,
+    /// no idle timeout, don't follow Authorization to redirected hosts,
+    /// cookie jar on, certificate verification on, unlimited redirects.
+    /// Keep in sync with the defaults when adding settings rows.
     private var isSettingsChangedFromDefault: Bool {
-        !draft.followRedirects || draft.timeoutSeconds > 0
+        !draft.followRedirects
+            || draft.timeoutSeconds > 0
+            || draft.followAuthorizationHeader
+            || !draft.useCookieJar
+            || !draft.verifySSLCertificate
+            || draft.maxRedirects > 0
     }
 
     /// Merged variable scope for `{{placeholder}}` highlighting in every
