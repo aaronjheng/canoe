@@ -292,9 +292,9 @@ struct ResponseViewerView: View {
             } else if responseSection == .cookies {
                 cookiesPane(response)
             } else if isPreview {
-                previewContent(response)
+                previewContent(response, display: display)
             } else if isHex {
-                hexContent(response)
+                hexContent(response, display: display)
             } else {
                 bodyContent(response, display, rendered: rendered, renderedAttributed: renderedAttributed)
             }
@@ -1277,8 +1277,28 @@ struct ResponseViewerView: View {
     /// native, decode-capped), audio/video through the system player and
     /// PDFs through PDFKit (both streaming from a staged temp file);
     /// everything else points back to Pretty/Raw.
+    ///
+    /// The body toolbar renders above the mode content for every
+    /// non-empty body - unavailable previews included - so the mode
+    /// switcher the user just clicked stays on screen to switch back
+    /// with; only a truly empty body hides it (nothing to act on).
+    private func previewContent(_ response: ResponseModel, display: BodyDisplay) -> some View {
+        VStack(spacing: 0) {
+            if !response.body.isEmpty {
+                bodyToolbar(response, display: display)
+            }
+            // The frame, not the stack, expands: the toolbar stacks from
+            // the top, and the empty state centers in the space beneath
+            // it. Letting the stack itself fill would center the whole
+            // thing, floating dead space between the divider and the
+            // toolbar.
+            previewBody(response)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
     @ViewBuilder
-    private func previewContent(_ response: ResponseModel) -> some View {
+    private func previewBody(_ response: ResponseModel) -> some View {
         if response.body.isEmpty {
             ContentUnavailableView(
                 "Empty Response Body",
@@ -1470,9 +1490,22 @@ struct ResponseViewerView: View {
 
     /// Hex-dump rendering of the response body: offset, 16 bytes per row,
     /// with an ASCII column. Mirrors the layout Postman shows for binary
-    /// bodies in its response viewer.
+    /// bodies in its response viewer. The body toolbar renders above the
+    /// mode content for every non-empty body - oversized dumps included -
+    /// so the mode switcher the user just clicked stays on screen to
+    /// switch back with; only a truly empty body hides it.
+    private func hexContent(_ response: ResponseModel, display: BodyDisplay) -> some View {
+        VStack(spacing: 0) {
+            if !response.body.isEmpty {
+                bodyToolbar(response, display: display)
+            }
+            hexDump(response)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
     @ViewBuilder
-    private func hexContent(_ response: ResponseModel) -> some View {
+    private func hexDump(_ response: ResponseModel) -> some View {
         if response.body.isEmpty {
             ContentUnavailableView(
                 "Empty Response Body",
