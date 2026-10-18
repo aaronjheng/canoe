@@ -339,7 +339,7 @@ struct AuthorizationForm: View {
                         text: oauthCallbackBinding,
                         variables: variables,
                         suggestions: suggestions,
-                        placeholder: "Empty uses an automatic loopback callback"
+                        placeholder: "Optional · loopback only, e.g. http://127.0.0.1:8080/callback"
                     )
                 }
                 fieldRow("Auth URL") {

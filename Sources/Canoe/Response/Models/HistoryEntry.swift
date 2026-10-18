@@ -14,17 +14,21 @@ struct HistoryEntry: Identifiable, Hashable, Codable {
     let urlString: String
     let statusCode: Int
     let duration: TimeInterval
+    /// Machine-stable name of what went wrong for failed sends
+    /// (`timedOut`, `cannotConnectToHost`, …), nil for successes - so a
+    /// failed entry is distinguishable instead of collapsing into
+    /// statusCode 0 / 0 ms.
+    let errorKind: String?
     let timestamp: Date
 
     /// `id` is deliberately not coded: it is a fresh per-session identity
     /// for SwiftUI (nothing keys off it across relaunches), and excluding
     /// it keeps Codable synthesis from warning about the initial value.
     private enum CodingKeys: String, CodingKey {
-        case requestID, name, method, urlString, statusCode, duration, timestamp
+        case requestID, name, method, urlString, statusCode, duration
+        case errorKind, timestamp
     }
 
-    /// Declared explicitly: the decoding initializer below would otherwise
-    /// suppress the memberwise one (the record call sites need it).
     init(
         requestID: UUID?,
         name: String,
@@ -32,7 +36,8 @@ struct HistoryEntry: Identifiable, Hashable, Codable {
         urlString: String,
         statusCode: Int,
         duration: TimeInterval,
-        timestamp: Date
+        timestamp: Date,
+        errorKind: String? = nil
     ) {
         self.requestID = requestID
         self.name = name
@@ -41,6 +46,7 @@ struct HistoryEntry: Identifiable, Hashable, Codable {
         self.statusCode = statusCode
         self.duration = duration
         self.timestamp = timestamp
+        self.errorKind = errorKind
     }
 
     init(from decoder: any Decoder) throws {
@@ -55,6 +61,7 @@ struct HistoryEntry: Identifiable, Hashable, Codable {
         urlString = try container.decodeIfPresent(String.self, forKey: .urlString) ?? ""
         statusCode = try container.decodeIfPresent(Int.self, forKey: .statusCode) ?? 0
         duration = try container.decodeIfPresent(TimeInterval.self, forKey: .duration) ?? 0
+        errorKind = try container.decodeIfPresent(String.self, forKey: .errorKind)
         timestamp = try container.decodeIfPresent(Date.self, forKey: .timestamp) ?? Date()
     }
 }

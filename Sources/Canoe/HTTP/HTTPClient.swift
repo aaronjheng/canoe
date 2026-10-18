@@ -584,6 +584,14 @@ enum HTTPClient {
     /// The live URLSession, rebuilt when proxy settings change.
     private static var session: URLSession { SessionBox.shared.currentSession().session }
 
+    /// The live session for auxiliary requests outside the main send
+    /// pipeline - currently the OAuth2 token exchange. Reusing it keeps the
+    /// token request behind the configured proxy, with cookies and caching
+    /// off like every other request Canoe makes. `URLSession.shared` would
+    /// ignore the proxy entirely, so token exchange fails silently behind
+    /// a corporate proxy and bypasses certificate handling.
+    static var auxiliarySession: URLSession { SessionBox.shared.currentSession().session }
+
     /// Rebuilds the URLSession if the persisted proxy settings changed. Call
     /// before sending so a toggle in the Settings window takes effect on the
     /// next request.

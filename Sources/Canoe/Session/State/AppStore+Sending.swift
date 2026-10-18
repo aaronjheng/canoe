@@ -177,7 +177,7 @@ extension AppStore {
                 // error banner the last good response is what is shown -
                 // like an old response kept in Postman.
                 if let requestID = tab.requestID { viewingHistoryIndexByRequest[requestID] = nil }
-                recordHistory(request: request, error: true)
+                recordHistory(request: request, error: error, duration: Date().timeIntervalSince(sendStart))
                 // Failures before onRequest (invalid URL, body build) never
                 // capture the assembled URLRequest - resolve the URL so the
                 // console does not show raw {{placeholders}}.
@@ -343,19 +343,31 @@ extension AppStore {
         scheduleHistoryPersistence()
     }
 
-    func recordHistory(request: Request, error: Bool) {
+    /// Records a failed send. Keeps the real elapsed time (so a timeout and
+    /// a DNS failure are not both "0 ms") and a machine-stable error kind
+    /// (`timedOut`, `cannotConnectToHost`, …) so failures are distinguishable
+    /// instead of collapsing into statusCode 0 / 0 ms.
+    func recordHistory(request: Request, error: Error, duration: TimeInterval) {
         let entry = HistoryEntry(
             requestID: request.id,
             name: request.name,
             method: request.httpMethod,
             urlString: request.urlString,
             statusCode: 0,
-            duration: 0,
-            timestamp: Date()
+            duration: duration,
+            timestamp: Date(),
+            errorKind: Self.errorKind(of: error)
         )
         history.insert(entry, at: 0)
         if history.count > historyLimit { history.removeLast() }
         scheduleHistoryPersistence()
+    }
+
+    /// Machine-stable name of what went wrong - nil for successes. `URLError`
+    /// codes surface as their case name (`timedOut`, `cannotConnectToHost`,
+    /// …); everything else lands as `error`.
+    private static func errorKind(of error: Error) -> String? {
+        (error as? URLError).map { String(describing: $0.code) } ?? "error"
     }
 
     /// Appends a network activity entry to the console log, trimming the

@@ -27,6 +27,8 @@ private struct ParseState {
     var urlEncodedParts: [(key: String, value: String)] = []
     var formParts: [FormPart] = []
     var basicAuth: BasicAuth?
+    /// `--digest` flips `-u/--user` credentials to Digest auth (RFC 2617).
+    var digestAuth = false
     var binaryPath: String?
     var moveToQuery = false
     var url: String?
@@ -125,7 +127,7 @@ enum CURLImporter {
         var request = Request(method: state.method ?? .get, urlString: urlString)
         request.headers = state.headers
         if let basicAuth = state.basicAuth {
-            request.requestAuthType = .basic
+            request.requestAuthType = state.digestAuth ? .digest : .basic
             request.authUsername = basicAuth.username
             request.authPassword = basicAuth.password
         }
@@ -182,6 +184,8 @@ enum CURLImporter {
                 state.moveToQuery = true
             case "-I", "--head":
                 state.method = .head
+            case "--digest":
+                state.digestAuth = true
             default:
                 break
             }

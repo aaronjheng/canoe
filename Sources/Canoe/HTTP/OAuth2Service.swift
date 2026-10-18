@@ -162,9 +162,10 @@ enum OAuth2Service {
         guard !resolve(authorization.oauthAuthURL).isEmpty else { throw OAuth2Error.missingField("Auth URL") }
         let state = resolvedOrRandomState(authorization, resolve: resolve)
         let verifier = withPKCE ? makeVerifier() : ""
+        let fixedCallback = try fixedCallbackURL(authorization, resolve: resolve)
         let (parameters, redirectURI) = try await awaitBrowserCallback(
             authURLBase: resolve(authorization.oauthAuthURL),
-            expectedState: state, relay: false
+            expectedState: state, relay: false, fixedCallback: fixedCallback
         ) { redirectURI in
             var query = [
                 URLQueryItem(name: "response_type", value: "code"),
@@ -197,9 +198,10 @@ enum OAuth2Service {
     ) async throws -> OAuth2Token {
         guard !resolve(authorization.oauthAuthURL).isEmpty else { throw OAuth2Error.missingField("Auth URL") }
         let state = resolvedOrRandomState(authorization, resolve: resolve)
+        let fixedCallback = try fixedCallbackURL(authorization, resolve: resolve)
         let (parameters, _) = try await awaitBrowserCallback(
             authURLBase: resolve(authorization.oauthAuthURL),
-            expectedState: state, relay: true
+            expectedState: state, relay: true, fixedCallback: fixedCallback
         ) { redirectURI in
             var query = [
                 URLQueryItem(name: "response_type", value: "token"),
@@ -233,7 +235,29 @@ enum OAuth2Service {
         return state.isEmpty ? makeState() : state
     }
 
-    /// The browser flows' shared half: start the loopback listener, build
+    /// The user-entered Callback URL when it is usable: an http URL on a
+    /// loopback address with an explicit port (e.g.
+    /// `http://127.0.0.1:8080/callback`), which Canoe can serve itself.
+    /// Remote callbacks would need a server Canoe cannot host, so anything
+    /// else fails the token request with a clear message instead of being
+    /// silently ignored.
+    private static func fixedCallbackURL(
+        _ authorization: Authorization, resolve: (String) -> String
+    ) throws -> URL? {
+        let string = resolve(authorization.oauthCallbackURL)
+        guard !string.isEmpty else { return nil }
+        guard let url = URL(string: string),
+              url.scheme.flatMap({ $0 == "http" }) ?? false,
+              let host = url.host?.lowercased(),
+              host == "127.0.0.1" || host == "localhost",
+              let port = url.port, port > 0
+        else {
+            throw OAuth2Error.callback(
+                "the callback URL must be a loopback address with an explicit port " +
+                "(e.g. http://127.0.0.1:8080/callback).")
+        }
+        return url
+    }
     /// the authorization URL from `query` (the redirect URI is filled in
     /// here once the port is known), open the browser, and await the
     /// callback's parameters. `relay` enables the implicit grant's fragment
@@ -241,9 +265,23 @@ enum OAuth2Service {
     /// returns, and a cancelled task cancels the callback wait.
     private static func awaitBrowserCallback(
         authURLBase: String, expectedState: String, relay: Bool,
+        fixedCallback: URL?,
         query: (String) -> [URLQueryItem]
     ) async throws -> (parameters: [String: String], redirectURI: String) {
-        let listener = try NWListener(using: .tcp)
+        let listener: NWListener
+        var redirectURI: String
+        if let fixedCallback {
+            guard let port = fixedCallback.port,
+                let nwPort = NWEndpoint.Port(rawValue: UInt16(port))
+            else {
+                throw OAuth2Error.callback("the callback URL needs an explicit port.")
+            }
+            listener = try NWListener(using: .tcp, on: nwPort)
+            redirectURI = fixedCallback.absoluteString
+        } else {
+            listener = try NWListener(using: .tcp)
+            redirectURI = ""
+        }
         let box = CallbackBox()
         listener.stateUpdateHandler = { [box] newState in
             if case .ready = newState {
@@ -273,7 +311,9 @@ enum OAuth2Service {
         guard let port = box.boundPort.withLock({ $0 }) else {
             throw OAuth2Error.callback("could not start the loopback listener.")
         }
-        let redirectURI = "http://127.0.0.1:\(port)/callback"
+        if fixedCallback == nil {
+            redirectURI = "http://127.0.0.1:\(port)/callback"
+        }
         guard var components = URLComponents(string: authURLBase) else {
             throw OAuth2Error.invalidURL("Auth URL")
         }
@@ -505,7 +545,12 @@ enum OAuth2Service {
             .joined(separator: "&")
         request.httpBody = Data(body.utf8)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        // Token exchange rides the same session as regular sends: the
+        // configured proxy applies here (URLSession.shared ignored it,
+        // failing token requests behind corporate proxies), with cookies
+        // and caching off like every other Canoe request.
+        await HTTPClient.applyProxySettings()
+        let (data, response) = try await HTTPClient.auxiliarySession.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             throw OAuth2Error.tokenRequest(status: status, body: String(bytes: data, encoding: .utf8) ?? "")
