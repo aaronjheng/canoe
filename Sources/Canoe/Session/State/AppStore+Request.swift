@@ -121,27 +121,44 @@ extension AppStore {
     }
 
     /// Duplicates a request (same method/URL/headers/params/body) into the same
-    /// collection and folder, selecting the copy.
+    /// collection and folder, selecting the copy. Postman inserts the copy
+    /// directly below the original - not at the end of the folder: every
+    /// later sibling shifts one slot so orderIndex ties never appear.
     func duplicateRequest(_ id: UUID) {
-        for collection in vault.collections where collection.requests.contains(where: { $0.id == id }) {
-            guard let source = collection.requests.first(where: { $0.id == id }) else { return }
-            var updated = collection
-            var copy = source
-            copy.id = UUID()
-            copy.name = "\(source.name) copy"
-            copy.createdAt = Date()
-            copy.updatedAt = Date()
-            // Max + 1 among siblings, not count (see addEnvironment).
-            copy.orderIndex = (collection.requests.filter { $0.folderID == source.folderID }.map(\.orderIndex).max() ?? -1) + 1
-            updated.requests.append(copy)
-            if let idx = vault.collections.firstIndex(where: { $0.id == collection.id }) {
-                vault.collections[idx] = updated
-            }
-            let toSave = persistable(updated)
-            enqueueStructuralWrite { await self.vault.writeCollection(toSave) }
-            openRequest(copy.id)
-            return
+        guard
+            let collectionIdx = vault.collections.firstIndex(where: { $0.requests.contains { $0.id == id } }),
+            let sourceIdx = vault.collections[collectionIdx].requests.firstIndex(where: { $0.id == id })
+        else { return }
+        let source = vault.collections[collectionIdx].requests[sourceIdx]
+        var updated = vault.collections[collectionIdx]
+        var copy = source
+        copy.id = UUID()
+        copy.name = "\(source.name) copy"
+        copy.createdAt = Date()
+        copy.updatedAt = Date()
+        // The copy takes the slot right after the original; siblings from
+        // that slot on shift by one (same shift rule as moveRequest).
+        let insertBase = source.orderIndex + 1
+        var shiftedIDs: Set<UUID> = []
+        for siblingIndex in updated.requests.indices {
+            let sibling = updated.requests[siblingIndex]
+            guard sibling.folderID == source.folderID, sibling.orderIndex >= insertBase else { continue }
+            updated.requests[siblingIndex].orderIndex += 1
+            shiftedIDs.insert(sibling.id)
         }
+        copy.orderIndex = insertBase
+        updated.requests.insert(copy, at: sourceIdx + 1)
+        vault.collections[collectionIdx] = updated
+        // Keep open editors' drafts and baselines in step (same rule as
+        // moveRequest), or their next save would revert the shift.
+        for shiftedID in shiftedIDs {
+            pendingRequestSnapshots[shiftedID]?.orderIndex += 1
+            persistedRequestBaselines[shiftedID]?.orderIndex += 1
+        }
+        if !shiftedIDs.isEmpty { scheduleDraftPersistence() }
+        let toSave = persistable(updated)
+        enqueueStructuralWrite { await self.vault.writeCollection(toSave) }
+        openRequest(copy.id)
     }
 
     /// Renames a request (sidebar context menu): structural save that keeps
