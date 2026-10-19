@@ -123,6 +123,7 @@ struct BodyTextView: NSViewRepresentable {
             coordinator.wordWrap = wordWrap
         }
         if attributed != coordinator.lastAttributed {
+            let previous = coordinator.lastAttributed
             coordinator.lastAttributed = attributed
             // Fresh content starts at the top; a pending reveal (find's
             // cursor carried over between bodies) belongs to old text.
@@ -130,6 +131,19 @@ struct BodyTextView: NSViewRepresentable {
             textView.textStorage?.setAttributedString(Self.nsAttributed(attributed))
             scrollView.contentView.scroll(to: .zero)
             scrollView.reflectScrolledClipView(scrollView.contentView)
+            // The scrolled-under shadow belongs to the body it was scrolled
+            // in: a short body that never scrolls would inherit the previous
+            // body's stuck-on shadow (no bounds change ever arrives to
+            // correct it). Find's highlight toggle swaps attributes but
+            // keeps the same characters, so it must not reset the shadow.
+            var bodyChanged = false
+            if let previous {
+                bodyChanged = !attributed.characters.elementsEqual(previous.characters)
+            }
+            if bodyChanged, coordinator.isPastTop {
+                coordinator.isPastTop = false
+                onScrolledPastTop(false)
+            }
         } else if let reveal, reveal != coordinator.lastReveal {
             coordinator.lastReveal = reveal
             textView.scrollRangeToVisible(reveal)
