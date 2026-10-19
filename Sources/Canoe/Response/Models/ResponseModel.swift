@@ -361,13 +361,93 @@ struct ResponseModel: Identifiable, Sendable, Codable {
         return String(line[line.startIndex..<afterKey]) + ": " + String(line[line.index(colon, offsetBy: 2)...])
     }
 
+    /// Collects CDATA contents from the raw source in document order.
+    /// Multi-line contents are skipped - they survive the serializer as
+    /// escaped text lines, which is imperfect but stable rather than guessed.
+    private static func cdataChunks(in raw: String) -> [String] {
+        var chunks: [String] = []
+        var position = raw.startIndex
+        while let start = raw.range(of: "<![CDATA[", range: position..<raw.endIndex) {
+            guard let end = raw.range(of: "]]>", range: start.upperBound..<raw.endIndex) else { break }
+            let content = String(raw[start.upperBound..<end.lowerBound])
+            if !content.contains("\n") {
+                chunks.append(content)
+            }
+            position = end.upperBound
+        }
+        return chunks
+    }
+
+    /// Puts CDATA sections back where the serializer flattened them into
+    /// escaped text lines. Matches each chunk's escaped form at or after the
+    /// previous match position, so multi-CDATA documents stay in order.
+    private static func restoreCDATA(in xml: String, chunks: [String]) -> String {
+        guard !chunks.isEmpty else { return xml }
+        var lines = xml.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        var cursorLine = 0
+        var consumed = 0
+        for chunk in chunks {
+            let escaped = escapeText(chunk)
+            var matched = false
+            var index = cursorLine
+            while index < lines.count, !matched {
+                let line = lines[index]
+                let start = line.index(line.startIndex, offsetBy: index == cursorLine ? min(consumed, line.count) : 0)
+                if let range = line.range(of: escaped, range: start..<line.endIndex) {
+                    lines[index] = line[..<range.lowerBound] + "<![CDATA[\(chunk)]]>" + line[range.upperBound...]
+                    cursorLine = index
+                    consumed = line[..<range.lowerBound].count + "<![CDATA[\(chunk)]]>".count
+                    matched = true
+                } else {
+                    index += 1
+                }
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// Escapes a CDATA payload exactly as the XML serializer escapes inline
+    /// text: `&`, `<`, `>` become entities, quotes are left as-is.
+    private static func escapeText(_ text: String) -> String {
+        text.replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+    }
+
+    /// Collapses same-line `<name attrs…></name>` pairs to
+    /// `<name attrs…/>`. The serializer writes empty elements as pairs; the
+    /// source form is usually self-closing, so restore it. A real child
+    /// always lands on its own line, so same-line pairs are safe to fold.
+    private static func collapse(_ xml: String) -> String {
+        xml.split(separator: "\n", omittingEmptySubsequences: false).map { rawLine -> String in
+            let line = String(rawLine)
+            let range = NSRange(line.startIndex..<line.endIndex, in: line)
+            guard let match = emptyElementPair?.firstMatch(in: line, range: range) else { return line }
+            var collapsed = ""
+            for capture in 1..<match.numberOfRanges {
+                if let sub = Range(match.range(at: capture), in: line) {
+                    collapsed += String(line[sub])
+                }
+            }
+            return collapsed + "/>"
+        }
+        .joined(separator: "\n")
+    }
+
+    private static let emptyElementPair: NSRegularExpression? =
+        try? NSRegularExpression(pattern: #"^(\s*<)([A-Za-z_][\w.:\-]*)((?:\s+[\w.\-:]+="[^"]*")*)></\2>$"#)
+
     /// Pretty-printed XML (Postman pretty-prints XML like JSON): re-serialized
-    /// with indentation, external entity loading disabled. The source's own
-    /// declaration line is put back verbatim, because the serializer rewrites
-    /// it - it appends `standalone="yes"` to a declaration that had none and
-    /// invents a whole declaration when the source carries none. Unparseable
-    /// XML returns nil and the caller shows the body verbatim (still
-    /// highlighted).
+    /// with 4-space indentation and external entity loading disabled, then
+    /// post-processed twice:
+    /// 1. restore `&lt;`/`&gt;` escaped CDATA sections back to
+    ///    `<![CDATA[...]]>` blocks (the serializer prints them as plain text),
+    /// 2. collapse same-line `<name…></name>` pairs to `<name…/>`.
+    /// The source's own declaration line is put back verbatim, because the
+    /// serializer rewrites it - it appends `standalone="yes"` to a declaration
+    /// that had none and invents a whole declaration when the source carries
+    /// none. Unparseable XML returns nil and the caller shows the body
+    /// verbatim (still highlighted).
     private static func prettyXML(_ data: Data, raw: String) -> String? {
         guard let document = try? XMLDocument(data: data, options: [.nodeLoadExternalEntitiesNever])
         else { return nil }
@@ -375,15 +455,16 @@ struct ResponseModel: Identifiable, Sendable, Codable {
         // fail, and an unparseable body returns nil (shown verbatim).
         let prettyData = document.xmlData(options: [.nodePrettyPrint])
         guard let pretty = String(data: prettyData, encoding: .utf8) else { return nil }
-        var lines = pretty.split(separator: "\n", omittingEmptySubsequences: false)
+        var lines = pretty.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         guard lines.first?.hasPrefix("<?xml") == true else { return pretty }
         let trimmedSource = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedSource.hasPrefix("<?xml"), let declarationRange = trimmedSource.range(of: "?>") {
-            lines[0] = Substring(trimmedSource[..<declarationRange.lowerBound] + ">")
+            lines[0] = String(trimmedSource[..<declarationRange.lowerBound] + ">")
         } else {
             lines.removeFirst()
         }
-        return lines.joined(separator: "\n")
+        let chunks = Self.cdataChunks(in: raw)
+        return Self.collapse(Self.restoreCDATA(in: lines.joined(separator: "\n"), chunks: chunks))
     }
 
     var isSuccess: Bool { (200..<300).contains(statusCode) }
