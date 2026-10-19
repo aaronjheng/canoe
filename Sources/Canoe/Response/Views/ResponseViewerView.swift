@@ -16,13 +16,13 @@ struct ResponseViewerView: View {
     @State private var bodyLanguage: BodyLanguage = .auto
     @State private var wordWrap = false
     @State private var responseSection: ResponseSection = .body
-    /// Render cache keyed by response + body mode (see refreshBodyRender):
-    /// the display text plus the same render as an attributed string - the
-    /// find overlay needs attribute access (match backgrounds) without
-    /// re-running the tree-sitter parse per keystroke.
-    @State private var bodyRenderKey = ""
-    @State private var bodyRenderDisplay = BodyDisplay(text: "", totalCount: nil, language: .text)
-    @State private var bodyRenderAttributed = AttributedString("")
+    /// Render cache keyed by response + body mode + language: the display
+    /// text plus the same render as an attributed string - the find overlay
+    /// needs attribute access (match backgrounds) without re-running the
+    /// tree-sitter parse per keystroke. `bodyRenderOrder` drives eviction
+    /// (oldest first) past `bodyRenderCacheLimit`.
+    @State private var bodyRenderCache: [String: BodyRender] = [:]
+    @State private var bodyRenderOrder: [String] = []
     @State private var saveError: String?
     /// Copy Body's in-place acknowledgement: the glyph turns into a
     /// checkmark for a moment. Same language as every other copy control in
@@ -256,26 +256,31 @@ struct ResponseViewerView: View {
         // hundreds of ms (measured ~80ms + ~90ms at 2MB, plus layout of the
         // resulting Text). Redoing it on every render - header-filter
         // keystrokes, switching tabs back and forth - is the visible lag, so
-        // each response+mode renders once and reuses the result: a hit (this
-        // frame's key matches) reuses the stored render, a miss (a fresh
-        // response or a mode switch) computes synchronously so the first
-        // paint is correct, and the task below publishes it for later
-        // frames. State is only written from the task, never during view
-        // evaluation. Preview mode renders in a player / PDF view / image
-        // view and needs no text, so it skips the decode entirely.
+        // each response+mode renders once and reuses the result: a cache hit
+        // reuses the stored render, a small-body miss computes synchronously
+        // so the first paint is correct, and a heavy-body miss defers to the
+        // task below (loading state first, compute off the main thread).
+        // State is only written from the task, never during view evaluation.
+        // Preview mode renders in a player / PDF view / image view and needs
+        // no text, so it skips the decode entirely.
         let key = "\(response.id)-\(bodyMode)-\(bodyLanguage)"
         let isPreview = bodyMode == .preview
         let isHex = bodyMode == .hex
-        let display: BodyDisplay =
-            key == bodyRenderKey
-            ? bodyRenderDisplay
-            : (isPreview || isHex ? BodyDisplay(text: "", totalCount: nil, language: .text) : bodyDisplay(response))
-        let renderedAttributed: AttributedString =
-            key == bodyRenderKey
-            ? bodyRenderAttributed
-            : (isPreview || isHex
-                ? AttributedString("")
-                : SyntaxHighlight.attributedText(display.text, syntax: display.syntax))
+        let cached = bodyRenderCache[key]
+        let deferred =
+            cached == nil && !isPreview && !isHex
+            && response.body.count > Self.syncRenderBodyBytes
+        let render: (display: BodyDisplay, attributed: AttributedString)?
+        if let cached {
+            render = (cached.display, cached.attributed)
+        } else if isPreview || isHex || deferred {
+            render = nil
+        } else {
+            render = Self.computeBodyRender(
+                response, prettify: bodyMode == .pretty, language: bodyLanguage)
+        }
+        let display = render?.display ?? BodyDisplay(text: "", totalCount: nil, language: .text)
+        let renderedAttributed = render?.attributed ?? AttributedString("")
         return VStack(spacing: 0) {
             sectionBar(response)
             // Same gutter as the request editor's tab bar (labels, underline,
@@ -291,7 +296,7 @@ struct ResponseViewerView: View {
             } else if isHex {
                 hexContent(response, display: display)
             } else {
-                bodyContent(response, display, attributed: renderedAttributed)
+                bodyContent(response, display, attributed: renderedAttributed, renderPending: deferred)
             }
         }
         .task(id: key) {
@@ -301,10 +306,28 @@ struct ResponseViewerView: View {
             // before it first ran still executes its body, so the stale ones
             // (the id moved on) must not land in the cache.
             guard !Task.isCancelled else { return }
-            if key != bodyRenderKey {
-                bodyRenderDisplay = display
-                bodyRenderAttributed = renderedAttributed
-                bodyRenderKey = key
+            if bodyRenderCache[key] == nil {
+                if !isPreview && !isHex {
+                    if deferred {
+                        // The synchronous pipeline would stall the pane; run
+                        // it off the main thread and publish when it lands.
+                        // A key switch cancels this task, and the cancelled
+                        // check drops results for keys that moved on.
+                        let prettify = bodyMode == .pretty
+                        let language = bodyLanguage
+                        let rendered = await Task.detached(priority: .userInitiated) { () -> BodyRender in
+                            let computed = Self.computeBodyRender(
+                                response, prettify: prettify, language: language)
+                            return BodyRender(display: computed.display, attributed: computed.attributed)
+                        }.value
+                        if !Task.isCancelled {
+                            bodyRenderPublish(key, rendered)
+                        }
+                    } else {
+                        bodyRenderPublish(
+                            key, BodyRender(display: display, attributed: renderedAttributed))
+                    }
+                }
             }
             // Media previews stream from a staged file, not from `body`
             // (see `stageMediaForPreview`). Runs on every task start so a
@@ -812,7 +835,7 @@ struct ResponseViewerView: View {
 
     private func bodyContent(
         _ response: ResponseModel, _ display: BodyDisplay,
-        attributed: AttributedString
+        attributed: AttributedString, renderPending: Bool
     ) -> some View {
         // Find state resolves here (the display text lives in this scope):
         // the render swaps to the match-highlighted variant only while the
@@ -849,11 +872,17 @@ struct ResponseViewerView: View {
         let attributedBody = highlighted
         return Group {
             if display.text.isEmpty {
-                ContentUnavailableView(
-                    "Empty Response Body",
-                    systemImage: "doc.text",
-                    description: Text("This response did not return any body content.")
-                )
+                if renderPending {
+                    // A heavy body is rendering off the main thread; the
+                    // real content lands when the task publishes it.
+                    LoadingState(message: "Rendering body…")
+                } else {
+                    ContentUnavailableView(
+                        "Empty Response Body",
+                        systemImage: "doc.text",
+                        description: Text("This response did not return any body content.")
+                    )
+                }
             } else {
                 VStack(spacing: 0) {
                     if let saveError {
@@ -1262,24 +1291,68 @@ struct ResponseViewerView: View {
 
     /// The body as this pane shows it: the current mode's text (with the
     /// data-type selector applied), capped at `bodyDisplayLimit` characters.
-    private func bodyDisplay(_ response: ResponseModel) -> BodyDisplay {
+    /// Bodies above this size render off the main thread: the synchronous
+    /// pipeline (decode + JSON round-trip + reindent + tree-sitter) stalls
+    /// the pane for hundreds of ms, so the pane shows a loading state and
+    /// the task below publishes when it lands. Smaller bodies keep the
+    /// synchronous first paint - a same-frame compute costs less than a
+    /// loading flash would.
+    private static let syncRenderBodyBytes = 262_144
+
+    /// How many response+mode renders stay cached: Pretty/Raw toggling and
+    /// switching back to a recent response must stay instant (a single-slot
+    /// cache thrashes on exactly those round trips).
+    private static let bodyRenderCacheLimit = 4
+
+    /// One cached body render: the display (text + truncation info) plus
+    /// the same text with syntax colors - the find overlay needs attribute
+    /// access without re-running the tree-sitter parse per keystroke.
+    private struct BodyRender {
+        let display: BodyDisplay
+        let attributed: AttributedString
+    }
+
+    /// The body as this pane shows it, computed once per render key: the
+    /// current mode's text (data-type selector applied, capped at
+    /// `bodyDisplayLimit` characters) and its highlighted form. Pure over
+    /// value inputs, so the heavy path runs on a background task.
+    nonisolated private static func computeBodyRender(
+        _ response: ResponseModel, prettify: Bool, language: BodyLanguage
+    ) -> (display: BodyDisplay, attributed: AttributedString) {
         // One decode answers both questions the pane has - the resolved
         // language and its text - so they come from one parse.
-        let decoded = response.bodyText(prettify: bodyMode == .pretty, language: bodyLanguage)
+        let decoded = response.bodyText(prettify: prettify, language: language)
         // UTF-16 units, not `String.count`: counting grapheme clusters walks
         // the whole (multi-MB) pretty text with cluster breaking and stalls
         // the main thread for seconds; the number only feeds the truncation
         // banner, where the two measures differ solely on astral-plane
         // characters.
         let utf16Count = decoded.text.utf16.count
-        guard utf16Count > Self.bodyDisplayLimit else {
-            return BodyDisplay(text: decoded.text, totalCount: nil, language: decoded.language)
+        let display: BodyDisplay
+        if utf16Count > bodyDisplayLimit {
+            display = BodyDisplay(
+                text: String(decoded.text.prefix(bodyDisplayLimit)),
+                totalCount: utf16Count,
+                language: decoded.language
+            )
+        } else {
+            display = BodyDisplay(text: decoded.text, totalCount: nil, language: decoded.language)
         }
-        return BodyDisplay(
-            text: String(decoded.text.prefix(Self.bodyDisplayLimit)),
-            totalCount: utf16Count,
-            language: decoded.language
-        )
+        let attributed = SyntaxHighlight.attributedText(display.text, syntax: display.syntax)
+        return (display, attributed)
+    }
+
+    /// Caches a finished render and evicts the oldest past the limit. The
+    /// guard keeps a re-publish from moving an existing key to the back of
+    /// the eviction order.
+    private func bodyRenderPublish(_ key: String, _ render: BodyRender) {
+        guard bodyRenderCache[key] == nil else { return }
+        bodyRenderCache[key] = render
+        bodyRenderOrder.append(key)
+        while bodyRenderOrder.count > Self.bodyRenderCacheLimit {
+            let evicted = bodyRenderOrder.removeFirst()
+            bodyRenderCache[evicted] = nil
+        }
     }
 
     // MARK: - Preview (image / audio / video / PDF)
