@@ -12,7 +12,6 @@ Native macOS API client built with Swift and SwiftUI.
 - **Response Viewer** — status, duration/size/network metrics, cookies, image preview, headers, and syntax-highlighted JSON body with find-in-response and copy/save, kept per tab with history
 - **History** — per-device send history with one-click reopen
 - **Import & Export** — paste a cURL command (File ▸ Import cURL…) into a parsed request, and copy any request as cURL from the sidebar's context menu
-- **Environment Quick Look** — an eye button beside the environment selector shows the active environment's variables (secret values masked)
 - **Code Snippets** — export any request as HTTP, cURL, or HTTPie
 - **Tabs** — requests, environments, and variable editors in tabs with dirty tracking and save (⌘S)
 - **Local Vault** — all data stored as plain JSON files on disk (Git-based sync is planned)

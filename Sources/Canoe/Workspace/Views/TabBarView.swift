@@ -32,9 +32,6 @@ struct TabBarView: View {
     /// clipped where it overflows the strip bounds).
     @Binding var isDrawerShown: Bool
     @Binding var isEnvPickerShown: Bool
-    /// Whether the environment quick-look panel (Postman's eye icon) is
-    /// open. Owned by ContentView like the other window-level panels.
-    @Binding var isEnvQuickLookShown: Bool
 
     var body: some View {
         HStack(spacing: AppSpacing.xSmall) {
@@ -222,18 +219,6 @@ struct TabBarView: View {
                 .frame(height: AppSize.pickerDividerHeight)
             EnvironmentPicker(isShown: $isEnvPickerShown)
                 .anchorPreference(key: EnvPickerAnchorKey.self, value: .bounds) { $0 }
-            // Postman's environment quick look: an eye button beside the
-            // selector opens a popover with the active environment's
-            // variables (secret values masked).
-            ToolbarToggleButton(
-                systemImage: "eye",
-                isOn: isEnvQuickLookShown,
-                help: "Environment Quick Look"
-            ) {
-                isEnvQuickLookShown.toggle()
-            }
-            .anchorPreference(key: EnvQuickLookAnchorKey.self, value: .bounds) { $0 }
-            .disabled(store.activeEnvironment == nil)
             ToolbarToggleButton(
                 systemImage: "curlybraces",
                 isOn: store.showVariablesSidebar,
@@ -494,102 +479,6 @@ struct EnvPickerAnchorKey: PreferenceKey {
     static let defaultValue: Anchor<CGRect>? = nil
     static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
         value = value ?? nextValue()
-    }
-}
-
-/// Anchor of the tab-row quick-look (eye) button, read by ContentView's
-/// window-level overlay.
-struct EnvQuickLookAnchorKey: PreferenceKey {
-    static let defaultValue: Anchor<CGRect>? = nil
-    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
-        value = value ?? nextValue()
-    }
-}
-
-/// Postman's environment quick look: a popover listing the active
-/// environment's variables, one row per variable with the value beside it;
-/// secret values are masked (a reveal would defeat the flag). Hosted by
-/// ContentView's window-level overlay, trailing-aligned with the eye
-/// button.
-struct EnvironmentQuickLookPanel: View {
-    /// Fixed panel width, mirrored by the overlay anchoring math.
-    static let width: CGFloat = 340
-
-    @Environment(AppStore.self) private var store
-    var onDismiss: () -> Void
-
-    private var variables: [Variable] {
-        guard let environment = store.activeEnvironment else { return [] }
-        return environment.variables.filter { !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: AppSpacing.small) {
-                Image(systemName: "eye")
-                    .font(AppFont.small)
-                    .foregroundStyle(AppColor.textSecondary)
-                Text(store.activeEnvironment?.name ?? "No environment")
-                    .font(AppFont.small.weight(.semibold))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, AppSpacing.medium)
-            .padding(.vertical, AppSpacing.small)
-            Divider()
-            if variables.isEmpty {
-                Text(
-                    store.activeEnvironment == nil
-                        ? "No active environment."
-                        : "This environment has no variables."
-                )
-                .font(AppFont.emptyStateBody)
-                .foregroundStyle(AppColor.textSecondary)
-                .padding(AppSpacing.medium)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                ScrollView {
-                    VStack(spacing: 0) {
-                        ForEach(variables) { variable in
-                            quickLookRow(variable)
-                            Divider()
-                                .padding(.leading, AppSpacing.medium)
-                        }
-                    }
-                }
-            }
-        }
-        .frame(width: Self.width)
-        .popupPanel()
-    }
-
-    /// One variable row: the key in mono, the value beside it (secret
-    /// values show a fixed-length mask, never the real text). Values are
-    /// selectable so non-secret ones can still be copied.
-    private func quickLookRow(_ variable: Variable) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: AppSpacing.small) {
-            Text(variable.key)
-                .font(AppFont.monoSubheadline)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if variable.isSecret {
-                Text("••••••••")
-                    .font(AppFont.monoSubheadline)
-                    .foregroundStyle(AppColor.textSecondary)
-            } else {
-                Text(variable.value)
-                    .font(AppFont.monoSubheadline)
-                    .foregroundStyle(AppColor.textPrimary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .textSelection(.enabled)
-            }
-        }
-        .padding(.horizontal, AppSpacing.medium)
-        .padding(.vertical, AppSpacing.small)
-        .help(variable.isSecret ? "Secret value (hidden)" : variable.value)
     }
 }
 

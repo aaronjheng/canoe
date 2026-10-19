@@ -8,10 +8,6 @@ struct ContentView: View {
     /// off the tab strip clips it where it overflows the strip bounds.
     @State private var isEnvPickerShown = false
     @State private var envPickerAnchor: Anchor<CGRect>?
-    /// Whether the environment quick-look (eye) popover is open; the panel
-    /// floats at window level like the picker (see `envQuickLookOverlay`).
-    @State private var isEnvQuickLookShown = false
-    @State private var envQuickLookAnchor: Anchor<CGRect>?
     /// Whether the tab-row drawer is open. Owned here like the environment
     /// panel: the drawer floats at window level too (see `tabDrawerOverlay`).
     @State private var isTabDrawerShown = false
@@ -96,11 +92,9 @@ struct ContentView: View {
         .focusEffectDisabled()
         .overlay { tabDrawerOverlay }
         .overlay { envPickerOverlay }
-        .overlay { envQuickLookOverlay }
         .overlay { methodMenuOverlay }
         .overlay { dropdownOverlay }
         .onPreferenceChange(EnvPickerAnchorKey.self) { envPickerAnchor = $0 }
-        .onPreferenceChange(EnvQuickLookAnchorKey.self) { envQuickLookAnchor = $0 }
         .onPreferenceChange(TabDrawerAnchorKey.self) { tabDrawerAnchor = $0 }
         .onPreferenceChange(MethodMenuAnchorKey.self) { methodMenuAnchor = $0 }
         .onPreferenceChange(DropdownAnchorKey.self) { dropdownAnchors = $0 }
@@ -170,34 +164,6 @@ struct ContentView: View {
                         EnvironmentPickerPanel(onDismiss: { isEnvPickerShown = false })
                             .offset(
                                 x: button.maxX - EnvironmentPickerPanel.width,
-                                y: button.maxY + AppSpacing.xSmall)
-                    }
-                }
-            }
-        }
-    }
-
-    /// Postman's environment quick look: the variables popover opens below
-    /// the eye button, trailing-aligned with it (same card hosting as the
-    /// other window-level panels).
-    private var envQuickLookOverlay: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .topLeading) {
-                if isEnvQuickLookShown, envQuickLookAnchor != nil {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture { isEnvQuickLookShown = false }
-                    Button("Close Environment Quick Look") { isEnvQuickLookShown = false }
-                        .keyboardShortcut(.cancelAction)
-                        .frame(width: 0, height: 0)
-                        .opacity(0)
-                        .accessibilityHidden(true)
-                    if let anchor = envQuickLookAnchor {
-                        let button = proxy[anchor]
-                        let panelX = max(button.maxX - EnvironmentQuickLookPanel.width, 0)
-                        EnvironmentQuickLookPanel(onDismiss: { isEnvQuickLookShown = false })
-                            .offset(
-                                x: panelX,
                                 y: button.maxY + AppSpacing.xSmall)
                     }
                 }
@@ -397,8 +363,7 @@ struct ContentView: View {
             // instead of the whole row appearing only once a tab is open.
             TabBarView(
                 isDrawerShown: $isTabDrawerShown,
-                isEnvPickerShown: $isEnvPickerShown,
-                isEnvQuickLookShown: $isEnvQuickLookShown
+                isEnvPickerShown: $isEnvPickerShown
             )
             Divider()
             // The console floats over the detail content (a bottom drawer),
