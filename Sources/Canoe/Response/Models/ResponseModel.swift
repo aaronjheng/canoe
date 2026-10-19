@@ -108,7 +108,7 @@ struct ResponseModel: Identifiable, Sendable, Codable {
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        try self.init(
+        self.init(
             statusCode: try container.decode(Int.self, forKey: .statusCode),
             headers: try container.decode([HTTPHeader].self, forKey: .headers),
             body: try container.decode(Data.self, forKey: .body),

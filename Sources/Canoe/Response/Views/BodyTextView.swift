@@ -119,13 +119,17 @@ struct BodyTextView: NSViewRepresentable {
                     queue: .main
                 ) { [weak self, weak scrollView] _ in
                     guard let self, let scrollView else { return }
-                    // Same 1pt threshold as the pre-replacement SwiftUI
-                    // geometry change, so the hairline timing stays put.
-                    let offset = scrollView.contentView.bounds.origin.y + scrollView.contentInsets.top
-                    let pastTop = offset > 1
-                    guard pastTop != isPastTop else { return }
-                    isPastTop = pastTop
-                    onScrolledPastTop?(pastTop)
+                    // The block queue is the main queue, so the isolated
+                    // state below is only ever touched from the main actor.
+                    MainActor.assumeIsolated {
+                        // Same 1pt threshold as the pre-replacement SwiftUI
+                        // geometry change, so the hairline timing stays put.
+                        let offset = scrollView.contentView.bounds.origin.y + scrollView.contentInsets.top
+                        let pastTop = offset > 1
+                        guard pastTop != self.isPastTop else { return }
+                        self.isPastTop = pastTop
+                        self.onScrolledPastTop?(pastTop)
+                    }
                 }
             )
         }

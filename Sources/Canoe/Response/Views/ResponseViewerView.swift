@@ -87,7 +87,7 @@ struct ResponseViewerView: View {
 
     /// Max characters rendered in the body pane. Beyond this a single SwiftUI
     /// `Text` becomes sluggish, so the view shows a prefix plus a notice.
-    private static let bodyDisplayLimit = 200_000
+    nonisolated private static let bodyDisplayLimit = 200_000
 
     enum BodyMode: String, CaseIterable, Identifiable {
         case pretty = "Pretty"
