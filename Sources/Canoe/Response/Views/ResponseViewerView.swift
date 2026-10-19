@@ -16,13 +16,12 @@ struct ResponseViewerView: View {
     @State private var bodyLanguage: BodyLanguage = .auto
     @State private var wordWrap = false
     @State private var responseSection: ResponseSection = .body
-    /// Render cache keyed by response + body mode (see refreshBodyRender).
+    /// Render cache keyed by response + body mode (see refreshBodyRender):
+    /// the display text plus the same render as an attributed string - the
+    /// find overlay needs attribute access (match backgrounds) without
+    /// re-running the tree-sitter parse per keystroke.
     @State private var bodyRenderKey = ""
     @State private var bodyRenderDisplay = BodyDisplay(text: "", totalCount: nil, language: .text)
-    @State private var bodyRenderText = Text("")
-    /// The same render as an attributed string: the find overlay needs
-    /// attribute access (match backgrounds) without re-running the
-    /// tree-sitter parse per keystroke.
     @State private var bodyRenderAttributed = AttributedString("")
     @State private var saveError: String?
     /// Copy Body's in-place acknowledgement: the glyph turns into a
@@ -271,10 +270,6 @@ struct ResponseViewerView: View {
             key == bodyRenderKey
             ? bodyRenderDisplay
             : (isPreview || isHex ? BodyDisplay(text: "", totalCount: nil, language: .text) : bodyDisplay(response))
-        let rendered: Text =
-            key == bodyRenderKey
-            ? bodyRenderText
-            : (isPreview || isHex ? Text("") : renderedText(for: display))
         let renderedAttributed: AttributedString =
             key == bodyRenderKey
             ? bodyRenderAttributed
@@ -296,7 +291,7 @@ struct ResponseViewerView: View {
             } else if isHex {
                 hexContent(response, display: display)
             } else {
-                bodyContent(response, display, rendered: rendered, renderedAttributed: renderedAttributed)
+                bodyContent(response, display, attributed: renderedAttributed)
             }
         }
         .task(id: key) {
@@ -308,7 +303,6 @@ struct ResponseViewerView: View {
             guard !Task.isCancelled else { return }
             if key != bodyRenderKey {
                 bodyRenderDisplay = display
-                bodyRenderText = rendered
                 bodyRenderAttributed = renderedAttributed
                 bodyRenderKey = key
             }
@@ -405,10 +399,6 @@ struct ResponseViewerView: View {
         timeMetricHovered = false
         hoveredPanel = nil
         visiblePanel = nil
-    }
-
-    private func renderedText(for display: BodyDisplay) -> Text {
-        SyntaxHighlight.highlightedText(display.text, syntax: display.syntax)
     }
 
     /// Response tab bar - and the panel's top row while a response exists:
@@ -800,9 +790,29 @@ struct ResponseViewerView: View {
         .padding(.vertical, AppSpacing.small)
     }
 
+    /// Find's resolved state for the body text: the match list and the
+    /// current one. Grouped so the body render hands one value around
+    /// instead of three parallel parameters.
+    private struct BodyFindState {
+        let matchRanges: [Range<String.Index>]
+        let currentIndex: Int?
+
+        var matchCount: Int { matchRanges.count }
+
+        /// The current match as an NSRange in the display text (String and
+        /// NSRange index spaces must stay in step), or nil when find is
+        /// idle or has no matches.
+        func revealIndex(in text: String) -> NSRange? {
+            guard let currentIndex, matchRanges.indices.contains(currentIndex) else {
+                return nil
+            }
+            return NSRange(matchRanges[currentIndex], in: text)
+        }
+    }
+
     private func bodyContent(
         _ response: ResponseModel, _ display: BodyDisplay,
-        rendered: Text, renderedAttributed: AttributedString
+        attributed: AttributedString
     ) -> some View {
         // Find state resolves here (the display text lives in this scope):
         // the render swaps to the match-highlighted variant only while the
@@ -825,21 +835,18 @@ struct ResponseViewerView: View {
             : []
         let matchCount = matchRanges.count
         let currentIndex: Int? = matchCount > 0 ? abs(findCurrentIndex) % matchCount : nil
-        // Highlight all matches amber and the current one accent. `findRows`
-        // splits the same attributed string into per-line rows so the viewer
-        // can scroll the current match into view; the plain `Text` path
-        // below is unchanged when find is idle.
-        let effectiveRender: Text
-        let findRows: [AttributedString]?
-        if findActive {
-            let highlighted = findHighlightedAttributed(
-                attributed: renderedAttributed, query: findQuery, currentIndex: currentIndex)
-            effectiveRender = Text(highlighted)
-            findRows = matchCount > 0 ? Self.splitIntoLines(highlighted) : nil
-        } else {
-            effectiveRender = rendered
-            findRows = nil
-        }
+        let find = BodyFindState(matchRanges: matchRanges, currentIndex: currentIndex)
+        // Highlight all matches amber and the current one accent. The
+        // highlight joins the cached attributed render (COW - no tree-sitter
+        // re-parse) before the AppKit text view takes it, so its scroll
+        // cursor (the reveal range) and the ruber bands come from the same
+        // string the view lays out.
+        let highlighted: AttributedString =
+            findActive
+            ? findHighlightedAttributed(
+                attributed: attributed, query: findQuery, currentIndex: currentIndex)
+            : attributed
+        let attributedBody = highlighted
         return Group {
             if display.text.isEmpty {
                 ContentUnavailableView(
@@ -855,9 +862,7 @@ struct ResponseViewerView: View {
                             .padding(.top, AppSpacing.xSmall)
                     }
                     bodyToolbar(response, display: display)
-                    bodyScroll(
-                        response, display, content: BodyScrollContent(rendered: effectiveRender, findRows: findRows),
-                        matchCount: matchCount, currentIndex: currentIndex)
+                    bodyScroll(response, display, attributed: attributedBody, find: find)
                     // ⌘F: open the find bar. Lives inside the body content, so
                     // the shortcut exists exactly while a body is on screen.
                     // The shortcut buttons MUST stay inside this VStack as
@@ -930,6 +935,11 @@ struct ResponseViewerView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .fixedSize()
+            // Pin the segmented control to the data-type dropdown's height
+            // token (below): without it the AppKit control's own size is the
+            // row height, so picking Pretty (dropdown appears) makes the
+            // whole toolbar row grow.
+            .frame(height: AppSize.controlHeight)
             // Postman's data type selector (Pretty mode only): Auto resolves
             // to the detected type; JSON/XML/HTML highlight via the shared
             // tree-sitter grammars, Text stays plain.
@@ -1025,20 +1035,11 @@ struct ResponseViewerView: View {
         return "Auto (\(response.resolvedBodyLanguage(.auto)).rawValue)"
     }
 
-    /// The body's scrollable content: either the cached plain render, or -
-    /// while find is active with matches - per-line rows so the current
-    /// match can be scrolled into view by id.
-    private struct BodyScrollContent {
-        let rendered: Text
-        /// Per-line rows (attribute runs preserved) or nil when find is
-        /// idle or has no matches.
-        let findRows: [AttributedString]?
-    }
-
+    /// The body's scroll area: the AppKit text view plus the banner rows
+    /// that describe its limits.
     private func bodyScroll(
         _ response: ResponseModel, _ display: BodyDisplay,
-        content: BodyScrollContent,
-        matchCount: Int, currentIndex: Int?
+        attributed: AttributedString, find: BodyFindState
     ) -> some View {
         VStack(spacing: 0) {
             if response.bodyTruncated {
@@ -1080,71 +1081,35 @@ struct ResponseViewerView: View {
                 .padding(.vertical, AppSpacing.xSmall)
                 Divider()
             }
-            let scrollable: some View = Group {
-                if let findRows = content.findRows {
-                    // One row per line so the current match can be scrolled
-                    // into view by id; rows look identical to the single
-                    // text render since attribute runs survive the slice.
-                    ScrollViewReader { proxy in
-                        ScrollView(wordWrap ? .vertical : [.vertical, .horizontal]) {
-                            LazyVStack(alignment: .leading, spacing: 0) {
-                                ForEach(findRows.indices, id: \.self) { line in
-                                    Text(findRows[line])
-                                        .font(AppFont.monoSubheadline)
-                                        .textSelection(.enabled)
-                                        .frame(
-                                            maxWidth: wordWrap ? .infinity : nil,
-                                            alignment: .leading
-                                        )
-                                        .fixedSize(horizontal: !wordWrap, vertical: false)
-                                }
-                            }
-                            .padding(AppSpacing.medium)
-                        }
-                        .onChange(of: currentIndex) { _, newIndex in
-                            guard let newIndex, newIndex >= 0, newIndex < findRows.count else { return }
-                            proxy.scrollTo(newIndex, anchor: .center)
-                        }
-                    }
-                } else {
-                    // Cached render (see responseDetail) - never rebuild
-                    // the highlighted Text here.
-                    content.rendered
-                        .font(AppFont.monoSubheadline)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: wordWrap ? .infinity : nil, alignment: .leading)
-                        .fixedSize(horizontal: !wordWrap, vertical: false)
+            // Find's current match, in the text the view laid out (String
+            // and NSRange index spaces must stay in step).
+            let reveal = find.revealIndex(in: display.text)
+            BodyTextView(
+                attributed: attributed,
+                wordWrap: wordWrap,
+                reveal: reveal,
+                onScrolledPastTop: { pastTop in
+                    isBodyScrolledPastTop = pastTop
+                }
+            )
+            .background(AppColor.codeBackground)
+            // Postman-style scrolled-under affordance: hairline plus a short
+            // shadow fading over the content. Overlaid, not laid out, so
+            // crossing the scroll threshold never shifts the content.
+            .overlay(alignment: .top) {
+                if isBodyScrolledPastTop {
+                    ScrolledUnderEdgeShadow()
+                }
+            }
+            // The find widget overlays the body area itself (below the
+            // toolbar/banner): an ErrorBanner's dismiss stays clickable while
+            // find is open.
+            .overlay(alignment: .topTrailing) {
+                if findVisible {
+                    findBar(matchCount: find.matchCount, currentIndex: find.currentIndex)
                         .padding(AppSpacing.medium)
                 }
             }
-            scrollable
-                .background(AppColor.codeBackground)
-                // Scroll state for the toolbar/content hairline above: visible
-                // once the content has moved under the toolbar, hidden at the
-                // top (a 1pt threshold ignores float noise; bounce above the top
-                // stays hidden).
-                .onScrollGeometryChange(for: Bool.self) { geometry in
-                    geometry.contentOffset.y + geometry.contentInsets.top > 1
-                } action: { _, isPastTop in
-                    isBodyScrolledPastTop = isPastTop
-                }
-                // Postman-style scrolled-under affordance: hairline plus a short
-                // shadow fading over the content. Overlaid, not laid out, so
-                // crossing the scroll threshold never shifts the content.
-                .overlay(alignment: .top) {
-                    if isBodyScrolledPastTop {
-                        ScrolledUnderEdgeShadow()
-                    }
-                }
-                // The find widget overlays the body area itself (below the
-                // toolbar/banner): an ErrorBanner's dismiss stays clickable while
-                // find is open.
-                .overlay(alignment: .topTrailing) {
-                    if findVisible {
-                        findBar(matchCount: matchCount, currentIndex: currentIndex)
-                            .padding(AppSpacing.medium)
-                    }
-                }
         }
     }
 
@@ -1195,43 +1160,6 @@ struct ResponseViewerView: View {
             index += 1
         }
         return attributed
-    }
-
-    /// Splits an attributed body into per-line rows for the find overlay.
-    /// Newlines themselves are dropped - a row break is the line break -
-    /// and blank lines collapse to a single space so they keep their height.
-    /// Attribute runs (syntax highlighting, match backgrounds) survive the
-    /// slice, so rows look identical to the single-text render.
-    private static func splitIntoLines(_ attributed: AttributedString) -> [AttributedString] {
-        let ns = NSAttributedString(attributed)
-        let plain = ns.string
-        var rows: [AttributedString] = []
-        var rowStart = plain.startIndex
-        var index = plain.startIndex
-        while index < plain.endIndex {
-            if plain[index] == "\n" {
-                rows.append(
-                    AttributedString(
-                        ns.attributedSubstring(from: NSRange(rowStart..<index, in: plain))))
-                rowStart = plain.index(after: index)
-            }
-            index = plain.index(after: index)
-        }
-        if rowStart < plain.endIndex {
-            rows.append(
-                AttributedString(
-                    ns.attributedSubstring(from: NSRange(rowStart..<plain.endIndex, in: plain))))
-        } else if rows.isEmpty {
-            rows.append(AttributedString(" "))
-        }
-        return rows.map(line(for:))
-    }
-
-    /// One rendered row: blank lines stay a single space tall.
-    private static func line(for slice: AttributedString) -> AttributedString {
-        var row = slice
-        if row.characters.isEmpty { row = AttributedString(" ") }
-        return row
     }
 
     /// Steps the current match (⌘G / ⇧⌘G / chevrons / Return), wrapping at
@@ -1623,16 +1551,18 @@ struct ResponseViewerView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(hexRows(for: response.body).enumerated()), id: \.offset) { _, row in
                             HStack(spacing: 0) {
+                                // Postman renders the hex view at the
+                                // body pane's size (13 mono).
                                 Text(row.offset)
-                                    .font(AppFont.monoSubheadline)
+                                    .font(AppFont.monoBody)
                                     .foregroundStyle(AppColor.textSecondary)
                                     .frame(width: 80, alignment: .leading)
                                 Text(row.hex)
-                                    .font(AppFont.monoSubheadline)
+                                    .font(AppFont.monoBody)
                                     .foregroundStyle(AppColor.textPrimary)
                                 Spacer(minLength: 0)
                                 Text(row.ascii)
-                                    .font(AppFont.monoSubheadline)
+                                    .font(AppFont.monoBody)
                                     .foregroundStyle(AppColor.textSecondary)
                                     .frame(minWidth: 16, alignment: .leading)
                             }

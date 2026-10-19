@@ -1075,6 +1075,17 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>C0A6E1000000000000000001</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>BodyTextView.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>5D4DDF6BEF0E4CB49696EF91</key>
 		<dict>
 			<key>isa</key>
@@ -1093,6 +1104,7 @@
 			<key>children</key>
 			<array>
 				<string>6CFF6F847D795AFB6A01B50A</string>
+				<string>C0A6E1000000000000000001</string>
 				<string>5D4DDF6BEF0E4CB49696EF91</string>
 				<string>C0A5E1000000000000000003</string>
 				<string>C0A5E1000000000000000005</string>
@@ -1640,6 +1652,13 @@
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>6CFF6F847D795AFB6A01B50A</string>
+		</dict>
+		<key>C0A6E2000000000000000001</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>C0A6E1000000000000000001</string>
 		</dict>
 		<key>C2CB4A5924504379859F9A74</key>
 		<dict>
@@ -2364,6 +2383,7 @@
 				<string>FABE62C91458B807024EAB7C</string>
 				<string>452DBCF33422DC441319AA8C</string>
 				<string>5F019EDE10AA7F74D6087E81</string>
+				<string>C0A6E2000000000000000001</string>
 				<string>C2CB4A5924504379859F9A74</string>
 				<string>27E20BFB927C6348F54E75A0</string>
 				<string>C4D2E93AFB40E91A859EA6A2</string>

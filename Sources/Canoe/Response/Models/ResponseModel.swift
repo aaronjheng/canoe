@@ -264,7 +264,101 @@ struct ResponseModel: Identifiable, Sendable, Codable {
             // highlighting, shown exactly as it arrived.
             return BodyText(text: raw, language: resolved)
         }
-        return BodyText(text: String(data: pretty, encoding: .utf8) ?? raw, language: resolved)
+        let text = String(data: pretty, encoding: .utf8) ?? raw
+        return BodyText(text: Self.reindented(text), language: resolved)
+    }
+
+    /// Uniform JSON pretty output (Postman's body pane): 4 spaces per level,
+    /// `"key": value` spacing, empty containers inline.
+    ///
+    /// JSONSerialization's `prettyPrinted` indents with a depth-dependent
+    /// width (2 at the first level, wider below), pads every empty container
+    /// across three lines (open, blank, close), and spaces the key colon as
+    /// ` : `, so its output needs round-trip passes to match Postman.
+    /// Re-indenting the serialized text - instead of hand-walking the parsed
+    /// tree - keeps numbers, escaping, and ordering in the serializer's
+    /// hands; the pass is safe because its newlines only ever fall outside
+    /// string literals, so a line's first character is never mid-string. A
+    /// close is a line starting with `}`/`]` and an open is a line ending
+    /// with `{`/`[`; strings that merely end in those characters fire
+    /// neither rule.
+    private static func reindented(_ json: String) -> String {
+        // Pass 1: fold JSONSerialization's expanded empty containers -
+        // `"a" : {` / blank / `},` becomes `"a" : {},` - so the blank never
+        // survives as a gutter line. The blank sits directly between one
+        // open and its close, so the adjacency test folds each empty
+        // independently; nesting needs a second sweep (`[[ ]]` prints
+        // `[`/[`/blank/`]`/`]` - the inner pair folds first, the outer
+        // close is already adjacent) until no fold fires.
+        var lines = json.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        var changed = true
+        while changed {
+            changed = false
+            var folded: [String] = []
+            var index = 0
+            while index < lines.count {
+                let line = lines[index]
+                let open = folded.last?.last
+                let lastIsContainer = open == "{" || open == "["
+                if line.isEmpty, index + 1 < lines.count, lastIsContainer {
+                    let close = lines[index + 1].trimmingCharacters(in: .whitespaces)
+                    if close.hasPrefix("}") || close.hasPrefix("]") {
+                        folded[folded.count - 1] += close
+                        changed = true
+                        index += 2  // the blank and its close stay merged
+                        continue
+                    }
+                }
+                folded.append(line)
+                index += 1
+            }
+            lines = folded
+        }
+        // Pass 2: strip the serializer's own width-varying indent and apply
+        // the uniform 4 spaces per level, then move the key's ` : ` pad to
+        // `": "` (JSON.stringify's spacing, Postman's body form).
+        var out: [String] = []
+        var level = 0
+        for line in lines {
+            let stripped = Self.keyColon(line.trimmingCharacters(in: .whitespaces))
+            if stripped.hasPrefix("}") || stripped.hasPrefix("]") {
+                level = max(level - 1, 0)
+            }
+            out.append(String(repeating: " ", count: 4 * level) + stripped)
+            if stripped.hasSuffix("{") || stripped.hasSuffix("[") {
+                level += 1
+            }
+        }
+        return out.joined(separator: "\n")
+    }
+
+    /// Rewrites the object key's ` : ` pad to `": "` on one pretty-printed
+    /// line, leaving values untouched: the key is the line's first string,
+    /// and the pad after its closing quote is constant (`" : ` in
+    /// JSONSerialization data) - a colon inside a value sits past the
+    /// second string and never enters this window (a value's escaped quote
+    /// is consumed inside the scan, so `" ... \" : ... "` cannot fake the
+    /// boundary).
+    private static func keyColon(_ line: String) -> String {
+        guard line.hasPrefix("\"") else { return line }
+        var index = line.index(after: line.startIndex)
+        while index < line.endIndex {
+            let character = line[index]
+            if character == "\\" {
+                index = line.index(index, offsetBy: 2)
+                continue
+            }
+            if character == "\"" {
+                break
+            }
+            index = line.index(after: index)
+        }
+        let afterKey = line.index(after: index)
+        guard afterKey < line.endIndex, line[afterKey...].hasPrefix(" : ") else {
+            return line
+        }
+        let colon = line.index(afterKey, offsetBy: 1)
+        return String(line[line.startIndex..<afterKey]) + ": " + String(line[line.index(colon, offsetBy: 2)...])
     }
 
     /// Pretty-printed XML (Postman pretty-prints XML like JSON): re-serialized
