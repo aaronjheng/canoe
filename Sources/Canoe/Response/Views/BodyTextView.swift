@@ -28,35 +28,106 @@ struct BodyTextView: NSViewRepresentable {
         Coordinator()
     }
 
+    /// Sendable box for the bounds-observer token: `deinit` is nonisolated,
+    /// so the backstop unregister there can only touch Sendable state
+    /// (dismantleNSView covers the normal removal path).
+    fileprivate final class ObserverBox: @unchecked Sendable {
+        let token: NSObjectProtocol
+        init(_ token: NSObjectProtocol) {
+            self.token = token
+        }
+    }
+
+    @MainActor
     final class Coordinator: NSObject {
         var onScrolledPastTop: ((Bool) -> Void)?
         var isPastTop = false
         var lastAttributed: AttributedString?
         var lastReveal: NSRange?
-        var observesPastTop: NSObjectProtocol?
+        fileprivate var observerBox: ObserverBox?
         var wordWrap: Bool?
+        // Streaming state: the body lands in the text view in slices so a
+        // large render never blocks one runloop pass. The first slice paints
+        // synchronously with the view; the rest follow one per main-queue
+        // tick until the body is complete.
+        var streamBase: AttributedString?
+        var streamRanges: [Range<AttributedString.Index>] = []
+        var streamGeneration = 0
+        /// A find reveal that arrived before its text was loaded; applied
+        /// once the stream finishes.
+        var pendingReveal: NSRange?
 
         deinit {
-            if let observer = observesPastTop {
-                NotificationCenter.default.removeObserver(observer)
+            if let box = observerBox {
+                NotificationCenter.default.removeObserver(box.token)
+            }
+        }
+
+        /// Starts (or restarts) the stream for `attributed`: drops any
+        /// in-flight pump via the generation counter, installs the first
+        /// chunk synchronously, and leaves the rest for `pump`.
+        func beginStream(_ attributed: AttributedString, into textView: NSTextView) {
+            streamGeneration += 1
+            streamBase = attributed
+            streamRanges = BodyTextView.chunkRanges(in: attributed)
+            lastReveal = nil
+            pendingReveal = nil
+            if let first = streamRanges.first {
+                streamRanges.removeFirst()
+                textView.textStorage?.setAttributedString(
+                    BodyTextView.nsAttributed(AttributedString(attributed[first])))
+            } else {
+                textView.textStorage?.setAttributedString(NSAttributedString())
+            }
+        }
+
+        /// Appends the next stream chunk on a later main-actor tick, then
+        /// reschedules until the body is complete. A body change bumps the
+        /// generation, so stale scheduled chunks no-op instead of appending
+        /// into the wrong text.
+        func pump(_ scrollView: NSScrollView) {
+            guard !streamRanges.isEmpty, let base = streamBase else { return }
+            let generation = streamGeneration
+            let range = streamRanges.removeFirst()
+            Task { @MainActor [weak self, weak scrollView] in
+                guard let self, self.streamGeneration == generation, let scrollView,
+                    let textView = scrollView.documentView as? NSTextView
+                else { return }
+                textView.textStorage?.beginEditing()
+                textView.textStorage?.append(BodyTextView.nsAttributed(AttributedString(base[range])))
+                textView.textStorage?.endEditing()
+                if self.streamRanges.isEmpty {
+                    self.streamBase = nil
+                    // A find reveal that pointed into not-yet-loaded text
+                    // lands now that the whole body is in storage.
+                    if let pending = self.pendingReveal {
+                        self.pendingReveal = nil
+                        self.lastReveal = pending
+                        textView.scrollRangeToVisible(pending)
+                    }
+                } else {
+                    self.pump(scrollView)
+                }
             }
         }
 
         func observe(pastTopOf scrollView: NSScrollView) {
-            observesPastTop = NotificationCenter.default.addObserver(
-                forName: NSView.boundsDidChangeNotification,
-                object: scrollView.contentView,
-                queue: .main
-            ) { [weak self, weak scrollView] _ in
-                guard let self, let scrollView else { return }
-                // Same 1pt threshold as the pre-replacement SwiftUI
-                // geometry change, so the hairline timing stays put.
-                let offset = scrollView.contentView.bounds.origin.y + scrollView.contentInsets.top
-                let pastTop = offset > 1
-                guard pastTop != isPastTop else { return }
-                isPastTop = pastTop
-                onScrolledPastTop?(pastTop)
-            }
+            observerBox = ObserverBox(
+                NotificationCenter.default.addObserver(
+                    forName: NSView.boundsDidChangeNotification,
+                    object: scrollView.contentView,
+                    queue: .main
+                ) { [weak self, weak scrollView] _ in
+                    guard let self, let scrollView else { return }
+                    // Same 1pt threshold as the pre-replacement SwiftUI
+                    // geometry change, so the hairline timing stays put.
+                    let offset = scrollView.contentView.bounds.origin.y + scrollView.contentInsets.top
+                    let pastTop = offset > 1
+                    guard pastTop != isPastTop else { return }
+                    isPastTop = pastTop
+                    onScrolledPastTop?(pastTop)
+                }
+            )
         }
     }
 
@@ -104,12 +175,13 @@ struct BodyTextView: NSViewRepresentable {
 
         applyMetrics(textView, wordWrap: wordWrap)
         context.coordinator.wordWrap = wordWrap
-        textView.textStorage?.setAttributedString(Self.nsAttributed(attributed))
         context.coordinator.lastAttributed = attributed
+        context.coordinator.beginStream(attributed, into: textView)
 
         scroll.documentView = textView
         scroll.contentView.postsBoundsChangedNotifications = true
         context.coordinator.observe(pastTopOf: scroll)
+        context.coordinator.pump(scroll)
         return scroll
     }
 
@@ -128,9 +200,10 @@ struct BodyTextView: NSViewRepresentable {
             // Fresh content starts at the top; a pending reveal (find's
             // cursor carried over between bodies) belongs to old text.
             coordinator.lastReveal = nil
-            textView.textStorage?.setAttributedString(Self.nsAttributed(attributed))
+            coordinator.beginStream(attributed, into: textView)
             scrollView.contentView.scroll(to: .zero)
             scrollView.reflectScrolledClipView(scrollView.contentView)
+            coordinator.pump(scrollView)
             // The scrolled-under shadow belongs to the body it was scrolled
             // in: a short body that never scrolls would inherit the previous
             // body's stuck-on shadow (no bounds change ever arrives to
@@ -145,15 +218,21 @@ struct BodyTextView: NSViewRepresentable {
                 onScrolledPastTop(false)
             }
         } else if let reveal, reveal != coordinator.lastReveal {
-            coordinator.lastReveal = reveal
-            textView.scrollRangeToVisible(reveal)
+            if coordinator.streamBase != nil {
+                // Still streaming: land on the match once the body completes
+                // - scrolling now would clamp to the loaded prefix.
+                coordinator.pendingReveal = reveal
+            } else {
+                coordinator.lastReveal = reveal
+                textView.scrollRangeToVisible(reveal)
+            }
         }
     }
 
     static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
-        if let observer = coordinator.observesPastTop {
-            NotificationCenter.default.removeObserver(observer)
-            coordinator.observesPastTop = nil
+        if let box = coordinator.observerBox {
+            NotificationCenter.default.removeObserver(box.token)
+            coordinator.observerBox = nil
         }
     }
 
@@ -171,6 +250,34 @@ struct BodyTextView: NSViewRepresentable {
             width: wordWrap ? 0 : CGFloat.greatestFiniteMagnitude,
             height: CGFloat.greatestFiniteMagnitude)
         textView.layoutManager?.ensureLayout(for: container)
+    }
+
+    /// Characters per streamed chunk: the first chunk paints within one
+    /// layout pass, and a 200K-character body (the display cap) completes in
+    /// ~9 ticks instead of one long block.
+    private static let streamChunkCharacters = 24_000
+
+    /// Splits the body into per-tick character ranges for the stream pump.
+    /// AttributedString slices keep the base's index space, so the stored
+    /// ranges stay valid against `streamBase` for the whole stream.
+    private static func chunkRanges(in attributed: AttributedString) -> [Range<AttributedString.Index>] {
+        var starts: [AttributedString.Index] = [attributed.startIndex]
+        var index = attributed.startIndex
+        var count = 0
+        while index < attributed.endIndex {
+            count += 1
+            index = attributed.index(afterCharacter: index)
+            if count == streamChunkCharacters, index < attributed.endIndex {
+                starts.append(index)
+                count = 0
+            }
+        }
+        var ranges: [Range<AttributedString.Index>] = []
+        for (offset, start) in starts.enumerated() {
+            let end = offset + 1 < starts.count ? starts[offset + 1] : attributed.endIndex
+            ranges.append(start..<end)
+        }
+        return ranges
     }
 
     /// Bridges the SwiftUI attribute pipeline onto AppKit run by run: the

@@ -1060,7 +1060,7 @@ struct ResponseViewerView: View {
                 Divider()
             }
             if let totalCount = display.totalCount {
-                let shown = display.text.count.formatted()
+                let shown = display.text.utf16.count.formatted()
                 let total = totalCount.formatted()
                 HStack {
                     Image(systemName: "info.circle")
@@ -1266,12 +1266,18 @@ struct ResponseViewerView: View {
         // One decode answers both questions the pane has - the resolved
         // language and its text - so they come from one parse.
         let decoded = response.bodyText(prettify: bodyMode == .pretty, language: bodyLanguage)
-        guard decoded.text.count > Self.bodyDisplayLimit else {
+        // UTF-16 units, not `String.count`: counting grapheme clusters walks
+        // the whole (multi-MB) pretty text with cluster breaking and stalls
+        // the main thread for seconds; the number only feeds the truncation
+        // banner, where the two measures differ solely on astral-plane
+        // characters.
+        let utf16Count = decoded.text.utf16.count
+        guard utf16Count > Self.bodyDisplayLimit else {
             return BodyDisplay(text: decoded.text, totalCount: nil, language: decoded.language)
         }
         return BodyDisplay(
             text: String(decoded.text.prefix(Self.bodyDisplayLimit)),
-            totalCount: decoded.text.count,
+            totalCount: utf16Count,
             language: decoded.language
         )
     }
