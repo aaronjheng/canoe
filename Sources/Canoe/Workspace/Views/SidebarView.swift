@@ -789,6 +789,9 @@ private struct CollectionTree: View {
             DropdownRow.action("Rename") {
                 isRenaming = true
             },
+            DropdownRow.action("Duplicate") {
+                store.duplicateCollection(collection.id)
+            },
             .divider(),
             DropdownRow.action("Delete", isDestructive: true) {
                 showDeleteConfirm = true

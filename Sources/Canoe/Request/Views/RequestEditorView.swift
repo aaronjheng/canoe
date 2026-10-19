@@ -462,6 +462,42 @@ struct RequestEditorView: View {
         )
     }
 
+    /// Postman's URL-bar cURL paste: a recognized command transforms into
+    /// the request (method, URL, params, headers, body, auth) instead of
+    /// filling the bar with shell words. The request's identity (name,
+    /// folder, ordering, description) and its Settings-tab options stay
+    /// with the request - only the wire content is imported. Returns
+    /// whether the paste was consumed; an unparseable command falls
+    /// through to the plain text insert.
+    private func pasteCURLIfRecognized(_ raw: String) -> Bool {
+        guard CURLImporter.looksLikeCURLCommand(raw),
+            let parsed = try? CURLImporter.parse(raw)
+        else { return false }
+        var updated = parsed
+        updated.id = draft.id
+        updated.name = draft.name
+        updated.folderID = draft.folderID
+        updated.orderIndex = draft.orderIndex
+        updated.createdAt = draft.createdAt
+        updated.updatedAt = draft.updatedAt
+        updated.requestDescription = draft.requestDescription
+        updated.followRedirects = draft.followRedirects
+        updated.timeoutSeconds = draft.timeoutSeconds
+        updated.maxRedirects = draft.maxRedirects
+        updated.followAuthorizationHeader = draft.followAuthorizationHeader
+        updated.useCookieJar = draft.useCookieJar
+        updated.verifySSLCertificate = draft.verifySSLCertificate
+        updated.disabledGeneratedHeaders = draft.disabledGeneratedHeaders
+        // Existing rows survive their URL: syncPathVariableRows re-derives
+        // the set for the parsed URL (stale `:segment` rows drop there).
+        updated.pathVariables = draft.pathVariables
+        draft = updated
+        // The focused URL bar wins over onChange(draft)'s recompose (see
+        // the focus guard there), so the parsed URL lands here directly.
+        urlText = composedURLText(base: updated.urlString, params: updated.params)
+        return true
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             nameBar
@@ -970,7 +1006,11 @@ struct RequestEditorView: View {
             onHoverChanged: { hover in
                 isURLBarHovered = hover
             },
-            urlSuggestions: urlHistorySuggestions
+            urlSuggestions: urlHistorySuggestions,
+            // Postman matches cURL pastes directly in the URL bar: they
+            // transform into the request instead of filling the bar with
+            // shell words.
+            onPasteRawText: { pasteCURLIfRecognized($0) }
         )
         .padding(.horizontal, AppSpacing.compact)
         .padding(.vertical, 3)

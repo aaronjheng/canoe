@@ -217,6 +217,57 @@ extension AppStore {
         return collection
     }
 
+    /// Duplicates a collection (deep copy: folders, requests, variables,
+    /// authorization, description) into the same workspace, selecting the
+    /// copy for inline rename. The copy is rebuilt from the persisted
+    /// baselines - unsaved edits stay with the original, keeping the
+    /// "nothing is written until Save (⌘S / Save button)" contract intact.
+    @discardableResult
+    func duplicateCollection(_ id: UUID) -> Collection? {
+        guard let idx = vault.collections.firstIndex(where: { $0.id == id }) else { return nil }
+        var copy = persistable(vault.collections[idx])
+        // Postman inserts the duplicate below the original; the sibling's
+        // slot is max + 1 (see addEnvironment) so gaps from deletions hold.
+        let siblingMax = vault.collections
+            .filter { $0.workspaceID == copy.workspaceID && $0.id != copy.id }
+            .map(\.orderIndex).max()
+        copy.id = UUID()
+        copy.name = "\(copy.name) copy"
+        copy.createdAt = Date()
+        copy.orderIndex = (siblingMax ?? -1) + 1
+        // Fresh ids for the whole tree; folder id chains are remapped so
+        // children keep their parents inside the copy.
+        var folderIDs: [UUID: UUID] = [:]
+        for folderIndex in copy.folders.indices {
+            folderIDs[copy.folders[folderIndex].id] = UUID()
+        }
+        for folderIndex in copy.folders.indices {
+            guard let newID = folderIDs[copy.folders[folderIndex].id] else { continue }
+            copy.folders[folderIndex].id = newID
+            if let parent = copy.folders[folderIndex].parentFolderID {
+                copy.folders[folderIndex].parentFolderID = folderIDs[parent]
+            }
+            copy.folders[folderIndex].createdAt = Date()
+        }
+        for requestIndex in copy.requests.indices {
+            copy.requests[requestIndex].id = UUID()
+            if let folderID = copy.requests[requestIndex].folderID {
+                copy.requests[requestIndex].folderID = folderIDs[folderID]
+            }
+            copy.requests[requestIndex].createdAt = Date()
+            copy.requests[requestIndex].updatedAt = Date()
+        }
+        vault.collections.append(copy)
+        enqueueStructuralWrite { await self.vault.writeCollection(self.persistable(copy)) }
+        // Same create flow as addCollection / duplicateFolder: reveal the
+        // new row and hand it straight to inline rename.
+        isCollectionsSectionExpanded = true
+        persistSidebarState()
+        sidebarFilter = ""
+        pendingInlineRenameID = copy.id
+        return copy
+    }
+
     func deleteCollection(_ id: UUID) {
         let doomed = Set(
             vault.collections.filter { $0.id == id }.flatMap(\.requests).map(\.id)

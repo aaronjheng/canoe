@@ -34,10 +34,76 @@ struct SettingsView: View {
 
     var body: some View {
         switch navigation.pane {
+        case .general: generalPane
         case .appearance: appearancePane
         case .sync: syncPane
         case .proxy: proxyPane
         }
+    }
+
+    // MARK: - General
+
+    /// Postman's General settings: the app-wide request timeout and the
+    /// response size limit. Applied on the next send (`HTTPClient` rebuilds
+    /// its session before every send when the values changed).
+    private var generalPane: some View {
+        Form {
+            Section {
+                HStack {
+                    Text("Request timeout (seconds)")
+                        .lineLimit(1)
+                    Spacer(minLength: AppSpacing.small)
+                    TextField("0", text: requestTimeoutSeconds)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 120)
+                        .focusEffectDisabled()
+                }
+            } header: {
+                Text("Requests")
+            } footer: {
+                Text("Idle limit between bytes before a request is cut. 0 = no limit. The request's own Settings tab can override this.")
+            }
+            Section {
+                HStack {
+                    Text("Max response size (MB)")
+                        .lineLimit(1)
+                    Spacer(minLength: AppSpacing.small)
+                    TextField("50", text: maxResponseSizeMB)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 120)
+                        .focusEffectDisabled()
+                }
+            } header: {
+                Text("Responses")
+            } footer: {
+                Text("Buffered bodies larger than this are cut short (detection still runs for the full size). 0 = no limit.")
+            }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(AppColor.controlBackground)
+    }
+
+    private var requestTimeoutSeconds: Binding<String> {
+        Binding(
+            get: { String(store.settings.general.requestTimeoutSeconds) },
+            set: {
+                let clamped = max(0, Int($0.trimmingCharacters(in: .whitespaces)) ?? 0)
+                store.settings.general.requestTimeoutSeconds = min(clamped, 100_000)
+                store.save()
+            }
+        )
+    }
+
+    private var maxResponseSizeMB: Binding<String> {
+        Binding(
+            get: { String(store.settings.general.maxResponseSizeMB) },
+            set: {
+                let clamped = max(0, Int($0.trimmingCharacters(in: .whitespaces)) ?? 0)
+                store.settings.general.maxResponseSizeMB = min(clamped, 10_000)
+                store.save()
+            }
+        )
     }
 
     // MARK: - Appearance

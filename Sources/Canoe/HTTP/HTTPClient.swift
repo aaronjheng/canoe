@@ -29,8 +29,9 @@ enum HTTPClient {
     /// Mirrors the request-body cap's intent: refuse to grow without bound,
     /// while staying far above any real API payload. This bounds ONE
     /// response; the history multiplies it, which is why the response panel
-    /// says plainly that the body was cut.
-    static let maxResponseBytes = 50 * 1024 * 1024
+    /// says plainly that the body was cut. Set from the General settings
+    /// pane (MB, 0 = effectively unlimited) before every send.
+    static var maxResponseBytes: Int { SessionBox.shared.currentMaxResponseBytes() }
 
     /// Per-send network options (the request-level Settings tab): captured once
     /// per send and carried on the task's telemetry, so the session delegate
@@ -533,29 +534,84 @@ enum HTTPClient {
         private let lock = Mutex(())
         private(set) var session: URLSession
         private(set) var redirectPolicy: RedirectPolicy
-        private var lastAppliedProxyDict: [String: Any]?
+        private var lastApplied: Applied?
+        /// The response-size cap in force (General settings). Guarded with
+        /// the session lock: the truncation path reads it per chunk from the
+        /// network callbacks, concurrently with a Settings-window change.
+        private(set) var maxResponseBytes: Int
 
-        private init() {
-            let (session, policy) = Self.makeSession(proxy: nil)
-            self.session = session
-            self.redirectPolicy = policy
+        /// A session's timeouts plus the response cap, compared against the
+        /// last applied profile so a Settings change triggers exactly one
+        /// rebuild - and unrelated sends never rebuild anything.
+        private struct Applied: Equatable {
+            let proxy: [String: Any]?
+            let idleTimeout: Double
+            let resourceTimeout: Double
+            let maxResponseBytes: Int
+
+            // [String: Any] cannot synthesize Equatable; the proxy is
+            // compared key-by-key through NSDictionary like the pre-Applied
+            // code did.
+            static func == (lhs: Applied, rhs: Applied) -> Bool {
+                (lhs.proxy as NSDictionary?) == (rhs.proxy as NSDictionary?)
+                    && lhs.idleTimeout == rhs.idleTimeout
+                    && lhs.resourceTimeout == rhs.resourceTimeout
+                    && lhs.maxResponseBytes == rhs.maxResponseBytes
+            }
         }
 
-        private static func makeSession(proxy: [String: Any]?) -> (URLSession, RedirectPolicy) {
+        private init() {
+            let parts = Self.makeSession(
+                proxy: nil, requestTimeoutSeconds: 0, maxResponseSizeMB: 50)
+            self.session = parts.session
+            self.redirectPolicy = parts.redirectPolicy
+            self.maxResponseBytes = parts.maxResponseBytes
+        }
+
+        /// Translates the General settings: the request timeout caps the
+        /// idle gap between bytes - 0 means no limit (approximated by a 24 h
+        /// bound, since URLSession's idle timeout has no true "off") and any
+        /// other value is used as written - and the session's
+        /// whole-exchange bound sits just above the widest idle cap so a
+        /// slow stream cannot outlive its own timeout by much.
+        private static func timeouts(requestTimeoutSeconds: Int) -> (idle: Double, resource: Double) {
+            let idle = requestTimeoutSeconds > 0 ? Double(requestTimeoutSeconds) : 86_400
+            let resource = idle <= 120 ? 120 : idle + 60
+            return (idle, resource)
+        }
+
+        /// Everything a rebuilt session installs on the box.
+        private struct SessionParts {
+            let session: URLSession
+            let redirectPolicy: RedirectPolicy
+            let maxResponseBytes: Int
+        }
+
+        private static func makeSession(
+            proxy: [String: Any]?,
+            requestTimeoutSeconds: Int,
+            maxResponseSizeMB: Int
+        ) -> SessionParts {
             let config = URLSessionConfiguration.default
-            config.timeoutIntervalForRequest = 30
-            config.timeoutIntervalForResource = 120
+            let timeouts = timeouts(requestTimeoutSeconds: requestTimeoutSeconds)
+            config.timeoutIntervalForRequest = timeouts.idle
+            config.timeoutIntervalForResource = timeouts.resource
             config.httpShouldSetCookies = false
             config.httpCookieAcceptPolicy = .never
             // An API client must never serve a cached response as a fresh send.
             config.requestCachePolicy = .reloadIgnoringLocalCacheData
             config.connectionProxyDictionary = proxy
             let policy = RedirectPolicy()
-            return (URLSession(configuration: config, delegate: policy, delegateQueue: nil), policy)
+            let maxResponseBytes =
+                maxResponseSizeMB > 0 ? maxResponseSizeMB * 1_048_576 : Int.max
+            return SessionParts(
+                session: URLSession(configuration: config, delegate: policy, delegateQueue: nil),
+                redirectPolicy: policy,
+                maxResponseBytes: maxResponseBytes)
         }
 
         /// The current session and its redirect-policy delegate, fetched
-        /// atomically. A send holds these for its whole duration; a proxy
+        /// atomically. A send holds these for its whole duration; a settings
         /// change only affects sessions built after it.
         func currentSession() -> (session: URLSession, redirectPolicy: RedirectPolicy) {
             lock.withLock { _ in
@@ -563,20 +619,35 @@ enum HTTPClient {
             }
         }
 
-        /// Rebuilds the URLSession when the persisted proxy settings differ
-        /// from what the current session uses. MainActor so it can read
-        /// `SettingsStore`; invoked from `AppStore+Sending.send`.
+        func currentMaxResponseBytes() -> Int {
+            lock.withLock { _ in maxResponseBytes }
+        }
+
+        /// Rebuilds the URLSession when the persisted proxy or General
+        /// settings differ from what the current session uses. MainActor so
+        /// it can read `SettingsStore`; invoked from `AppStore+Sending.send`.
         @MainActor
         func applyProxySettings() {
-            let dict = SettingsStore.shared.settings.proxy.connectionProxyDictionary
+            let proxy = SettingsStore.shared.settings.proxy.connectionProxyDictionary
+            let requestTimeoutSeconds = SettingsStore.shared.settings.general.requestTimeoutSeconds
+            let maxResponseSizeMB = SettingsStore.shared.settings.general.maxResponseSizeMB
+            let timeouts = Self.timeouts(requestTimeoutSeconds: requestTimeoutSeconds)
+            let maxResponseBytes = maxResponseSizeMB > 0 ? maxResponseSizeMB * 1_048_576 : Int.max
             lock.withLock { _ in
-                let current = dict as NSDictionary?
-                let previous = lastAppliedProxyDict as NSDictionary?
-                guard current != previous else { return }
-                let (session, policy) = Self.makeSession(proxy: dict)
-                self.session = session
-                self.redirectPolicy = policy
-                self.lastAppliedProxyDict = dict
+                let current = Applied(
+                    proxy: proxy,
+                    idleTimeout: timeouts.idle,
+                    resourceTimeout: timeouts.resource,
+                    maxResponseBytes: maxResponseBytes)
+                guard current != lastApplied else { return }
+                let parts = Self.makeSession(
+                    proxy: proxy,
+                    requestTimeoutSeconds: requestTimeoutSeconds,
+                    maxResponseSizeMB: maxResponseSizeMB)
+                self.session = parts.session
+                self.redirectPolicy = parts.redirectPolicy
+                self.maxResponseBytes = parts.maxResponseBytes
+                self.lastApplied = current
             }
         }
     }

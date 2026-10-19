@@ -231,6 +231,27 @@ extension AppStore {
         openTab(.workspaceVariables(id))
     }
 
+    /// Duplicate Tab (Postman desktop: find it in the tab's context menu):
+    /// opens a second view of the same request right next to the original.
+    /// The request and its unsaved edits are shared - the response area and
+    /// in-flight send belong to the tab, so the copy starts empty (Internet
+    /// Postman states: duplicating does not copy the request, and edits made
+    /// in one view reflect in the other). Page tabs (collection, folder,
+    /// workspace, environment) are a single fixed page per entity, so the
+    /// action stays request-only.
+    func duplicateTab(_ tab: OpenTab) {
+        guard case .request(let id, _) = tab else { return }
+        let copy = OpenTab.request(id, UUID())
+        if let idx = openTabs.firstIndex(of: tab) {
+            openTabs.insert(copy, at: idx + 1)
+        } else {
+            openTabs.append(copy)
+        }
+        resetResponseTabs.insert(copy)
+        selectedTab = copy
+        persistOpenTabs()
+    }
+
     /// Opens a collection tab directly on its Variables section (same entry
     /// points as above, for the collection scope).
     func openCollectionVariables(_ id: UUID) {
@@ -347,7 +368,7 @@ extension AppStore {
     /// Whether the tab has unsaved modifications of any kind it edits.
     func hasPendingEdits(for tab: OpenTab) -> Bool {
         switch tab {
-        case .request(let id):
+        case .request(let id, _):
             return hasPendingChanges(for: id)
         case .environment(let id):
             return hasPendingEnvironmentChanges(for: id)
@@ -365,7 +386,7 @@ extension AppStore {
     /// Short display name for close-confirmation titles.
     func tabDisplayName(_ tab: OpenTab) -> String {
         switch tab {
-        case .request(let id):
+        case .request(let id, _):
             unfiledRequests[id]?.name
                 ?? vault.collections.flatMap(\.requests).first { $0.id == id }?.name
                 ?? "Request"
@@ -384,8 +405,14 @@ extension AppStore {
 
     /// User-initiated tab close (× button, context menu, ⌘W): dirty tabs
     /// stage a confirmation instead of closing, clean tabs close at once.
-    /// Delete flows call closeTab directly and never confirm.
+    /// Delete flows call closeTab directly and never confirm. A request tab
+    /// with a Duplicate Tab sibling open bypasses the staging: its edits
+    /// stay with the sibling, so closing releases nothing to lose.
     func requestCloseTab(_ tab: OpenTab) {
+        if let id = tab.requestID, openTabs.contains(where: { $0.requestID == id && $0 != tab }) {
+            closeTab(tab)
+            return
+        }
         guard hasPendingEdits(for: tab) else {
             closeTab(tab)
             return
@@ -489,8 +516,12 @@ extension AppStore {
     func discardPendingEdits(for tab: OpenTab) {
         var dropped = false
         switch tab {
-        case .request(let id):
-            if pendingRequestSnapshots[id] != nil {
+        case .request(let id, _):
+            // Duplicate Tab keeps one shared request editable from two
+            // views: while a sibling tab of the same request is still open,
+            // closing this one discards nothing - the edits live on there.
+            let siblingTabOpen = openTabs.contains { $0.requestID == id && $0 != tab }
+            if !siblingTabOpen, pendingRequestSnapshots[id] != nil {
                 if let baseline = persistedRequestBaselines[id] {
                     for ci in vault.collections.indices {
                         if let ri = vault.collections[ci].requests.firstIndex(where: { $0.id == id }) {

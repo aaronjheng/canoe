@@ -147,7 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// opens the copy.
     @objc func duplicateSelectedRequest() {
         guard !isSettingsWindowKey else { return }
-        guard case .request(let id)? = appStore.selectedTab else { return }
+        guard case .request(let id, _)? = appStore.selectedTab else { return }
         appStore.duplicateRequest(id)
     }
 

@@ -49,14 +49,24 @@ enum CURLImporter {
         }
     }
 
+    /// Whether a pasted string reads as a cURL command, Postman-style: the
+    /// same acceptance `parse` uses - the (optionally shell-prompt-prefixed)
+    /// command must carry a `curl` or `curl.exe` token. Cheaper than a full
+    /// parse, so the URL bar can probe a paste before deciding to transform
+    /// it; `parse` still has the final say.
+    static func looksLikeCURLCommand(_ raw: String) -> Bool {
+        let tokens = tokenize(raw)
+        return tokens.contains("curl") || tokens.contains("curl.exe")
+    }
+
     /// Parses `raw` into a request. Throws `ImportError` when the text is
     /// empty, not a curl invocation, or carries no URL.
     static func parse(_ raw: String) throws -> Request {
         let tokens = tokenize(raw)
         // Tolerate a leading shell prompt ("$ curl ..."): after tokenizing
-        // the prompt is a separate token, so the first plain `curl` starts
-        // the command.
-        guard let curlIndex = tokens.firstIndex(of: "curl") else {
+        // the prompt is a separate token, so the first curl-like token
+        // (`curl` or `curl.exe`) starts the command.
+        guard let curlIndex = tokens.firstIndex(where: { $0 == "curl" || $0 == "curl.exe" }) else {
             if tokens.isEmpty { throw ImportError.empty }
             throw ImportError.notCURL
         }

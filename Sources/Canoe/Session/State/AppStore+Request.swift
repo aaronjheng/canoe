@@ -861,7 +861,7 @@ extension AppStore {
     /// sheet so the user picks the collection/folder - nothing is written
     /// until they do.
     func saveActiveTab() {
-        if case .request(let id) = selectedTab, unfiledRequests[id] != nil {
+        if case .request(let id, _) = selectedTab, unfiledRequests[id] != nil {
             stageRequestSaveSheet(for: id)
             return
         }
@@ -1006,7 +1006,7 @@ extension AppStore {
             edits.folderAuthorizations = pendingFolderAuthorizations
         case .activeTab:
             switch selectedTab {
-            case .request(let id):
+            case .request(let id, _):
                 if unfiledRequests[id] == nil {
                     edits.requests = pendingRequestSnapshots[id].map { [id: $0] } ?? [:]
                 }

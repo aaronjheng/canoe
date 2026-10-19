@@ -924,6 +924,12 @@ private struct TabPill: View {
         .animation(AppMotion.quick, value: isSelected)
         .animation(AppMotion.quick, value: isHovered)
         .contextMenu {
+            // Postman desktop: the tab strip's context menu offers Duplicate
+            // Tab. Available to request tabs only - page tabs are one fixed
+            // page per entity, so there is nothing a second view would hold.
+            if tab.requestID != nil {
+                Button("Duplicate Tab") { store.duplicateTab(tab) }
+            }
             Button("Close Tab") { store.requestCloseTab(tab) }
             Button("Close Other Tabs") { store.requestCloseOtherTabs(except: tab) }
             Button("Close Tabs to the Right") { store.requestCloseTabsToTheRight(of: tab) }
@@ -932,7 +938,7 @@ private struct TabPill: View {
 
     private var tabHelp: String {
         switch tab {
-        case .request(let id):
+        case .request(let id, _):
             if let request = store.request(withID: id) {
                 request.urlString.isEmpty ? request.name : "\(request.name)\n\(request.urlString)"
             } else {
@@ -1055,7 +1061,7 @@ private struct TabPill: View {
     @ViewBuilder
     private var tabTitle: some View {
         switch tab {
-        case .request(let id):
+        case .request(let id, _):
             if let request = store.request(withID: id) {
                 Text(request.name)
                     .font(AppFont.small)
@@ -1126,7 +1132,7 @@ private struct PreviewTitleStyle: ViewModifier {
 @MainActor
 private func isTabDirty(_ tab: OpenTab, store: AppStore) -> Bool {
     switch tab {
-    case .request(let id):
+    case .request(let id, _):
         return store.hasPendingChanges(for: id)
     case .environment(let id):
         return store.hasPendingEnvironmentChanges(for: id)
@@ -1193,7 +1199,7 @@ private struct TabItemIcon: View {
 
     var body: some View {
         switch tab {
-        case .request(let id):
+        case .request(let id, _):
             if let request = store.request(withID: id) {
                 MethodTag(method: request.httpMethod)
             } else {

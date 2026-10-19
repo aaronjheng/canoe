@@ -132,6 +132,10 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
     /// dismisses); accepting replaces the whole field text. See
     /// `URLSuggestionController`.
     var urlSuggestions: [URLSuggestion] = []
+    /// URL-bar only: a paste hook. Given the pasted string, returning true
+    /// consumes the paste (the handler applied its own result and the field
+    /// must insert nothing); false falls through to the default paste.
+    var onPasteRawText: ((String) -> Bool)?
 
     /// Cap of the auto-grow editor height before it scrolls internally.
     /// Computed: static stored properties are unsupported on generic types.
@@ -169,7 +173,8 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         syntax: BodySyntax = .plain,
         onCaretChange: ((Int) -> Void)? = nil,
         incomingCaretLocation: Int? = nil,
-        urlSuggestions: [URLSuggestion] = []
+        urlSuggestions: [URLSuggestion] = [],
+        onPasteRawText: ((String) -> Bool)? = nil
     ) {
         self._text = text
         self.variables = variables
@@ -193,6 +198,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         self.onCaretChange = onCaretChange
         self.incomingCaretLocation = incomingCaretLocation
         self.urlSuggestions = urlSuggestions
+        self.onPasteRawText = onPasteRawText
     }
 
     var body: some View {
@@ -235,7 +241,8 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
                         DispatchQueue.main.async { urlContentHeight = newHeight }
                     },
                     onHoverChanged: onHoverChanged,
-                    urlSuggestions: urlSuggestions
+                    urlSuggestions: urlSuggestions,
+                    onPasteRawText: onPasteRawText
                 )
                 .frame(
                     height: focus?.wrappedValue == focusValue
@@ -664,6 +671,9 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
 private final class FocusObservingTextView: NSTextView {
     var onDidBecomeFirstResponder: (() -> Void)?
     var onDidResignFirstResponder: (() -> Void)?
+    /// Optional paste hook (see `WrappingURLField.onPasteRawText`): true
+    /// consumes the paste without the default string insertion.
+    var onPasteRawText: ((String) -> Bool)?
 
     override func becomeFirstResponder() -> Bool {
         let ok = super.becomeFirstResponder()
@@ -675,6 +685,12 @@ private final class FocusObservingTextView: NSTextView {
         let ok = super.resignFirstResponder()
         if ok { onDidResignFirstResponder?() }
         return ok
+    }
+
+    override func paste(_ sender: Any?) {
+        let pasted = NSPasteboard.general.string(forType: .string)
+        if let onPasteRawText, let pasted, onPasteRawText(pasted) { return }
+        super.paste(sender)
     }
 }
 
@@ -707,6 +723,10 @@ private struct WrappingURLField<FocusValue: Hashable>: NSViewRepresentable {
     let onHoverChanged: ((Bool) -> Void)?
     /// Recent-URL history for the focus-opened suggestion panel.
     let urlSuggestions: [URLSuggestion]
+    /// Paste hook (see `VariableHighlightEditor.onPasteRawText`); nil keeps
+    /// every paste as the default string insertion. Read through the
+    /// coordinator's `parent` so the closure is never stale.
+    let onPasteRawText: ((String) -> Bool)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -726,6 +746,12 @@ private struct WrappingURLField<FocusValue: Hashable>: NSViewRepresentable {
             }
         }
         textView.onDidResignFirstResponder = { [weak coordinator] in coordinator?.didResignFocus() }
+        // Read through the coordinator, not this make-time copy of self: the
+        // representable's value is rebuilt on every SwiftUI update, so a
+        // mount-time capture would keep the first body's closure forever.
+        textView.onPasteRawText = { [weak coordinator] pasted in
+            coordinator?.parent.onPasteRawText?(pasted) ?? false
+        }
         textView.focusRingType = .none
         textView.isRichText = false
         textView.importsGraphics = false

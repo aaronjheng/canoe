@@ -241,8 +241,10 @@ extension AppStore {
             dropped = true
         }
         responseHistoryByRequest[request.id] = history
-        // A fresh tab that started empty now has a response to show.
-        resetResponseTabs.remove(.request(request.id))
+        // A fresh tab that started empty now has a response to show - any
+        // view of the request (Duplicate Tab views share the history), so
+        // every one of its markers clears, not just the primary form.
+        resetResponseTabs = resetResponseTabs.filter { $0.requestID != request.id }
         // An index picked against the longer array no longer names the entry
         // it was chosen for; fall back to the latest instead of quietly
         // showing a different response.
