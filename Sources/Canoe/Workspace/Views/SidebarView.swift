@@ -396,6 +396,25 @@ private struct HistoryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // The filter sits directly under the panel title, exactly where
+            // the Items tab's filter does (same boxed presentation and
+            // spacing). The count/Clear row reads as metadata between the
+            // filter and the list.
+            if !store.history.isEmpty {
+                // Boxed, exactly like the Items tab's filter (the shared
+                // FilterField's boxed presentation): four-sided hairline at
+                // rest, hover lift to the brighter border + fill, accent
+                // focus ring. No caller horizontal padding - the boxed
+                // inset supplies the same 8pt gutter as Items - and no
+                // divider below: the box is the section boundary there.
+                FilterField(
+                    text: $filter,
+                    placeholder: "Filter by name or URL",
+                    isBoxed: true
+                )
+                .padding(.top, AppSpacing.xSmall)
+                .padding(.bottom, AppSpacing.small)
+            }
             HStack {
                 Text(headerTitle)
                     .font(AppFont.columnHeader)
@@ -421,16 +440,8 @@ private struct HistoryView: View {
             }
             .padding(.horizontal, AppSpacing.medium)
             .padding(.vertical, AppSpacing.xSmall)
-            if !store.history.isEmpty {
-                FilterField(
-                    text: $filter,
-                    placeholder: "Filter by name or URL"
-                )
-                .padding(.horizontal, AppSpacing.medium)
-                .padding(.bottom, AppSpacing.xSmall)
-            }
-            Divider()
             if store.history.isEmpty {
+                Divider()
                 ContentUnavailableView(
                     "No History",
                     systemImage: "clock",
