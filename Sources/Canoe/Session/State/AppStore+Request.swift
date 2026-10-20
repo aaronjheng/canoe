@@ -397,6 +397,10 @@ extension AppStore {
         history = await vault.loadHistory(limit: historyLimit)
         responseHistoryByRequest = await vault.loadResponseHistory(
             limit: Self.responseHistoryLimit)
+        // And the console log, also machine-local: the network activity of
+        // previous sessions reopens with the panel (the entries load here;
+        // the panel stays hidden until shown).
+        consoleEntries = await vault.loadConsole(limit: Self.consoleEntryLimit)
         // The one-time auth migration writes vault.json: it must not run on
         // a failed load, where config is the default and persisting it would
         // clobber the user's real vault.json (active workspace/environment).
@@ -833,6 +837,8 @@ extension AppStore {
         historySaveTask = nil
         responseHistorySaveTask?.cancel()
         responseHistorySaveTask = nil
+        consoleSaveTask?.cancel()
+        consoleSaveTask = nil
         let save = saveAllTask
         Task { [weak self] in
             await save?.value
@@ -843,6 +849,7 @@ extension AppStore {
             await self.structuralWriteTask?.value
             await self.vault.saveHistory(self.history)
             await self.vault.saveResponseHistory(self.responseHistoryByRequest)
+            await self.vault.saveConsole(self.consoleEntries)
             // A failed load leaves the pending maps holding only PART of the
             // drafts (the filed sections were never applied): writing the
             // mirror now would erase the unapplied sections for good. The

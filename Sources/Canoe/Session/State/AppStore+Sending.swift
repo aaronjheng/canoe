@@ -391,11 +391,24 @@ extension AppStore {
             retained -= consoleEntries[0].retainedBodyBytes
             consoleEntries.removeFirst()
         }
+        scheduleConsolePersistence()
     }
 
     /// Clears the console log (the Clear button in the Console window).
     func clearConsole() {
         consoleEntries.removeAll()
+        scheduleConsolePersistence()
+    }
+
+    /// Mirrors the console log to console.json (debounced like the history
+    /// mirror) so a burst of sends rewrites the file once.
+    func scheduleConsolePersistence() {
+        consoleSaveTask?.cancel()
+        consoleSaveTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled, let self else { return }
+            await self.vault.saveConsole(self.consoleEntries)
+        }
     }
 
     /// Removes a single entry (the history row's hover delete) and mirrors

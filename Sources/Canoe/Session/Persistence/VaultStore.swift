@@ -104,6 +104,13 @@ final class VaultStore {
     private var responseHistoryFileURL: URL? {
         localRoot()?.appendingPathComponent("response-history.json")
     }
+    /// Console (network log) entries, mirrored so a session's sends survive
+    /// relaunch. Machine-local like drafts, history, and response history:
+    /// the log records per-device sends, and its whole-file rewrites would
+    /// fight across synced devices.
+    private var consoleFileURL: URL? {
+        localRoot()?.appendingPathComponent("console.json")
+    }
 
     // MARK: - Derived
 
@@ -694,6 +701,42 @@ final class VaultStore {
             // a failure here must not raise the same banner a lost
             // collection edit would.
             AppLogger.error("Failed to save response history: \(error)", category: "Vault")
+        }
+    }
+
+    // MARK: - Console persistence
+
+    /// Reads the console log persisted by a previous session, oldest first
+    /// as saved, trimmed to the in-memory cap at the NEWEST end. Per-element
+    /// tolerant: one entry a newer build wrote with an unknown field is
+    /// skipped, not the whole file.
+    func loadConsole(limit: Int) async -> [ConsoleEntry] {
+        guard let consoleFileURL else { return [] }
+        guard let data = try? await FileStore.readDataIfExists(at: consoleFileURL), !data.isEmpty else {
+            return []
+        }
+        do {
+            let wrapped = try JSONDecoder.iso.decode([Lossy<ConsoleEntry>].self, from: data)
+            return Array(wrapped.compactMap(\.value).suffix(limit))
+        } catch {
+            // A convenience like history: machine-local, rebuilt by
+            // sending, so log-only - no banner for a lost console log.
+            AppLogger.error("Failed to load console log: \(error)", category: "Vault")
+            return []
+        }
+    }
+
+    /// Mirrors the console log to disk (atomic; the caller decides when -
+    /// debounced on each recorded entry and on Clear, immediate on quit).
+    func saveConsole(_ entries: [ConsoleEntry]) async {
+        guard let consoleFileURL else {
+            noteMissingDirectory("console", id: "console.json", subject: "console log")
+            return
+        }
+        do {
+            try await FileStore.write(entries, to: consoleFileURL)
+        } catch {
+            AppLogger.error("Failed to save console log: \(error)", category: "Vault")
         }
     }
 

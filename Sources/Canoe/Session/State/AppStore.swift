@@ -249,7 +249,9 @@ final class AppStore {
     /// unbounded memory and disk. Exceeding it evicts the globally oldest
     /// entry, per request.
     static let responseHistoryGlobalByteLimit = 32 * 1024 * 1024
-    /// Console (network log) entries, newest last; session-scoped and capped.
+    /// Console (network log) entries, newest last. Capped by count and by
+    /// retained body bytes, and mirrored to the machine-local `console.json`
+    /// so the log survives relaunches.
     var consoleEntries: [ConsoleEntry] = []
     static let consoleEntryLimit = 200
     /// Total bytes of request+response bodies the console keeps across all
@@ -270,6 +272,10 @@ final class AppStore {
     /// every recorded (or purged) entry so a burst of sends rewrites
     /// response-history.json once.
     @ObservationIgnored var responseHistorySaveTask: Task<Void, Never>?
+    /// Debounced writer for the console-log mirror; rescheduled on every
+    /// recorded entry (and on Clear) so a burst of sends rewrites
+    /// console.json once.
+    @ObservationIgnored var consoleSaveTask: Task<Void, Never>?
     /// In-flight Save (⌘S) task, if any. Tracked so the quit path can
     /// wait for the vault writes to land before the process exits: the
     /// pending snapshots are cleared up front, so quitting mid-save would

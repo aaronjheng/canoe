@@ -54,7 +54,7 @@ struct ConsoleView: View {
             Button("Clear Console", role: .destructive) { store.clearConsole() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("All \(store.consoleEntries.count) entries from this session will be permanently deleted.")
+            Text("All \(store.consoleEntries.count) entries will be permanently deleted.")
         }
     }
 

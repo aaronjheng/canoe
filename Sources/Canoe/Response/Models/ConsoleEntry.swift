@@ -3,8 +3,9 @@ import Foundation
 /// One network activity log entry (Postman's Console): the request as it was
 /// actually sent (variables resolved, query params merged, helper
 /// Authorization applied) plus the response or error it produced.
-/// Session-scoped - entries live in memory only and are never persisted.
-struct ConsoleEntry: Identifiable, Sendable {
+/// Machine-local persistence: mirrored to `console.json` (like
+/// `history.json`, never synced) so the log survives relaunches.
+struct ConsoleEntry: Identifiable, Sendable, Codable {
     let id = UUID()
     let date: Date
     /// The request's display name in the UI.
@@ -345,6 +346,71 @@ struct ConsoleEntry: Identifiable, Sendable {
     }
 
     private static let minimumSecretLength = 4
+
+    /// `id` is deliberately not coded: like HistoryEntry's, it is fresh
+    /// per-session identity for SwiftUI (nothing keys off it across
+    /// relaunches), and excluding it keeps Codable synthesis from warning
+    /// about the initial value.
+    private enum CodingKeys: String, CodingKey {
+        case date, requestName, method, url, requestHeaders
+        case requestBody, requestBodyTruncated, statusCode
+        case responseHeaders, responseBody, responseBodyTruncated
+        case duration, error, httpVersion
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // Tolerant on purpose: console.json is machine-local and outlives
+        // builds - an entry with an unknown future field (or an older
+        // layout) must cost one row, not the whole log file (the next save
+        // would otherwise rewrite console.json empty).
+        date = try container.decodeIfPresent(Date.self, forKey: .date) ?? Date()
+        requestName = try container.decodeIfPresent(String.self, forKey: .requestName) ?? ""
+        method = try container.decodeIfPresent(String.self, forKey: .method) ?? "GET"
+        url = try container.decodeIfPresent(String.self, forKey: .url) ?? ""
+        requestHeaders = try container.decodeIfPresent([HTTPHeader].self, forKey: .requestHeaders) ?? []
+        requestBody = try container.decodeIfPresent(Data.self, forKey: .requestBody)
+        requestBodyTruncated = try container.decodeIfPresent(Bool.self, forKey: .requestBodyTruncated) ?? false
+        statusCode = try container.decodeIfPresent(Int.self, forKey: .statusCode)
+        responseHeaders = try container.decodeIfPresent([HTTPHeader].self, forKey: .responseHeaders) ?? []
+        responseBody = try container.decodeIfPresent(Data.self, forKey: .responseBody)
+        responseBodyTruncated = try container.decodeIfPresent(Bool.self, forKey: .responseBodyTruncated) ?? false
+        duration = try container.decodeIfPresent(TimeInterval.self, forKey: .duration)
+        error = try container.decodeIfPresent(String.self, forKey: .error)
+        httpVersion = try container.decodeIfPresent(String.self, forKey: .httpVersion)
+    }
+
+    init(
+        date: Date,
+        requestName: String,
+        method: String,
+        url: String,
+        requestHeaders: [HTTPHeader],
+        requestBody: Data?,
+        requestBodyTruncated: Bool,
+        statusCode: Int?,
+        responseHeaders: [HTTPHeader],
+        responseBody: Data?,
+        responseBodyTruncated: Bool,
+        duration: TimeInterval?,
+        error: String?,
+        httpVersion: String?
+    ) {
+        self.date = date
+        self.requestName = requestName
+        self.method = method
+        self.url = url
+        self.requestHeaders = requestHeaders
+        self.requestBody = requestBody
+        self.requestBodyTruncated = requestBodyTruncated
+        self.statusCode = statusCode
+        self.responseHeaders = responseHeaders
+        self.responseBody = responseBody
+        self.responseBodyTruncated = responseBodyTruncated
+        self.duration = duration
+        self.error = error
+        self.httpVersion = httpVersion
+    }
 }
 
 extension Data {
