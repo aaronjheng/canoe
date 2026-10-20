@@ -56,6 +56,11 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
     /// Completion candidates with scope metadata; nil derives names from
     /// `variables`.
     var suggestions: [VariableSuggestion]?
+    /// Dictionary-style candidates (header keys & co), shown as plain names
+    /// when the caret is in a word outside any `{{ }}` placeholder. Single-
+    /// line editors only - the multi-line and URL editors never receive it.
+    /// nil keeps the editor completing variables alone.
+    var wordSuggestions: [VariableSuggestion]?
     /// Single-line editors run on a no-wrap, horizontally-scrolling AppKit
     /// text field (URL-bar behavior).
     var isSingleLine: Bool = true
@@ -155,6 +160,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         text: Binding<String>,
         variables: [String: String] = [:],
         suggestions: [VariableSuggestion]? = nil,
+        wordSuggestions: [VariableSuggestion]? = nil,
         isSingleLine: Bool = true,
         singleLineMinHeight: CGFloat = 24,
         wrapsWhenFocused: Bool = false,
@@ -179,6 +185,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         self._text = text
         self.variables = variables
         self.suggestions = suggestions
+        self.wordSuggestions = wordSuggestions
         self.isSingleLine = isSingleLine
         self.singleLineMinHeight = singleLineMinHeight
         self.wrapsWhenFocused = wrapsWhenFocused
@@ -208,6 +215,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
                     text: $text,
                     variables: variables,
                     suggestions: effectiveSuggestions,
+                    wordSuggestions: wordSuggestions,
                     font: font,
                     placeholder: placeholder,
                     focus: focus,
@@ -429,6 +437,7 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
     @Binding var text: String
     let variables: [String: String]
     let suggestions: [VariableSuggestion]
+    let wordSuggestions: [VariableSuggestion]?
     let font: VariableEditorFont
     let placeholder: String?
     let focus: Binding<FocusValue?>?
@@ -468,6 +477,7 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
         field.onDidResignFirstResponder = { [weak coordinator] in coordinator?.fieldDidLoseFocus() }
         field.onHoverChanged = onHoverChanged
         coordinator.completion.setCandidates(suggestions)
+        coordinator.completion.setWordCandidates(wordSuggestions)
         return field
     }
 
@@ -475,6 +485,7 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
         let coordinator = context.coordinator
         coordinator.parent = self
         coordinator.completion.setCandidates(suggestions)
+        coordinator.completion.setWordCandidates(wordSuggestions)
         (field as? FocusObservingTextField)?.onHoverChanged = onHoverChanged
 
         if field.stringValue != text {

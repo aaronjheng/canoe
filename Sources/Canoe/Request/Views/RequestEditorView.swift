@@ -1274,6 +1274,7 @@ struct RequestEditorView: View {
                 onToggleReadOnly: { toggleGeneratedHeader($0) },
                 variables: resolvedVariables,
                 suggestions: requestSuggestions,
+                keyCompletionSuggestions: HTTPHeaderNameSuggestions.all,
                 keyPlaceholder: "Key",
                 valuePlaceholder: "Value",
                 // Request tables skip the header wash.

@@ -92,7 +92,6 @@ enum VariableCompletionEngine {
             NSRange(location: fragmentRange.location, length: fragmentRange.length + (trailingCloseRange == nil ? 0 : 2))
         }
     }
-
     /// Fragments longer than this are treated as pasted blobs, not names.
     private static let maxFragmentLength = 100
 
@@ -130,5 +129,31 @@ enum VariableCompletionEngine {
         let prefix = candidates.filter { $0.name.lowercased().hasPrefix(lowered) }
         let contains = candidates.filter { !$0.name.lowercased().hasPrefix(lowered) && $0.name.lowercased().contains(lowered) }
         return prefix + contains
+    }
+
+    /// The bare word ending at the caret (letters, digits, `-`, `_`), as a
+    /// completion context. Drives the dictionary-style completion of fields
+    /// whose values are standard names rather than variables - the request
+    /// headers' key field (Postman suggests `Content-Type` & co there). A
+    /// word fragment is required: unlike the `{{` trigger, an empty field
+    /// should not open a popup before the user has typed anything.
+    static func wordContext(atCaret caret: Int, in text: String) -> Context? {
+        let ns = text as NSString
+        guard caret >= 0, caret <= ns.length, caret > 0 else { return nil }
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+        var start = caret
+        while start > 0 {
+            let character = ns.substring(with: NSRange(location: start - 1, length: 1))
+            guard !character.isEmpty, (character as NSString).rangeOfCharacter(from: allowed).location != NSNotFound
+            else { break }
+            start -= 1
+        }
+        let length = caret - start
+        guard length > 0, length <= maxFragmentLength else { return nil }
+        return Context(
+            fragmentRange: NSRange(location: start, length: length),
+            fragment: ns.substring(with: NSRange(location: start, length: length)),
+            trailingCloseRange: nil
+        )
     }
 }

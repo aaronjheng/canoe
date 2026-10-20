@@ -446,6 +446,17 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>C0A5E1000000000000000D60</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>HTTPHeaderNameSuggestions.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>C0A5E1000000000000000D40</key>
 		<dict>
 			<key>isa</key>
@@ -1534,6 +1545,13 @@
 			<key>fileRef</key>
 			<string>C0A5E1000000000000000D30</string>
 		</dict>
+		<key>C0A5E2000000000000000D60</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>C0A5E1000000000000000D60</string>
+		</dict>
 		<key>C0A5E2000000000000000D40</key>
 		<dict>
 			<key>isa</key>
@@ -2330,6 +2348,7 @@
 			<array>
 				<string>206E63282E786D9E22FA9BDD</string>
 				<string>C0A5E1000000000000000D30</string>
+				<string>C0A5E1000000000000000D60</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -2386,6 +2405,7 @@
 				<string>C0A5E2000000000000000D20</string>
 				<string>C0A5E2000000000000000D30</string>
 				<string>C0A5E2000000000000000D40</string>
+				<string>C0A5E2000000000000000D60</string>
 				<string>F1BDCFDFDAA772F69D6EC2DE</string>
 				<string>F8DCA2A85AB92C26CA1D4B16</string>
 				<string>CBDEA718EADA8A9CA7A50165</string>

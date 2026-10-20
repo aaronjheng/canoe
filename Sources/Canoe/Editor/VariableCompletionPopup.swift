@@ -14,6 +14,9 @@ struct VariableSuggestionList: View {
     @Binding var selectedIndex: Int
     let onHover: (Bool, Int) -> Void
     let onPick: (Int) -> Void
+    /// Plain-name mode for the dictionary-style completions (header keys):
+    /// rows show the bare name instead of the `{{name}}` placeholder shape.
+    var showsBraces: Bool = true
 
     static let rowHeight: CGFloat = 24
     static let footerHeight: CGFloat = 20
@@ -88,7 +91,7 @@ struct VariableSuggestionList: View {
 
     private func row(_ index: Int, _ suggestion: VariableSuggestion) -> some View {
         HStack(spacing: AppSpacing.xSmall) {
-            Text("{{\(suggestion.name)}}")
+            Text(showsBraces ? "{{\(suggestion.name)}}" : suggestion.name)
                 .font(AppFont.monoSubheadline)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -150,9 +153,16 @@ final class VariableCompletionController: NSObject {
         let context: VariableCompletionEngine.Context
         let matches: [VariableSuggestion]
         var selectedIndex: Int
+        /// Dictionary-style completion (header keys): the name replaces the
+        /// bare word the caret is in, and the rows show it without braces.
+        let isWordMode: Bool
     }
 
     private var candidates: [VariableSuggestion] = []
+    /// Dictionary-style completion candidates (header keys & co): when set,
+    /// a caret in a bare word the `{{` parser does not claim opens a
+    /// plain-name popup over them. nil keeps the editor variable-only.
+    private var wordCandidates: [VariableSuggestion]?
     private var session: Session?
     private weak var textView: NSTextView?
     private var panel: NSPanel?
@@ -173,6 +183,16 @@ final class VariableCompletionController: NSObject {
     /// and re-evaluates an open popup against the new candidates.
     func setCandidates(_ candidates: [VariableSuggestion]) {
         self.candidates = candidates
+        if session != nil, let textView {
+            updateSession(for: textView, allowNewSession: false)
+        }
+    }
+
+    /// Replaces the dictionary-style universe (nil disables the mode) and
+    /// re-evaluates an open popup - the re-render call sites follow
+    /// `setCandidates` for the same reasons.
+    func setWordCandidates(_ candidates: [VariableSuggestion]?) {
+        wordCandidates = candidates
         if session != nil, let textView {
             updateSession(for: textView, allowNewSession: false)
         }
@@ -221,15 +241,36 @@ final class VariableCompletionController: NSObject {
         guard
             textView.isEditable,
             textView.selectedRange().length == 0,
-            !textView.hasMarkedText(),
-            let context = VariableCompletionEngine.context(
-                atCaret: textView.selectedRange().location,
-                in: textView.string
-            )
+            !textView.hasMarkedText()
         else {
             hide()
             return
         }
+        // The `{{` placeholder fragment wins when the caret sits inside one;
+        // everything else falls to the dictionary-style completion (header
+        // keys), which claims plain words only.
+        if let context = VariableCompletionEngine.context(
+            atCaret: textView.selectedRange().location,
+            in: textView.string
+        ) {
+            resolveSession(context: context, isWordMode: false, candidates: candidates)
+        } else if let context = wordContext(for: textView), wordCandidates != nil {
+            resolveSession(context: context, isWordMode: true, candidates: wordCandidates ?? [])
+        } else {
+            hide()
+        }
+    }
+
+    /// The dictionary-style fragment at the caret, if any.
+    private func wordContext(for textView: NSTextView) -> VariableCompletionEngine.Context? {
+        VariableCompletionEngine.wordContext(atCaret: textView.selectedRange().location, in: textView.string)
+    }
+
+    /// Filters the candidates against the parsed fragment and either shows
+    /// or updates the popup. Shared by both trigger modes.
+    private func resolveSession(
+        context: VariableCompletionEngine.Context, isWordMode: Bool, candidates: [VariableSuggestion]
+    ) {
         let matches = VariableCompletionEngine.suggestions(matching: context, from: candidates)
         guard !matches.isEmpty else {
             hide()
@@ -238,7 +279,9 @@ final class VariableCompletionController: NSObject {
         let sameMatches = session?.matches == matches
         let selectedIndex = sameMatches ? min(session?.selectedIndex ?? 0, matches.count - 1) : 0
         let wasHidden = session == nil
-        session = Session(context: context, matches: matches, selectedIndex: selectedIndex)
+        session = Session(
+            context: context, matches: matches, selectedIndex: selectedIndex,
+            isWordMode: isWordMode)
         if wasHidden || !sameMatches {
             refreshContent()
         } else {
@@ -257,8 +300,8 @@ final class VariableCompletionController: NSObject {
     }
 
     /// Inserts the selected (or clicked) suggestion: `{{fragment` becomes
-    /// `{{name}}`, swallowing a trailing `}}` when the caret sat inside a
-    /// closed placeholder.
+    /// `{{name}}` (swallowing a trailing `}}` when the caret sat inside a
+    /// closed placeholder); word mode replaces the bare word with the name.
     @discardableResult
     func accept(at index: Int? = nil) -> Bool {
         guard let session, let textView, session.matches.indices.contains(index ?? session.selectedIndex) else {
@@ -269,8 +312,11 @@ final class VariableCompletionController: NSObject {
         let replacementRange = session.context.replacementRange
         hide()
         // The standard editing path: registers undo, fires didChangeText,
-        // and leaves the caret right after the inserted `}}`.
-        textView.insertText("\(suggestion.name)}}", replacementRange: replacementRange)
+        // and leaves the caret right after the inserted text.
+        textView.insertText(
+            session.isWordMode ? suggestion.name : "\(suggestion.name)}}",
+            replacementRange: replacementRange
+        )
         return true
     }
 
@@ -290,7 +336,8 @@ final class VariableCompletionController: NSObject {
             },
             onPick: { [weak self] index in
                 self?.accept(at: index)
-            }
+            },
+            showsBraces: !session.isWordMode
         )
         positionPanel()
     }

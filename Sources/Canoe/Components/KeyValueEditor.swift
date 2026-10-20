@@ -85,6 +85,10 @@ struct KeyValueEditor<T: KVItem>: View {
     /// Completion candidates for `{{` auto-completion; nil derives names
     /// from `variables`.
     var suggestions: [VariableSuggestion]?
+    /// Dictionary-style candidates (header names & co) offered while typing
+    /// a key WITHOUT `{{`: only the key cells run it, value cells keep the
+    /// variable-only completion. nil keeps every cell variable-only.
+    var keyCompletionSuggestions: [VariableSuggestion]?
     var keyPlaceholder: String = "Key"
     var valuePlaceholder: String = "Value"
     /// Header labels above the two text columns (the variables tables say
@@ -444,6 +448,7 @@ struct KeyValueEditor<T: KVItem>: View {
                     secretColumnWidth: secretColumnWidth,
                     variables: variables,
                     suggestions: rowSuggestions,
+                    wordSuggestions: keyCompletionSuggestions,
                     keyPlaceholder: keyPlaceholder,
                     valuePlaceholder: valuePlaceholder,
                     focus: $focusedCell,
@@ -484,6 +489,7 @@ struct KeyValueEditor<T: KVItem>: View {
                     secretColumnWidth: secretColumnWidth,
                     variables: variables,
                     suggestions: rowSuggestions,
+                    wordSuggestions: keyCompletionSuggestions,
                     keyPlaceholder: keyPlaceholder,
                     valuePlaceholder: valuePlaceholder,
                     focus: $focusedCell,
@@ -809,6 +815,9 @@ private struct KVRow: View {
     let secretColumnWidth: CGFloat
     let variables: [String: String]
     let suggestions: [VariableSuggestion]
+    /// Dictionary-style candidates (header names) for the key cell only;
+    /// value cells never receive it. nil keeps the key variable-only.
+    let wordSuggestions: [VariableSuggestion]?
     let keyPlaceholder: String
     let valuePlaceholder: String
     let focus: Binding<CellFocus?>
@@ -957,6 +966,7 @@ private struct KVRow: View {
                         text: $key,
                         variables: variables,
                         suggestions: suggestions,
+                        wordSuggestions: wordSuggestions,
                         font: .systemSubheadline,
                         placeholder: keyPlaceholder,
                         focus: focus,
