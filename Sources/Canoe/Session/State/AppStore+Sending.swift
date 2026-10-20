@@ -98,7 +98,12 @@ extension AppStore {
             // Full scope chain (workspace > collection > environment),
             // matching what the "Variables in Request" inspector displays.
             let variables = variablesForRequest(request)
-            let authorization = authorizationForRequest(request)
+            // A stale OAuth 2.0 token is refreshed (or re-fetched, for the
+            // silent grants) before the request goes out: the sent request
+            // carries whatever the renewal produced, and the owner's token
+            // entry lands back in the store either way.
+            var authorization = await authorizationForSend(
+                of: request, variables: variables)
             // Secret variable values, redacted from everything the console
             // records below (the resolved URL, both bodies, the error text).
             let secretValues = secretVariableValues(for: request, variables: variables)

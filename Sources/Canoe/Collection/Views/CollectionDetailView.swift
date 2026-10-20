@@ -66,6 +66,14 @@ struct CollectionDetailView: View {
                 else { return }
                 draft.authorization = newAuthorization
             }
+            // A send-path OAuth token renewal (AppStore+OAuth) patches only
+            // the managed token fields, also while this editor holds other
+            // pending edits. Adopt exactly those fields - setting them
+            // re-pushes through updateCollectionAuthorization, which sees
+            // the store is already there and no-ops.
+            .onChange(of: store.oauthTokenRevision(forOwner: draft.id)) { _, _ in
+                adoptRenewedOAuthTokens()
+            }
             // The header reads the vault's name, not the draft's: a sidebar
             // rename (or an external reload) lands while this page is open,
             // and the title used to keep showing the pre-rename name until
@@ -90,6 +98,20 @@ struct CollectionDetailView: View {
 
     private var liveCollectionName: String? {
         store.vault.collections.first(where: { $0.id == draft.id })?.name
+    }
+
+    /// Pulls a send-path OAuth token renewal (AppStore+OAuth) into the
+    /// Authorization draft: only the managed token fields, so it applies
+    /// also while other Authorization edits are pending here (the whole-
+    /// value adoption above is guarded off for those on purpose).
+    private func adoptRenewedOAuthTokens() {
+        guard
+            let fresh = store.liveOAuthTokenFields(forOwner: draft.id),
+            fresh.tokens != draft.authorization.oauthTokens
+                || fresh.selectedID != draft.authorization.oauthSelectedTokenID
+        else { return }
+        draft.authorization.oauthTokens = fresh.tokens
+        draft.authorization.oauthSelectedTokenID = fresh.selectedID
     }
 
     // MARK: - Section tabs

@@ -213,6 +213,13 @@ final class AppStore {
     /// collection's file, so both the save and the mirror resolve the
     /// collection through the folder id.
     var pendingFolderAuthorizations: [UUID: Authorization] = [:]
+    /// One bump per send-path OAuth token renewal (see AppStore+OAuth),
+    /// keyed by the owning entity's id. The request/collection/folder
+    /// editors watch it and adopt the fresh token fields into their local
+    /// drafts - also when they hold other pending edits, which the
+    /// whole-value adoption observers are deliberately guarded off for. A
+    /// stale local push would otherwise revert a rotated refresh token.
+    var oauthTokenRevisions: [UUID: UUID] = [:]
     /// Last persisted content per request id. The dirty check compares
     /// against this (NOT the in-memory copy, which updateRequest has already
     /// mutated - that comparison always matched, so edits never reached disk).

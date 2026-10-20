@@ -2104,6 +2104,24 @@
 			<key>fileRef</key>
 			<string>3E60A11D752CC0777B78944C</string>
 		</dict>
+		<key>C3D4E5F6070808090A1B2C3D</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>BE4F8D01A2C3D4E5F6070808</string>
+		</dict>
+		<key>BE4F8D01A2C3D4E5F6070808</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>AppStore+OAuth.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>187C769C0A5EBCA940E1BD36</key>
 		<dict>
 			<key>isa</key>
@@ -2280,6 +2298,7 @@
 				<string>599312D9DA7C04F3E0A2F9A8</string>
 				<string>DA08415F1D0ACB73D460CFA2</string>
 				<string>3E60A11D752CC0777B78944C</string>
+				<string>BE4F8D01A2C3D4E5F6070808</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -2440,6 +2459,7 @@
 				<string>A70F1002A1B1000000000003</string>
 				<string>A70F1002A1B1000000000011</string>
 				<string>A70F1002A1B1000000000012</string>
+				<string>C3D4E5F6070808090A1B2C3D</string>
 		</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>

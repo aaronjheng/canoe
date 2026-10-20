@@ -498,6 +498,21 @@ struct RequestEditorView: View {
         return true
     }
 
+    /// Pulls a send-path OAuth token renewal (AppStore+OAuth) into the
+    /// draft: only the managed token fields, so it applies also while this
+    /// editor holds other pending edits (the whole-value adoption above is
+    /// guarded off for dirty editors on purpose - a stale push would
+    /// otherwise revert a rotated refresh token).
+    private func adoptRenewedOAuthTokens() {
+        guard
+            let fresh = store.liveOAuthTokenFields(forOwner: draft.id),
+            fresh.tokens != draft.authOAuthTokens
+                || fresh.selectedID != draft.authOAuthSelectedTokenID
+        else { return }
+        draft.authOAuthTokens = fresh.tokens
+        draft.authOAuthSelectedTokenID = fresh.selectedID
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             nameBar
@@ -554,6 +569,9 @@ struct RequestEditorView: View {
             guard !store.hasPendingChanges(for: draft.id), !request.isContentEqual(to: draft) else { return }
             draft = request
             urlText = composedURLText(base: request.urlString, params: request.params)
+        }
+        .onChange(of: store.oauthTokenRevision(forOwner: draft.id)) { _, _ in
+            adoptRenewedOAuthTokens()
         }
         .onChange(of: store.urlFocusToken) { _, _ in
             // View ▸ Jump to Request URL (⌘L, Postman "Jump to request URL"):

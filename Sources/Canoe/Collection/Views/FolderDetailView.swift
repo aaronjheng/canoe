@@ -65,11 +65,33 @@ struct FolderDetailView: View {
                     draft.authorization = newValue.authorization
                 }
             }
+            // A send-path OAuth token renewal (AppStore+OAuth) patches only
+            // the managed token fields, also while this editor holds other
+            // pending Authorization edits. Adopt exactly those fields - the
+            // setting re-pushes through updateFolderAuthorization, which
+            // sees the store already has it and no-ops.
+            .onChange(of: store.oauthTokenRevision(forOwner: draft.id)) { _, _ in
+                adoptRenewedOAuthTokens()
+            }
     }
 
     /// The vault's current copy of this folder - nil once it is deleted.
     private var liveFolder: Folder? {
         store.folder(withID: draft.id)
+    }
+
+    /// Pulls a send-path OAuth token renewal (AppStore+OAuth) into the
+    /// Authorization draft: only the managed token fields, so it applies
+    /// also while other Authorization edits are pending here (the whole-
+    /// value adoption above is guarded off for those on purpose).
+    private func adoptRenewedOAuthTokens() {
+        guard
+            let fresh = store.liveOAuthTokenFields(forOwner: draft.id),
+            fresh.tokens != draft.authorization.oauthTokens
+                || fresh.selectedID != draft.authorization.oauthSelectedTokenID
+        else { return }
+        draft.authorization.oauthTokens = fresh.tokens
+        draft.authorization.oauthSelectedTokenID = fresh.selectedID
     }
 
     // MARK: - Layout
