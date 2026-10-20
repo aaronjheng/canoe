@@ -372,15 +372,32 @@ private struct EnvironmentRow: View {
 private struct HistoryView: View {
     @Environment(AppStore.self) private var store
     @State private var showClearConfirm = false
+    @State private var filter = ""
     /// Collapsed day buckets (by day-start). In-memory only: the bucket a
     /// key like "Yesterday" points at shifts with real time, so persisting
     /// it would relabel tomorrow's entries.
     @State private var collapsedDays: Set<Date> = []
 
+    /// History narrowed by the filter: name or URL, case-insensitive. The
+    /// stored order (newest first) is preserved, so filtered results still
+    /// bucket into their day groups in place.
+    private var filteredHistory: [HistoryEntry] {
+        let query = filter.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return store.history }
+        return store.history.filter {
+            $0.name.localizedCaseInsensitiveContains(query)
+                || $0.urlString.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    private var isFiltering: Bool {
+        !filter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text(store.history.isEmpty ? "No requests yet" : "\(store.history.count) requests")
+                Text(headerTitle)
                     .font(AppFont.columnHeader)
                     .foregroundStyle(AppColor.textSecondary)
                 Spacer(minLength: 0)
@@ -404,6 +421,14 @@ private struct HistoryView: View {
             }
             .padding(.horizontal, AppSpacing.medium)
             .padding(.vertical, AppSpacing.xSmall)
+            if !store.history.isEmpty {
+                FilterField(
+                    text: $filter,
+                    placeholder: "Filter by name or URL"
+                )
+                .padding(.horizontal, AppSpacing.medium)
+                .padding(.bottom, AppSpacing.xSmall)
+            }
             Divider()
             if store.history.isEmpty {
                 ContentUnavailableView(
@@ -412,11 +437,18 @@ private struct HistoryView: View {
                     description: Text("Send a request and it will show up here.")
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if filteredHistory.isEmpty {
+                ContentUnavailableView(
+                    "No Results",
+                    systemImage: "magnifyingglass",
+                    description: Text("No requests match the filter.")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 // Same ScrollView + LazyVStack as the Items tab (not List):
                 // one row language for hover, padding, and selection.
                 ScrollView {
-                    let groups = historyDayGroups(store.history)
+                    let groups = historyDayGroups(filteredHistory)
                     LazyVStack(spacing: 0) {
                         ForEach(groups) { group in
                             // Day groups carry the same group rule as the
@@ -445,6 +477,11 @@ private struct HistoryView: View {
                 }
             }
         }
+    }
+
+    private var headerTitle: String {
+        if store.history.isEmpty { return "No requests yet" }
+        return isFiltering ? "\(filteredHistory.count) of \(store.history.count) requests" : "\(store.history.count) requests"
     }
 
     private func toggleDay(_ day: Date) {
