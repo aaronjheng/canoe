@@ -109,8 +109,18 @@ enum CodeSnippetGenerator {
         let rawURLString = resolve(request.urlString)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !rawURLString.isEmpty else { return nil }
+        // Path variables (`:segment`) fill exactly like the send path - the
+        // same substitution and percent-encoding, so the snippet matches
+        // what goes on the wire. Filled only in resolve mode (keep mode
+        // shows the authored template); an unfilled segment stays as
+        // `:segment`, like an unresolved {{variable}}.
+        let substitutedURLString =
+            resolvesVariables
+            ? HTTPClient.replacingPathVariables(
+                in: rawURLString, rows: request.pathVariables, variables: variables)
+            : rawURLString
         // Bare hosts get the same https:// convenience as real sends.
-        let withScheme = rawURLString.contains("://") ? rawURLString : "https://\(rawURLString)"
+        let withScheme = substitutedURLString.contains("://") ? substitutedURLString : "https://\(substitutedURLString)"
 
         let enabledParams = request.params.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
