@@ -13,6 +13,9 @@ struct CodeSnippetSidebarView: View {
     @Environment(AppStore.self) private var store
     @AppStorage("codeSnippetLanguage") private var languageRaw = CodeSnippetLanguage.curl.rawValue
     @State private var copied = false
+    /// The acknowledgement timer, kept so a second copy cancels the first
+    /// one's reset - otherwise the second checkmark is cut short by it.
+    @State private var copyResetTask: Task<Void, Never>?
     /// Whether the snippet is scrolled past its top, so the picker bar seam
     /// shows the scrolled-under shadow.
     @State private var isCodeScrolledPastTop = false
@@ -175,8 +178,10 @@ struct CodeSnippetSidebarView: View {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(resolvedCode, forType: .string)
         copied = true
-        Task {
+        copyResetTask?.cancel()
+        copyResetTask = Task {
             try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
             copied = false
         }
     }

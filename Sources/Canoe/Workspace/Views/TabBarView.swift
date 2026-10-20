@@ -27,6 +27,13 @@ struct TabBarView: View {
     /// Reference geometry + hosting window for the double-click monitor.
     @State private var stripGeometry = TabStripGeometryBox()
     @State private var doubleClickMonitor: Any?
+    /// When the last pill's × actually closed something. A double-click
+    /// that starts on a close button mutates the strip with its FIRST
+    /// click; the second (clickCount 2) then lands on whatever slid under
+    /// the pointer - the neighbor pill - or on empty strip once the last
+    /// tab went. Suppressing the double-click action for one
+    /// `NSEvent.doubleClickInterval` makes the whole gesture a plain close.
+    @State private var lastTabCloseAt: Date?
     /// Whether the tab drawer / environment dropdown panel is open. Owned by
     /// ContentView: both float at window level (a strip-level overlay gets
     /// clipped where it overflows the strip bounds).
@@ -48,7 +55,11 @@ struct TabBarView: View {
                                 isSelected: store.selectedTab == tab,
                                 isSending: store.sendingTabs.contains(tab),
                                 isHovered: hoveredTab == tab,
-                                onHover: { hoveredTab = $0 ? tab : nil }
+                                onHover: { hoveredTab = $0 ? tab : nil },
+                                onClose: {
+                                    lastTabCloseAt = Date()
+                                    store.requestCloseTab(tab)
+                                }
                             )
                             .id(tab)
                             // Manual drag reorder, not .onDrag: the system
@@ -124,7 +135,7 @@ struct TabBarView: View {
                                 if draggingTab == tab || settlingTab == tab {
                                     Capsule()
                                         .fill(AppColor.accent)
-                                        .frame(width: 3, height: 16)
+                                        .frame(width: Self.dropMarkerWidth, height: Self.dropMarkerHeight)
                                         .offset(x: -1)
                                 }
                             }
@@ -372,7 +383,13 @@ struct TabBarView: View {
 
     /// Gap between tab pills (and before the inline "+"). Half the shared
     /// `xxSmall` token so the strip stays dense without touching other uses.
-    private let tabPillSpacing: CGFloat = 1
+    private let tabPillSpacing: CGFloat = AppSpacing.xxSmall / 2
+
+    /// The insertion marker drawn at the lifted pill's slot: a hairline
+    /// plus a touch of body, and a bar capsule that reads beside the 24pt
+    /// pill without matching it.
+    private static let dropMarkerWidth: CGFloat = AppLine.focusedField + 1
+    private static let dropMarkerHeight: CGFloat = AppSize.tabHeight - 2 * AppSpacing.xSmall
 
     /// Pill-to-pill pitch: a gap on each side of the separator's 1pt column.
     /// The strip's leading inset matches it so the first tab sits one "tab
@@ -428,7 +445,10 @@ struct TabBarView: View {
         }
         let generation = dragGeneration
         Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(130))
+            // Settle hand-off: wait for exactly the curve the pill lands
+            // with (`AppMotion.quick`), not an independently chosen
+            // 130 ms that would drift the moment the token is retimed.
+            try? await Task.sleep(for: .seconds(AppMotion.quickDuration))
             guard settlingTab == tab, dragGeneration == generation else { return }
             settlingTab = nil
             ghostCenter = nil
@@ -449,6 +469,14 @@ struct TabBarView: View {
         guard event.clickCount == 2, event.window === stripGeometry.window,
             let window = event.window
         else { return false }
+        // The gesture's first click already closed a tab (its × was the
+        // press target): the second click must not act on the strip that
+        // reshuffled under it - it would pin the neighbor that slid in, or
+        // mint a brand-new request out of a close gesture.
+        if let closedAt = lastTabCloseAt, Date().timeIntervalSince(closedAt) < NSEvent.doubleClickInterval {
+            lastTabCloseAt = nil
+            return true
+        }
         // NSEvent lives in window-base (bottom-left) space; the registry
         // stores SwiftUI .global frames (top-left screen). Convert via the
         // screen's top edge.
@@ -758,6 +786,10 @@ private struct TabPill: View {
     /// this pill.
     let isHovered: Bool
     let onHover: (Bool) -> Void
+    /// Close request: the strip passes a wrapper that records the close for
+    /// its double-click guard (see `lastTabCloseAt`). Defaults to the plain
+    /// close so other constructions (the drag ghost) need nothing.
+    var onClose: (() -> Void)?
     @State private var isHoveringClose = false
 
     var body: some View {
@@ -875,7 +907,7 @@ private struct TabPill: View {
                 .padding(.trailing, AppSpacing.compact)
         } else if isHovered || (isSelected && !isDirty) {
             Button {
-                store.requestCloseTab(tab)
+                if let onClose { onClose() } else { store.requestCloseTab(tab) }
             } label: {
                 Image(systemName: "xmark")
                     .font(AppFont.small.weight(.semibold))

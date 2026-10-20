@@ -440,9 +440,17 @@ final class VaultStore {
     }
 
     func deleteWorkspace(_ id: UUID) async {
-        guard let workspacesDirectory else { return }
+        guard let workspacesDirectory else {
+            noteMissingDirectory("workspace", id: id.uuidString, subject: "workspaces")
+            return
+        }
         let file = workspacesDirectory.appendingPathComponent("\(id.uuidString).json")
-        try? await FileStore.delete(at: file)
+        let workspaceName = workspaces.first { $0.id == id }?.name ?? "workspace"
+        do {
+            try await FileStore.delete(at: file)
+        } catch {
+            noteDeleteFailure(kind: "workspace", id: id.uuidString, subject: workspaceName, error)
+        }
         workspaces.removeAll { $0.id == id }
         // Cascade: delete the workspace's collections and environments too.
         for collection in collections where collection.workspaceID == id {
@@ -505,9 +513,17 @@ final class VaultStore {
     }
 
     func deleteCollection(_ id: UUID) async {
-        guard let collectionsDirectory else { return }
+        guard let collectionsDirectory else {
+            noteMissingDirectory("collection", id: id.uuidString, subject: "collections")
+            return
+        }
         let file = collectionsDirectory.appendingPathComponent("\(id.uuidString).json")
-        try? await FileStore.delete(at: file)
+        let collectionName = collections.first { $0.id == id }?.name ?? "collection"
+        do {
+            try await FileStore.delete(at: file)
+        } catch {
+            noteDeleteFailure(kind: "collection", id: id.uuidString, subject: collectionName, error)
+        }
         collections.removeAll { $0.id == id }
     }
 
@@ -551,9 +567,17 @@ final class VaultStore {
     }
 
     func deleteEnvironment(_ id: UUID) async {
-        guard let environmentsDirectory else { return }
+        guard let environmentsDirectory else {
+            noteMissingDirectory("environment", id: id.uuidString, subject: "environments")
+            return
+        }
         let file = environmentsDirectory.appendingPathComponent("\(id.uuidString).json")
-        try? await FileStore.delete(at: file)
+        let environmentName = environments.first { $0.id == id }?.name ?? "environment"
+        do {
+            try await FileStore.delete(at: file)
+        } catch {
+            noteDeleteFailure(kind: "environment", id: id.uuidString, subject: environmentName, error)
+        }
         environments.removeAll { $0.id == id }
         if config.activeEnvironmentID == id {
             config.activeEnvironmentID = nil
@@ -772,6 +796,21 @@ final class VaultStore {
         AppLogger.error("Cannot save \(subject) (\(kind)): folder unavailable", category: "Vault")
         failedSaveKinds[Self.failureKey(kind, id)] = failureMessage(
             for: kind, subject: subject, reason: "the vault folder is unavailable.")
+        refreshSaveError()
+    }
+
+    /// A failed delete must not be silent: the entity is gone from memory but
+    /// its file is still on disk, so an iCloud reload (the watcher fires on
+    /// the next write) - or the next launch - resurrects what the user
+    /// deleted. Surfaces through the same banner every write uses, and the
+    /// same key, so a later successful delete of that entity clears it.
+    private func noteDeleteFailure(
+        kind: String, id: String, subject: String, _ error: any Error
+    ) {
+        AppLogger.error("Failed to delete \(subject) (\(kind)): \(error)", category: "Vault")
+        failedSaveKinds[Self.failureKey(kind, id)] = failureMessage(
+            for: kind, subject: subject,
+            reason: "it could not be deleted from disk (\(error.localizedDescription)).")
         refreshSaveError()
     }
 

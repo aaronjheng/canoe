@@ -305,11 +305,14 @@ struct InlineNameField: View {
                     )
             )
             .overlay {
-                // Borderless at rest: field border on hover/focus.
+                // Borderless at rest: field border on hover/focus, on the
+                // shared language's hover token (`fieldHoverBorder`, as in
+                // `BorderlessFieldChromeModifier`) - `borderStrong` here read
+                // as a rest border that never changed under the pointer.
                 if isFocusedNow || isHovered {
                     RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                         .strokeBorder(
-                            isFocusedNow ? AppColor.accent : AppColor.borderStrong,
+                            isFocusedNow ? AppColor.accent : AppColor.fieldHoverBorder,
                             lineWidth: isFocusedNow ? AppLine.focusedField : AppLine.field
                         )
                 }

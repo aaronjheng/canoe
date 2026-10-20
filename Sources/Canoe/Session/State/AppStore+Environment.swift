@@ -95,7 +95,13 @@ extension AppStore {
         // Same synchronous flip as workspaces: pickers, editor highlights,
         // and the variables inspector must agree in one frame.
         vault.config.activeEnvironmentID = id
-        Task { await vault.persistConfig() }
+        // Serialized with every other structural write: two quick picker
+        // changes previously raced as independent Tasks, and whichever
+        // scheduler won could leave an older active id on disk. Chaining
+        // also lets the quit path wait for the write.
+        enqueueStructuralWrite { [weak self] in
+            await self?.vault.persistConfig()
+        }
     }
 
 }

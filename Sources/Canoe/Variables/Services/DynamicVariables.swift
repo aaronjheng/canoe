@@ -53,11 +53,13 @@ enum DynamicVariables {
         Dictionary(uniqueKeysWithValues: entries.map { ($0.key, $0) })
     }()
 
-    /// Whether a placeholder key is a dynamic variable (its `$` prefix).
-    /// Used to keep `{{$guid}}` out of the unresolved-variables warning -
-    /// dynamic keys always resolve.
+    /// Whether a placeholder key is a known dynamic variable. Registry
+    /// membership, not just the `$` prefix: an unknown `$key` never
+    /// resolves (it goes on the wire literally), so it must not be waved
+    /// through the unresolved-variables warning - or tinted as resolved
+    /// in the editors - only because of its prefix.
     static func isDynamic(_ key: String) -> Bool {
-        key.hasPrefix("$")
+        byKey[key] != nil
     }
 
     /// A fresh value for `$key`, or nil when the key is not one.

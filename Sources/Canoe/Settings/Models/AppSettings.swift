@@ -41,13 +41,15 @@ struct AppSettings: Codable, Equatable {
     }
 
     /// Tolerates files written before `iCloudSyncEnabled` or `proxy` existed
-    /// so old settings files keep loading.
+    /// so old settings files keep loading. `try?` per field: a wrong-typed
+    /// value costs that field its default, not the whole file (see
+    /// `ProxySettings.init(from:)` for the overwrite hazard).
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        appearance = try container.decodeIfPresent(Int.self, forKey: .appearance) ?? 0
-        iCloudSyncEnabled = try container.decodeIfPresent(Bool.self, forKey: .iCloudSyncEnabled) ?? false
-        proxy = try container.decodeIfPresent(ProxySettings.self, forKey: .proxy) ?? ProxySettings()
-        general = try container.decodeIfPresent(GeneralSettings.self, forKey: .general) ?? GeneralSettings()
+        appearance = (try? container.decodeIfPresent(Int.self, forKey: .appearance)) ?? 0
+        iCloudSyncEnabled = (try? container.decodeIfPresent(Bool.self, forKey: .iCloudSyncEnabled)) ?? false
+        proxy = (try? container.decodeIfPresent(ProxySettings.self, forKey: .proxy)) ?? ProxySettings()
+        general = (try? container.decodeIfPresent(GeneralSettings.self, forKey: .general)) ?? GeneralSettings()
     }
 }
 
@@ -62,4 +64,22 @@ struct GeneralSettings: Codable, Equatable, Sendable {
     /// MB limit on one buffered response body (the viewer and the response
     /// history retain it, so growth must stay bounded). 0 = no limit.
     var maxResponseSizeMB: Int = 50
+
+    /// Declared because the decoding initializer below suppresses the
+    /// synthesized memberwise one (same rule as `VaultDrafts`).
+    init(requestTimeoutSeconds: Int = 0, maxResponseSizeMB: Int = 50) {
+        self.requestTimeoutSeconds = requestTimeoutSeconds
+        self.maxResponseSizeMB = maxResponseSizeMB
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case requestTimeoutSeconds, maxResponseSizeMB
+    }
+
+    /// Tolerant decode - see `ProxySettings.init(from:)`.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        requestTimeoutSeconds = (try? container.decodeIfPresent(Int.self, forKey: .requestTimeoutSeconds)) ?? 0
+        maxResponseSizeMB = (try? container.decodeIfPresent(Int.self, forKey: .maxResponseSizeMB)) ?? 50
+    }
 }

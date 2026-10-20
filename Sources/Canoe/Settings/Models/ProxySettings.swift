@@ -51,7 +51,8 @@ struct ProxySettings: Codable, Equatable, Sendable {
         }
 
         if !bypassList.isEmpty {
-            let exceptions = bypassList
+            let exceptions =
+                bypassList
                 .split(separator: ",", omittingEmptySubsequences: true)
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
@@ -61,5 +62,32 @@ struct ProxySettings: Codable, Equatable, Sendable {
         }
 
         return dict.isEmpty ? nil : dict
+    }
+
+    /// Declared because the decoding initializer below suppresses the
+    /// synthesized memberwise one (same rule as `VaultDrafts`).
+    init() {}
+
+    enum CodingKeys: String, CodingKey {
+        case enabled, httpHost, httpPort, httpsHost, httpsPort, username, password, bypassList
+    }
+
+    /// Tolerant like every vault model: a key this build does not know
+    /// (a file written by a newer release, or before a field existed) - or
+    /// one field with a wrong type - decodes as that property's default
+    /// instead of failing the whole file. The synthesized decoder would
+    /// throw, `SettingsStore.load` would fall back to the default
+    /// `AppSettings`, and the next save would overwrite the user's
+    /// appearance, sync flag, and proxy with defaults.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = (try? container.decodeIfPresent(Bool.self, forKey: .enabled)) ?? false
+        httpHost = (try? container.decodeIfPresent(String.self, forKey: .httpHost)) ?? ""
+        httpPort = (try? container.decodeIfPresent(Int.self, forKey: .httpPort)) ?? 8080
+        httpsHost = (try? container.decodeIfPresent(String.self, forKey: .httpsHost)) ?? ""
+        httpsPort = (try? container.decodeIfPresent(Int.self, forKey: .httpsPort)) ?? 8080
+        username = (try? container.decodeIfPresent(String.self, forKey: .username)) ?? ""
+        password = (try? container.decodeIfPresent(String.self, forKey: .password)) ?? ""
+        bypassList = (try? container.decodeIfPresent(String.self, forKey: .bypassList)) ?? ""
     }
 }

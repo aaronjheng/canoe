@@ -1639,15 +1639,21 @@ private struct SidebarDropDelegate: DropDelegate {
     let collectionID: UUID?
 
     func validateDrop(info: DropInfo) -> Bool {
-        info.hasItemsConforming(to: [.plainText])
+        // The kind check keeps foreign text drags (a URL selected in the
+        // editor) and pairings the move layer has no case for (a dragged
+        // collection over a request/folder row) from accepting at all -
+        // previously they lit the row up and then did nothing on drop.
+        info.hasItemsConforming(to: [.plainText]) && acceptsDrag(store.sidebarDraggingKind)
     }
 
     func dropEntered(info: DropInfo) {
+        // nil for a drag this row cannot accept: clears any stale indicator
+        // instead of promising a placement the drop layer rejects.
         store.sidebarDropIndicator = indicator(for: info)
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
+        acceptsDrag(store.sidebarDraggingKind) ? DropProposal(operation: .move) : nil
     }
 
     func dropExited(info: DropInfo) {
@@ -1659,9 +1665,11 @@ private struct SidebarDropDelegate: DropDelegate {
     }
 
     func performDrop(info: DropInfo) -> Bool {
-        let indicator = indicator(for: info)
+        guard acceptsDrag(store.sidebarDraggingKind),
+            let indicator = indicator(for: info),
+            let provider = info.itemProviders(for: [.plainText]).first
+        else { return false }
         store.sidebarDropIndicator = nil
-        guard let provider = info.itemProviders(for: [.plainText]).first else { return false }
         let kind = self.kind
         let collectionID = self.collectionID
         _ = provider.loadObject(ofClass: NSString.self) { object, _ in
@@ -1679,12 +1687,35 @@ private struct SidebarDropDelegate: DropDelegate {
         return true
     }
 
-    /// The indicator for a hover/drop at `info`'s location: request rows are
-    /// split in half (above/below); folder rows use thirds (edges = place
-    /// beside, middle = take inside); the collection row is always "into".
-    /// `info.location` is already local to the view the delegate is on (the
-    /// row), whose height is the fixed tree-row height.
-    private func indicator(for info: DropInfo) -> SidebarDropIndicator {
+    /// Whether a drag of `draggedKind` has a home on this row's kind:
+    /// mirrors `commitSidebarDrop`'s dispatch table, so the hover
+    /// indicator only promises moves the drop layer actually performs.
+    /// `sidebarDraggingKind` is nil for foreign drags and set by our own
+    /// rows when the drag session starts.
+    private func acceptsDrag(_ draggedKind: String?) -> Bool {
+        guard let draggedKind else { return false }
+        switch (kind, draggedKind) {
+        case (.request, "request"), (.request, "folder"),
+            (.folder, "request"), (.folder, "folder"),
+            (.collection, "request"), (.collection, "folder"),
+            (.collection, "collection"):
+            return true
+        default:
+            // (.request/.folder, "collection") - a collection is a
+            // top-level container - and any unknown payload.
+            return false
+        }
+    }
+
+    /// The indicator for a hover/drop at `info`'s location, or nil when
+    /// the row cannot accept the dragged kind: request rows are split in
+    /// half (above/below); folder rows use thirds (edges = place beside,
+    /// middle = take inside); the collection row reorders on the halves
+    /// for a dragged collection and takes other drags "into".
+    /// `info.location` is already local to the view the delegate is on
+    /// (the row), whose height is the fixed tree-row height.
+    private func indicator(for info: DropInfo) -> SidebarDropIndicator? {
+        guard acceptsDrag(store.sidebarDraggingKind) else { return nil }
         let location = info.location
         switch kind {
         case .request:

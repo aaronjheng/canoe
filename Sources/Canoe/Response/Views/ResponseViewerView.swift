@@ -23,6 +23,14 @@ struct ResponseViewerView: View {
     /// (oldest first) past `bodyRenderCacheLimit`.
     @State private var bodyRenderCache: [String: BodyRender] = [:]
     @State private var bodyRenderOrder: [String] = []
+    /// One-shot per-response results: the Auto-language sniff and the hex
+    /// dump are both full-body walks, and redoing either per render (hover
+    /// panels, copy acks, find toggles, the data-type dropdown) stalled
+    /// large panes. Both compute off the main thread in the `.task(id:)`
+    /// modifiers on the detail pane - state is never written during view
+    /// evaluation - and the map is capped like the render cache.
+    @State private var responseExtras: [UUID: ResponseExtras] = [:]
+    @State private var responseExtrasOrder: [UUID] = []
     @State private var saveError: String?
     /// Copy Body's in-place acknowledgement: the glyph turns into a
     /// checkmark for a moment. Same language as every other copy control in
@@ -334,6 +342,36 @@ struct ResponseViewerView: View {
             // file removed on disappear is re-staged on reappear, even when
             // the render cache above is already current.
             await stageMediaForPreview(response)
+        }
+        .task(id: response.id) {
+            // One-shot Auto-language sniff (see `responseExtras`): the
+            // toolbar label and the data-type dropdown otherwise re-decode
+            // the whole body on every render.
+            let id = response.id
+            if responseExtras[id]?.autoLanguage == nil {
+                let resolved = await Task.detached(priority: .userInitiated) {
+                    response.resolvedBodyLanguage(.auto)
+                }.value
+                if !Task.isCancelled {
+                    publishResponseExtras(id) { $0.autoLanguage = resolved }
+                }
+            }
+        }
+        .task(id: bodyMode == .hex ? response.id : nil) {
+            // One-shot hex dump (see `responseExtras`): keyed on the mode
+            // so bodies never viewed as hex never pay for the walk. Runs
+            // off the main thread - 5 MB expands to ~327k rows.
+            let id = response.id
+            guard response.body.count <= Self.maxHexBodyBytes,
+                responseExtras[id]?.hexRows == nil
+            else { return }
+            let body = response.body
+            let rows = await Task.detached(priority: .userInitiated) {
+                Self.makeHexRows(body)
+            }.value
+            if !Task.isCancelled {
+                publishResponseExtras(id) { $0.hexRows = rows }
+            }
         }
         .onChange(of: response.id) { _, _ in
             saveError = nil
@@ -981,7 +1019,7 @@ struct ResponseViewerView: View {
                     ResponseModel.BodyLanguage.allCases.map { language in
                         DropdownRow.action(
                             language == .auto
-                                ? "Auto (\(response.resolvedBodyLanguage(.auto)).rawValue)"
+                                ? (detectedAutoLanguage(for: response).map { "Auto (\($0.rawValue))" } ?? "Auto")
                                 : language.rawValue,
                             isSelected: language == bodyLanguage
                         ) {
@@ -1023,25 +1061,30 @@ struct ResponseViewerView: View {
                 .foregroundStyle(didCopyCURL ? AppColor.success : AppColor.textPrimary)
                 .help("Copy the request as a cURL command (resolved like a send)")
                 Button("Copy Body", systemImage: didCopyBody ? "checkmark" : "doc.on.doc") {
-                    let copyText: String
                     if bodyMode == .hex {
-                        copyText = hexCopyText(for: response)
+                        copyBody(hexCopyText(for: response))
                     } else if bodyMode == .preview {
-                        copyText = response.bodyString
+                        copyBody(response.bodyString)
                     } else {
-                        copyText = fullBodyText(response, display: display)
+                        copyBody(fullBodyText(response, display: display))
                     }
-                    copyBody(copyText)
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(IconButtonStyle())
                 .foregroundStyle(didCopyBody ? AppColor.success : AppColor.textPrimary)
+                .disabled(copyBodyUnavailable(for: response))
                 .help(
                     didCopyBody
                         ? "Copied"
-                        : (response.bodyTruncated
-                            ? "Copy response body (truncated)"
-                            : "Copy full response body"))
+                        : (copyBodyUnavailable(for: response)
+                            ? (bodyMode == .hex
+                                ? "Building hex dump…"
+                                : "Binary body: use Save Response to export the bytes")
+                            : (bodyMode == .hex
+                                ? "Copy the response body as a hex dump"
+                                : (response.bodyTruncated
+                                    ? "Copy response body (truncated)"
+                                    : "Copy full response body"))))
                 Button("Save Response", systemImage: "square.and.arrow.down") {
                     saveResponse(response)
                 }
@@ -1061,7 +1104,17 @@ struct ResponseViewerView: View {
         guard bodyLanguage == .auto, let response = store.displayedResponse else {
             return bodyLanguage.rawValue
         }
-        return "Auto (\(response.resolvedBodyLanguage(.auto)).rawValue)"
+        // The sniff decodes the FULL body when the Content-Type does not
+        // name a type (String decode + JSONSerialization over up to the
+        // response cap) - it must not rerun per toolbar render. Until the
+        // one-shot task has landed, the bare "Auto" stands in for a frame.
+        return detectedAutoLanguage(for: response).map { "Auto (\($0.rawValue))" } ?? bodyLanguage.rawValue
+    }
+
+    /// The detected language behind the "Auto (JSON)" labels, resolved once
+    /// per response (see `responseExtras`); nil until that task lands.
+    private func detectedAutoLanguage(for response: ResponseModel) -> BodyLanguage? {
+        responseExtras[response.id]?.autoLanguage
     }
 
     /// The body's scroll area: the AppKit text view plus the banner rows
@@ -1312,6 +1365,14 @@ struct ResponseViewerView: View {
         let attributed: AttributedString
     }
 
+    /// Per-response one-shot results shared by the toolbar labels and the
+    /// hex dump (see `responseExtras`). Both fields fill independently:
+    /// the language on every response, the dump only when Hex mode asks.
+    private struct ResponseExtras {
+        var autoLanguage: BodyLanguage?
+        var hexRows: [HexRow]?
+    }
+
     /// The body as this pane shows it, computed once per render key: the
     /// current mode's text (data-type selector applied, capped at
     /// `bodyDisplayLimit` characters) and its highlighted form. Pure over
@@ -1352,6 +1413,22 @@ struct ResponseViewerView: View {
         while bodyRenderOrder.count > Self.bodyRenderCacheLimit {
             let evicted = bodyRenderOrder.removeFirst()
             bodyRenderCache[evicted] = nil
+        }
+    }
+
+    /// Merges one field into a response's extras and caps the map (oldest
+    /// response first), like `bodyRenderPublish`. Called only from the
+    /// `.task(id:)` modifiers - never during view evaluation.
+    private func publishResponseExtras(_ id: UUID, _ update: (inout ResponseExtras) -> Void) {
+        var extras = responseExtras[id] ?? ResponseExtras()
+        update(&extras)
+        responseExtras[id] = extras
+        if !responseExtrasOrder.contains(id) {
+            responseExtrasOrder.append(id)
+        }
+        while responseExtrasOrder.count > Self.bodyRenderCacheLimit {
+            let evicted = responseExtrasOrder.removeFirst()
+            responseExtras[evicted] = nil
         }
     }
 
@@ -1541,15 +1618,17 @@ struct ResponseViewerView: View {
     private static let maxHexBodyBytes = 5 * 1024 * 1024
 
     /// One line of the hex dump: 8-byte-grouped hex bytes plus an ASCII
-    /// column (non-printable shown as `.`).
-    private struct HexRow {
+    /// column (non-printable shown as `.`). Sendable: the dump task returns
+    /// rows across an actor boundary.
+    private struct HexRow: Sendable {
         let offset: String
         let hex: String
         let ascii: String
     }
 
-    /// Splits `data` into 16-byte hex-dump rows.
-    private func hexRows(for data: Data) -> [HexRow] {
+    /// Splits `data` into 16-byte hex-dump rows. Pure over its input and
+    /// nonisolated, so the one-shot task can run it off the main thread.
+    nonisolated private static func makeHexRows(_ data: Data) -> [HexRow] {
         var rows: [HexRow] = []
         for offset in stride(from: 0, to: data.count, by: 16) {
             let end = min(offset + 16, data.count)
@@ -1610,7 +1689,7 @@ struct ResponseViewerView: View {
                     "The body is larger than \(Int64(Self.maxHexBodyBytes).formattedByteCount); use Raw to inspect it."
                 )
             )
-        } else {
+        } else if let rows = responseExtras[response.id]?.hexRows {
             VStack(spacing: 0) {
                 if response.bodyTruncated {
                     HStack {
@@ -1627,8 +1706,12 @@ struct ResponseViewerView: View {
                     Divider()
                 }
                 ScrollView([.vertical, .horizontal]) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(Array(hexRows(for: response.body).enumerated()), id: \.offset) { _, row in
+                    // Lazy: a 5 MB body expands to ~327k rows; a plain
+                    // VStack materializes all of them - and the cached rows
+                    // avoid re-walking the body on every parent re-render
+                    // (hover panels, copy acks, find toggles).
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                             HStack(spacing: 0) {
                                 // Postman renders the hex view at the
                                 // body pane's size (13 mono).
@@ -1654,14 +1737,39 @@ struct ResponseViewerView: View {
                 .background(AppColor.codeBackground)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            // The one-shot dump task has not landed yet (see
+            // `responseExtras`); Copy Body disables itself meanwhile.
+            VStack(spacing: AppSpacing.small) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Building hex dump…")
+                    .font(AppFont.emptyStateBody)
+                    .foregroundStyle(AppColor.textSecondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
+    /// Whether Copy Body currently has nothing honest to put on a string
+    /// pasteboard: Hex mode before the one-shot dump has landed (or for an
+    /// oversized body, which never gets rows), or a non-UTF-8 body in a
+    /// text mode - the display is a placeholder and a string write would
+    /// be a lossy decode. Save Response writes the real bytes either way.
+    private func copyBodyUnavailable(for response: ResponseModel) -> Bool {
+        if bodyMode == .hex {
+            return responseExtras[response.id]?.hexRows == nil
+        }
+        return String(data: response.body, encoding: .utf8) == nil
+    }
+
     /// Hex string of the full body for the Copy Body action in Hex mode.
-    /// Returns an empty string when the body is too large to safely dump.
+    /// Empty until the one-shot dump task has landed; the Copy Body button
+    /// disables itself while it is (and for oversized bodies, which never
+    /// get rows).
     private func hexCopyText(for response: ResponseModel) -> String {
-        guard response.body.count <= Self.maxHexBodyBytes else { return "" }
-        return hexRows(for: response.body).map { row in
+        guard let rows = responseExtras[response.id]?.hexRows else { return "" }
+        return rows.map { row in
             "\(row.offset)  \(row.hex)  \(row.ascii)"
         }.joined(separator: "\n")
     }

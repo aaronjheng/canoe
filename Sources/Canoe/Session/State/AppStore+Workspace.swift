@@ -72,13 +72,17 @@ extension AppStore {
         // for the task, the UI showed the old workspace's contents under
         // the new selection until it ran.
         vault.config.activeWorkspaceID = id
-        Task {
-            // Environments are workspace-scoped: the previous workspace's
-            // active environment must not leak into the newly selected one.
-            if let environment = vault.activeEnvironment, environment.workspaceID != id {
-                vault.config.activeEnvironmentID = nil
-            }
-            await vault.persistConfig()
+        // Environments are workspace-scoped: the previous workspace's
+        // active environment must not leak into the newly selected one.
+        if let environment = vault.activeEnvironment, environment.workspaceID != id {
+            vault.config.activeEnvironmentID = nil
+        }
+        // One serialized write of the settled config (see
+        // setActiveEnvironment): chained so two quick switches - or a switch
+        // racing an environment change - cannot land out of order, and the
+        // quit path can wait for it.
+        enqueueStructuralWrite { [weak self] in
+            await self?.vault.persistConfig()
         }
     }
 

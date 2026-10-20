@@ -268,6 +268,9 @@ enum CURLImporter {
             }
         case "-T", "--upload-file":
             state.binaryPath = value
+            // curl uploads with PUT: `-T file URL` is a PUT request. An
+            // explicit method (-X/-I) in the same command wins.
+            if state.method == nil { state.method = .put }
         default:
             // -L/-k/-s/-v/--compressed/… have no request-level meaning here.
             break

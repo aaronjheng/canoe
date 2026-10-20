@@ -422,7 +422,7 @@ struct SettingsView: View {
             } footer: {
                 Text(
                     "Comma-separated host names. A leading dot matches subdomains "
-                    + "(for example `.example.com` matches `api.example.com`). Leave empty to proxy everything."
+                        + "(for example `.example.com` matches `api.example.com`). Leave empty to proxy everything."
                 )
             }
         }

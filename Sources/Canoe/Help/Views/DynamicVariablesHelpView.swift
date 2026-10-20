@@ -91,6 +91,10 @@ struct DynamicVariablesHelpView: View {
     }
 
     private func copy(_ entry: DynamicVariables.Entry) {
+        // clearContents first, like every other copy path: a stale declared
+        // type from a previous owner can otherwise survive and a paste
+        // elsewhere may deliver the old content.
+        NSPasteboard.general.clearContents()
         NSPasteboard.general.setString("{{\(entry.key)}}", forType: .string)
         copiedKey = entry.key
         copyResetTask?.cancel()

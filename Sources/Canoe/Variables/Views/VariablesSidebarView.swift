@@ -693,11 +693,13 @@ private struct VariableRow: View {
                 )
         )
         .overlay {
-            // Borderless at rest: field border on hover/focus.
+            // Borderless at rest: field border on hover/focus, on the shared
+            // language's hover token (same value as `BorderlessFieldChromeModifier`
+            // and the InlineNameField this row imitates).
             if isValueFocused || isValueHovered {
                 RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                     .strokeBorder(
-                        isValueFocused ? AppColor.accent : AppColor.borderStrong,
+                        isValueFocused ? AppColor.accent : AppColor.fieldHoverBorder,
                         lineWidth: isValueFocused ? AppLine.focusedField : AppLine.field
                     )
             }

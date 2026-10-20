@@ -79,6 +79,15 @@ struct BodyTextView: NSViewRepresentable {
             } else {
                 textView.textStorage?.setAttributedString(NSAttributedString())
             }
+            // A body that fit in the single synchronous chunk is already
+            // fully in storage: close the stream NOW, or `streamBase` would
+            // stay set forever (pump's guard returns on empty ranges, so it
+            // can never reach its own clearing branch) and every find reveal
+            // would park in `pendingReveal` - the common small-body case
+            // never scrolled to its first match.
+            if streamRanges.isEmpty {
+                streamBase = nil
+            }
         }
 
         /// Appends the next stream chunk on a later main-actor tick, then
@@ -201,25 +210,32 @@ struct BodyTextView: NSViewRepresentable {
         if attributed != coordinator.lastAttributed {
             let previous = coordinator.lastAttributed
             coordinator.lastAttributed = attributed
-            // Fresh content starts at the top; a pending reveal (find's
-            // cursor carried over between bodies) belongs to old text.
-            coordinator.lastReveal = nil
-            coordinator.beginStream(attributed, into: textView)
-            scrollView.contentView.scroll(to: .zero)
-            scrollView.reflectScrolledClipView(scrollView.contentView)
-            coordinator.pump(scrollView)
-            // The scrolled-under shadow belongs to the body it was scrolled
-            // in: a short body that never scrolls would inherit the previous
-            // body's stuck-on shadow (no bounds change ever arrives to
-            // correct it). Find's highlight toggle swaps attributes but
-            // keeps the same characters, so it must not reset the shadow.
-            var bodyChanged = false
-            if let previous {
-                bodyChanged = !attributed.characters.elementsEqual(previous.characters)
-            }
-            if bodyChanged, coordinator.isPastTop {
-                coordinator.isPastTop = false
-                onScrolledPastTop(false)
+            // Find's highlight toggle and match stepping swap attributes
+            // but keep the same characters: swap the storage in place -
+            // no re-stream, no scroll reset - and let the reveal branch
+            // below place the match. Re-streaming here used to send every
+            // ⌘G back to the top with the next match off-screen, and
+            // re-rendered the whole body per keystroke on large responses.
+            let charactersUnchanged =
+                previous.map { attributed.characters.elementsEqual($0.characters) } ?? false
+            if charactersUnchanged, coordinator.streamBase == nil {
+                textView.textStorage?.setAttributedString(BodyTextView.nsAttributed(attributed))
+            } else {
+                // Fresh content starts at the top; a pending reveal (find's
+                // cursor carried over between bodies) belongs to old text.
+                coordinator.lastReveal = nil
+                coordinator.beginStream(attributed, into: textView)
+                scrollView.contentView.scroll(to: .zero)
+                scrollView.reflectScrolledClipView(scrollView.contentView)
+                coordinator.pump(scrollView)
+                // The scrolled-under shadow belongs to the body it was
+                // scrolled in: a short body that never scrolls would
+                // inherit the previous body's stuck-on shadow (no bounds
+                // change ever arrives to correct it).
+                if coordinator.isPastTop {
+                    coordinator.isPastTop = false
+                    onScrolledPastTop(false)
+                }
             }
         } else if let reveal, reveal != coordinator.lastReveal {
             if coordinator.streamBase != nil {

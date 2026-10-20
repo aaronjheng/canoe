@@ -587,7 +587,12 @@ extension AppStore {
                         .first(where: { $0.folders.contains { $0.id == currentParent } })?
                         .folders.first(where: { $0.id == currentParent })
                 else { break }
-                currentParent = parentFolder.parentFolderID ?? currentParent
+                // Nil means the ancestor chain terminated at the root - not a
+                // cycle. (`?? currentParent` here made every terminated chain
+                // loop in place and trip the visited guard below, aborting
+                // every drop-into-folder move.)
+                guard let nextParent = parentFolder.parentFolderID else { break }
+                currentParent = nextParent
             }
         }
         // Another collection's file: the subtree relocates first, with the

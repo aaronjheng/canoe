@@ -192,8 +192,11 @@ enum AppSize {
 /// next to it faded into it.
 enum AppMotion {
     /// Hover / selection / press feedback - the quick one, and the default
-    /// for anything the pointer can move across.
-    static let quick = Animation.easeOut(duration: 0.12)
+    /// for anything the pointer can move across. The duration is exposed
+    /// separately so code that must wait for this curve (a drag-settle
+    /// hand-off) waits for exactly what it animates.
+    static let quickDuration: TimeInterval = 0.12
+    static let quick = Animation.easeOut(duration: quickDuration)
     /// Larger moves that read as travel rather than feedback: the tab
     /// strip's reorder slide and the drag ghost's settle.
     static let travel = Animation.easeOut(duration: 0.2)

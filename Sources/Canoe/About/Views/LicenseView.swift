@@ -6,6 +6,10 @@ import SwiftUI
 /// on the pasteboard for pasting into a source-distribution form.
 struct LicenseView: View {
     @State private var didCopy = false
+    /// The acknowledgement timer, kept so a second copy cancels the first
+    /// one's reset (same language as the variables inspector and the
+    /// dynamic-variables help).
+    @State private var copyResetTask: Task<Void, Never>?
 
     private let licenseText = AppLicense.text
 
@@ -57,8 +61,10 @@ struct LicenseView: View {
                 guard let licenseText else { return }
                 copyToPasteboard(licenseText)
                 didCopy = true
-                Task {
+                copyResetTask?.cancel()
+                copyResetTask = Task {
                     try? await Task.sleep(for: .milliseconds(1500))
+                    guard !Task.isCancelled else { return }
                     didCopy = false
                 }
             }

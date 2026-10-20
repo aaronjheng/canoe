@@ -49,7 +49,11 @@ struct AuthEditor: View {
             suggestions: requestSuggestions,
             inheritedSource: inheritanceSource,
             onEditInParent: editInParent,
-            onTokenListChanged: { store.updateRequest(request) }
+            onTokenListChanged: { store.updateRequest(request) },
+            currentRequestID: { request.id },
+            landLateToken: { token, refreshedTokenID, ownerRequestID in
+                store.landOAuthToken(token, refreshedTokenID: refreshedTokenID, forRequestID: ownerRequestID)
+            }
         )
     }
 
@@ -120,6 +124,16 @@ struct AuthorizationForm: View {
     /// Fired after the token list changes (fetch / refresh / delete) so the
     /// owner can push the request through the draft pipeline right away.
     var onTokenListChanged: (() -> Void)?
+    /// The id of the request whose auth this form edits, read LIVE: the
+    /// fetch/refresh Tasks outlive request switches, and comparing a
+    /// captured id against the current one needs the live read (a value
+    /// `let` here would be the Task-creation snapshot and always match).
+    var currentRequestID: (() -> UUID)?
+    /// Lands a token whose network call outlived a request switch on the
+    /// ORIGINAL request's owner through the store, keyed by id (see
+    /// `AppStore.landOAuthToken`). Parameters: token, refreshed entry id
+    /// (nil = append fresh), the captured owner id.
+    var landLateToken: ((OAuth2Token, UUID?, UUID) -> Void)?
     /// Focus/hover mirrors for the bordered fields below: the AppKit-backed
     /// editors report via `onFocusChange`/`onHoverChanged`, the SecureField
     /// via `@FocusState`/`.onHover`. Without these the shared border language
@@ -590,13 +604,26 @@ struct AuthorizationForm: View {
         tokenFetchError = nil
         let fields = oauth
         let variables = self.variables
+        // The network call can outlive a tab switch: after the await, the
+        // `oauth` binding writes into whatever request the editor shows
+        // THEN. Capture the owner id; a late result lands through the
+        // store (keyed by id) instead of the wrong request.
+        let ownerRequestID = currentRequestID?()
         Task {
             defer { isFetchingToken = false }
             do {
                 let token = try await OAuth2Service.fetchToken(authorization: fields, variables: variables)
-                oauth.oauthTokens.append(token)
-                oauth.oauthSelectedTokenID = token.id
-                onTokenListChanged?()
+                // Same request still on screen (or no id wiring - the shared
+                // form's folder/collection uses): write through the live
+                // binding like before. A switched-away request gets its
+                // token through the store, keyed by the captured id.
+                if ownerRequestID == nil || currentRequestID?() == ownerRequestID {
+                    oauth.oauthTokens.append(token)
+                    oauth.oauthSelectedTokenID = token.id
+                    onTokenListChanged?()
+                } else if let ownerRequestID {
+                    landLateToken?(token, nil, ownerRequestID)
+                }
             } catch {
                 tokenFetchError = error.localizedDescription
             }
@@ -615,22 +642,34 @@ struct AuthorizationForm: View {
         let variables = self.variables
         let refreshToken = selected.refreshToken
         let tokenID = selected.id
+        // Same owner guard as fetchAccessToken: a late refresh must not
+        // land on the request the editor switched to mid-flight.
+        let ownerRequestID = currentRequestID?()
         Task {
             defer { isFetchingToken = false }
             do {
                 let fresh = try await OAuth2Service.refresh(
                     authorization: fields, variables: variables, refreshToken: refreshToken)
-                if let index = oauth.oauthTokens.firstIndex(where: { $0.id == tokenID }) {
-                    var updated = oauth.oauthTokens[index]
-                    updated.accessToken = fresh.accessToken
-                    updated.refreshToken = fresh.refreshToken
-                    updated.tokenType = fresh.tokenType
-                    updated.scope = fresh.scope
-                    updated.expiresAt = fresh.expiresAt
-                    updated.fetchedAt = fresh.fetchedAt
-                    oauth.oauthTokens[index] = updated
+                if ownerRequestID == nil || currentRequestID?() == ownerRequestID {
+                    if let index = oauth.oauthTokens.firstIndex(where: { $0.id == tokenID }) {
+                        var updated = oauth.oauthTokens[index]
+                        updated.accessToken = fresh.accessToken
+                        // RFC 6749 §6: the refresh token is replaced only when
+                        // the server issued one - an absent field decodes as
+                        // "" (see OAuth2Service), and writing that through
+                        // would discard the still-valid token and strand the
+                        // entry without a Refresh action.
+                        updated.refreshToken = fresh.refreshToken.isEmpty ? refreshToken : fresh.refreshToken
+                        updated.tokenType = fresh.tokenType.isEmpty ? updated.tokenType : fresh.tokenType
+                        updated.scope = fresh.scope.isEmpty ? updated.scope : fresh.scope
+                        updated.expiresAt = fresh.expiresAt
+                        updated.fetchedAt = fresh.fetchedAt
+                        oauth.oauthTokens[index] = updated
+                    }
+                    onTokenListChanged?()
+                } else if let ownerRequestID {
+                    landLateToken?(fresh, tokenID, ownerRequestID)
                 }
-                onTokenListChanged?()
             } catch {
                 tokenFetchError = error.localizedDescription
             }

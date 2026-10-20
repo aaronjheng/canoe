@@ -81,8 +81,10 @@ struct SaveRequestSheet: View {
                     .foregroundStyle(AppColor.textPrimary)
                 if let targetName {
                     Text(targetName)
+                } else if isSelectionStale {
+                    Text("The selected location no longer exists. Pick another one.")
                         .font(AppFont.small)
-                        .foregroundStyle(AppColor.textSecondary)
+                        .foregroundStyle(AppColor.warning)
                         .lineLimit(1)
                 } else {
                     Text("Select a collection")
@@ -281,6 +283,13 @@ struct SaveRequestSheet: View {
         }
     }
 
+    /// The target row currently selected is no longer in the picker's own
+    /// list (deleted while the sheet sat open): the summary line says so
+    /// rather than naming nothing, so a disabled Save explains itself.
+    private var isSelectionStale: Bool {
+        selection != nil && targetName == nil
+    }
+
     // MARK: - New Collection
 
     /// Bottom-left affordance that starts the inline creation flow.
@@ -347,6 +356,11 @@ struct SaveRequestSheet: View {
 
     private var isReady: Bool {
         guard selection != nil else { return false }
+        // The chosen target is gone (deleted from the sidebar, or swapped
+        // out by a sync reload) while the sheet is open: Save would be a
+        // silent no-op. `targetName` is nil for exactly that case, so the
+        // button disables itself instead of promising a save.
+        guard targetName != nil else { return false }
         // The scratch request is gone (saved/discarded another way): Save
         // would silently commit nothing.
         guard request != nil else { return false }

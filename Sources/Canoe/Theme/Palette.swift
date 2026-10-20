@@ -3,6 +3,13 @@ import AppKit
 /// One side (light or dark) of a color theme: a complete set of surface
 /// colors, wash strengths, and syntax hues.
 ///
+/// STATUS (correcting the earlier doc): `Palette` is currently UNUSED - no
+/// token resolves through it. `AppColor` carries literal dynamic light/dark
+/// pairs, tuned in place. This struct and both instances are kept as the
+/// prepared shape for a selectable-theme registry (see the roadmap below);
+/// until a second theme lands, treat the values here as reference material
+/// that must be re-synced against `AppColor` if either side changes.
+///
 /// `AppColor` resolves each semantic token by reading the slot from the
 /// palette matching the active appearance, so introducing an additional theme
 /// means adding another `Palette` instance and pointing the per-side lookup
@@ -55,11 +62,10 @@ import AppKit
 ///   axes — the active side picks that side's theme palette.
 /// - Settings: `AppSettings` gains per-side theme selection alongside the
 ///   existing `appearance` field; the View menu and the settings pane expose it.
-/// - Distribution: `AppColor`'s private `paletteColor`/`paletteNSColor`/
-///   `paletteWash` helpers are the only place hardwiring `systemLight` and
-///   `neutralDark` — they are the seam to redirect at a theme registry. The
-///   switch itself needs a re-resolution channel; the candidates, in rough
-///   order of preference:
+/// - Distribution: `AppColor`'s `dynamic`/`dynamicNS` helpers are the only
+///   place the literal light/dark pairs are hardwired - they are the seam
+///   to redirect at a theme registry. The switch itself needs a
+///   re-resolution channel; the candidates, in rough order of preference:
 ///   1. Register a custom `NSAppearance` per active light/dark pair and let
 ///      the dynamic providers identify the theme from the appearance they
 ///      receive. Reuses the machinery that already re-resolves every token

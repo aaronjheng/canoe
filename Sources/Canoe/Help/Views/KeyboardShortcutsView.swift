@@ -31,7 +31,7 @@ struct KeyboardShortcutsView: View {
                 Shortcut(action: "New Environment", keys: "⌘E"),
                 Shortcut(action: "Duplicate Request", keys: "⌘D"),
                 Shortcut(action: "Save", keys: "⌘S"),
-                Shortcut(action: "Reveal Vault in Finder", keys: "⇧⌘R"),
+                Shortcut(action: "Reveal Vault in Finder", keys: "⌘R"),
                 Shortcut(action: "Settings", keys: "⌘,"),
                 Shortcut(action: "Canoe Help", keys: "⌘?"),
             ]),

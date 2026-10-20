@@ -344,6 +344,15 @@ struct RequestEditorView: View {
     @State private var isTimeoutHovered = false
     @State private var isMaxRedirectsFocused = false
     @State private var isMaxRedirectsHovered = false
+    /// The OAuth token revision the pushed draft's managed token fields
+    /// correspond to. A send-path renewal bumps the store's revision; when
+    /// that lands in the SAME SwiftUI update as a keystroke, this handler
+    /// (registered before the revision observer) must merge the renewed
+    /// fields into its push or the stale draft would overwrite the
+    /// rotation. The revision comparison is the discriminator: a plain
+    /// keystroke (including a manual token edit in the Available Tokens
+    /// list) leaves the revision unchanged and adopts nothing.
+    @State private var pushedOAuthRevision: UUID?
 
     /// The URL bar text: the stored base URL plus the query rendered from the
     /// params table (the table is the source of truth for the query; the
@@ -402,6 +411,7 @@ struct RequestEditorView: View {
             draft.params = draft.params.filter {
                 !$0.isEnabled || $0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }
+            syncPathVariableRows(pathVariableKeys)
             return
         }
         let pairs: [(key: String, value: String)] = parts[1]
@@ -449,6 +459,7 @@ struct RequestEditorView: View {
             }
         if draft.urlString != newBase { draft.urlString = newBase }
         if changed { draft.params = merged }
+        syncPathVariableRows(pathVariableKeys)
     }
 
     private var urlBinding: Binding<String> {
@@ -495,6 +506,11 @@ struct RequestEditorView: View {
         // The focused URL bar wins over onChange(draft)'s recompose (see
         // the focus guard there), so the parsed URL lands here directly.
         urlText = composedURLText(base: updated.urlString, params: updated.params)
+        // The parsed URL may carry `:segment`s the draft has no rows for:
+        // re-derive them here. The observer inside pathVariablesBlock only
+        // sees key changes that happen while the block is already mounted,
+        // so a FIRST `:segment` (0 -> N keys) never fires it.
+        syncPathVariableRows(pathVariableKeys)
         return true
     }
 
@@ -534,7 +550,17 @@ struct RequestEditorView: View {
         // the name field itself fail most of the time.
         .onPreferenceChange(RequestNameFrameKey.self) { nameFieldFrame = $0 }
         .onChange(of: draft) { _, newDraft in
-            store.updateRequest(newDraft)
+            // Adopt-before-push for the same-frame renewal case (see
+            // `pushedOAuthRevision`): the revision observer below would
+            // otherwise read back a store this handler already clobbered.
+            let revision = store.oauthTokenRevision(forOwner: newDraft.id)
+            var pushed = newDraft
+            if revision != pushedOAuthRevision, let fresh = store.liveOAuthTokenFields(forOwner: newDraft.id) {
+                pushed.authOAuthTokens = fresh.tokens
+                pushed.authOAuthSelectedTokenID = fresh.selectedID
+            }
+            pushedOAuthRevision = revision
+            store.updateRequest(pushed)
             // Params-table edits (and request switches) re-compose the URL
             // bar text - unless the user is typing in the URL bar itself. The
             // focused surface always wins, keeping the two-way sync loop-free.
@@ -549,6 +575,7 @@ struct RequestEditorView: View {
             urlText = composedURLText(base: request.urlString, params: request.params)
             section = .params
             showGeneratedHeaders = false
+            pushedOAuthRevision = store.oauthTokenRevision(forOwner: request.id)
         }
         .onChange(of: request.folderID) { _, newFolderID in
             // Vault-side folder moves (deleteFolder) must reach the local
@@ -572,6 +599,9 @@ struct RequestEditorView: View {
         }
         .onChange(of: store.oauthTokenRevision(forOwner: draft.id)) { _, _ in
             adoptRenewedOAuthTokens()
+            // Record the consumed revision so the next ordinary keystroke
+            // push does not re-adopt (and cannot regress) this rotation.
+            pushedOAuthRevision = store.oauthTokenRevision(forOwner: draft.id)
         }
         .onChange(of: store.urlFocusToken) { _, _ in
             // View ▸ Jump to Request URL (⌘L, Postman "Jump to request URL"):

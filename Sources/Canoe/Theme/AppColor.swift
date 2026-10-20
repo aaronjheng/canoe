@@ -1,12 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Theme palette mechanism adopted from runlet: surface colors resolve
-/// from `Palette.systemLight` / `Palette.neutralDark`. Brand/status/syntax
-/// colors stay as fixed Primer pairs for compatibility with the existing
-/// token surface (`AppColor.accent`, `methodGET`, etc.). When the registry
-/// arrives, the `Palette` instances here are the only change needed on
-/// the theme side — no token or call site changes.
+/// Status palette tokens (Primer brand/status colors + surface tokens).
 ///
 /// Light/dark correspondence
 /// =========================
@@ -33,6 +28,11 @@ import SwiftUI
 /// - Primer brand/status/syntax colors are fixed light/dark pairs. Their
 ///   per-appearance contrast differs by design - that is Primer's palette,
 ///   not a tuning mistake; don't hand-tune them toward equal contrast.
+/// - Every token below is a literal dynamic pair: the surface values were
+///   tuned directly here (and cross-checked against the ΔL* bands noted
+///   above), NOT resolved from `Palette`. The `Palette` struct is reserved
+///   for a future selectable-theme registry; if a theme lands, its palettes
+///   replace these literals at the `dynamic`/`dynamicNS` seam below.
 /// - Text tiers mirror the same way: `textPrimary` (#212121 / #FFFFFF) and
 ///   `textSecondary` (#6B6B6B / #A6A6A6) hold roughly equal contrast steps
 ///   against the content layer in both appearances.

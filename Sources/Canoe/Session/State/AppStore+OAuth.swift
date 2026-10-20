@@ -60,9 +60,13 @@ extension AppStore {
                 guard !Task.isCancelled else { return authorization }
                 var renewed = selected
                 renewed.accessToken = fresh.accessToken
-                renewed.refreshToken = fresh.refreshToken
-                renewed.tokenType = fresh.tokenType
-                renewed.scope = fresh.scope
+                // RFC 6749 §6: replace the refresh token only when the
+                // server issued one - the field decodes as "" when absent,
+                // and writing that through would discard the still-valid
+                // token and strand the entry without a Refresh action.
+                renewed.refreshToken = fresh.refreshToken.isEmpty ? selected.refreshToken : fresh.refreshToken
+                renewed.tokenType = fresh.tokenType.isEmpty ? selected.tokenType : fresh.tokenType
+                renewed.scope = fresh.scope.isEmpty ? selected.scope : fresh.scope
                 renewed.expiresAt = fresh.expiresAt
                 renewed.fetchedAt = fresh.fetchedAt
                 let index = authorization.oauthTokens
@@ -140,6 +144,46 @@ extension AppStore {
         case .folder: return .folder(source.ownerID)
         case .collection: return .collection(source.ownerID)
         }
+    }
+
+    /// Lands a token the AuthEditor fetched or refreshed onto its request's
+    /// owner AFTER the editor has switched to another request (the network
+    /// call outlived the tab switch): writing through the editor's live
+    /// binding would put the result on whatever request it now shows.
+    /// Reads the owner's CURRENT copy (pending draft first), merges only
+    /// the managed token fields, and pushes through the standard update
+    /// path - the same merge `writeOAuth` performs for the send path.
+    /// `refreshedTokenID` set merges the fresh fields into that existing
+    /// entry (id and selection preserved, like the editor does); nil
+    /// appends a new entry and selects it.
+    func landOAuthToken(_ fresh: OAuth2Token, refreshedTokenID: UUID?, forRequestID requestID: UUID) {
+        guard
+            let request = vault.collections.flatMap(\.requests).first(where: { $0.id == requestID })
+                ?? unfiledRequests[requestID]
+        else { return }
+        var merged = pendingRequestSnapshots[requestID] ?? request
+        let tokensBefore = merged.authOAuthTokens
+        let selectionBefore = merged.authOAuthSelectedTokenID
+        if let refreshedTokenID, let index = merged.authOAuthTokens.firstIndex(where: { $0.id == refreshedTokenID }) {
+            var entry = merged.authOAuthTokens[index]
+            entry.accessToken = fresh.accessToken
+            // RFC 6749 §6: replace the refresh token only when the server
+            // issued one (an absent field decodes as "").
+            entry.refreshToken = fresh.refreshToken.isEmpty ? entry.refreshToken : fresh.refreshToken
+            entry.tokenType = fresh.tokenType.isEmpty ? entry.tokenType : fresh.tokenType
+            entry.scope = fresh.scope.isEmpty ? entry.scope : fresh.scope
+            entry.expiresAt = fresh.expiresAt
+            entry.fetchedAt = fresh.fetchedAt
+            merged.authOAuthTokens[index] = entry
+        } else {
+            merged.authOAuthTokens.append(fresh)
+            merged.authOAuthSelectedTokenID = fresh.id
+        }
+        merged.updatedAt = Date()
+        updateRequest(merged)
+        bumpOAuthRevision(
+            for: .request(requestID), tokens: tokensBefore, selection: selectionBefore,
+            changedTo: (merged.authOAuthTokens, merged.authOAuthSelectedTokenID))
     }
 
     /// Lands the renewed token back on the owner (Postman's Available

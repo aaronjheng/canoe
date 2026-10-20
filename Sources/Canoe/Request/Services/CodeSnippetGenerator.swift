@@ -380,6 +380,12 @@ enum CodeSnippetGenerator {
                 pairs
                 .map { "\(formEncode($0.key))=\(formEncode($0.value))" }
                 .joined(separator: "&")
+            // Unlike curl/HTTPie (whose flags auto-generate the header), a
+            // raw HTTP message carries only the headers listed above: an
+            // urlencoded body without Content-Type is incomplete.
+            if !hasHeader(prepared, name: "content-type") {
+                lines.append("Content-Type: application/x-www-form-urlencoded")
+            }
         case .binary:
             // A raw HTTP message cannot inline binary content; curl/HTTPie
             // snippets reference the real file instead.
@@ -420,7 +426,11 @@ enum CodeSnippetGenerator {
 
     private static func curl(_ prepared: Prepared) -> String {
         var lines: [String] = []
-        let methodPart = prepared.method == "GET" ? "" : "-X \(prepared.method) "
+        // `-X` is redundant for a bodyless request, but a GET that carries
+        // a body needs it: the moment --data appears, curl flips to POST.
+        let carriesBody: Bool
+        if case .none = prepared.body { carriesBody = false } else { carriesBody = true }
+        let methodPart = prepared.method == "GET" && !carriesBody ? "" : "-X \(prepared.method) "
         lines.append("curl \(methodPart)\(shellSingleQuoted(prepared.url))")
         if let digest = prepared.digestCredentials {
             lines.append("  --digest")
