@@ -658,12 +658,13 @@ private struct InlineRenameField: View {
         dismissMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
             MainActor.assumeIsolated {
                 guard focused, !finished, let window = event.window else { return }
-                // Window-base -> screen-top-left conversion for SwiftUI .global
-                // frames (primary screen top edge, same as TabBarView).
-                let screenTop = NSScreen.screens.first?.frame.maxY ?? 0
+                // Window-base (bottom-left origin) -> window-top-left: the
+                // space SwiftUI .global frames report on macOS. (The old
+                // screen-top conversion measured every point ~one window-top
+                // offset too low and missed the field.)
                 let point = CGPoint(
-                    x: window.frame.origin.x + event.locationInWindow.x,
-                    y: screenTop - window.frame.origin.y - event.locationInWindow.y)
+                    x: event.locationInWindow.x,
+                    y: window.frame.height - event.locationInWindow.y)
                 if !fieldFrame.contains(point) {
                     finish(committing: true)
                 }

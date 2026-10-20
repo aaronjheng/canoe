@@ -103,20 +103,19 @@ struct FilterField: View {
     /// focus (macOS SwiftUI text fields don't blur on background clicks on
     /// their own - the same disease the sidebar's inline rename field and
     /// the request name field each hand-roll monitors for). The click point
-    /// is converted from window-base into the screen-top-left space SwiftUI
-    /// .global frames use (primary screen top edge, same as the tab strip's
-    /// double-click monitor and the variables inspector's value blur - not
-    /// `window.screen`, which can disagree on multi-display setups and make
-    /// double-clicks on a focused field read as outside).
+    /// is converted from window-base (bottom-left origin) into window-top-left
+    /// coordinates - the space SwiftUI .global frames report on macOS. (The
+    /// old screen-top conversion landed every point ~one window-top offset
+    /// too low; for a blur monitor that error was masked - every click read
+    /// as outside - but it is still the wrong space.)
     private func installBlurMonitor() {
         guard blurMonitor == nil else { return }
         blurMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
             MainActor.assumeIsolated {
                 if isFocused, let window = event.window {
-                    let screenTop = NSScreen.screens.first?.frame.maxY ?? 0
                     let point = CGPoint(
-                        x: window.frame.origin.x + event.locationInWindow.x,
-                        y: screenTop - window.frame.origin.y - event.locationInWindow.y)
+                        x: event.locationInWindow.x,
+                        y: window.frame.height - event.locationInWindow.y)
                     if !fieldFrame.contains(point) {
                         isFocused = false
                     }
@@ -347,12 +346,11 @@ struct InlineNameField: View {
         dismissMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
             MainActor.assumeIsolated {
                 guard isFocusedNow, let window = event.window else { return }
-                // Window-base -> screen-top-left conversion for SwiftUI .global
-                // frames (primary screen top edge, same as TabBarView).
-                let screenTop = NSScreen.screens.first?.frame.maxY ?? 0
+                // Window-base (bottom-left origin) -> window-top-left, the
+                // space SwiftUI .global frames report on macOS.
                 let point = CGPoint(
-                    x: window.frame.origin.x + event.locationInWindow.x,
-                    y: screenTop - window.frame.origin.y - event.locationInWindow.y)
+                    x: event.locationInWindow.x,
+                    y: window.frame.height - event.locationInWindow.y)
                 if !fieldFrame.contains(point) {
                     finishEditing()
                 }

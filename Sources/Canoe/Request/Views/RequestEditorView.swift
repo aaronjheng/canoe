@@ -906,12 +906,11 @@ struct RequestEditorView: View {
         nameDismissMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
             MainActor.assumeIsolated {
                 guard isNameFieldFocused, let window = event.window else { return }
-                // Window-base -> screen-top-left conversion for SwiftUI .global
-                // frames (primary screen top edge, same as TabBarView).
-                let screenTop = NSScreen.screens.first?.frame.maxY ?? 0
+                // Window-base (bottom-left origin) -> window-top-left, the
+                // space SwiftUI .global frames report on macOS.
                 let point = CGPoint(
-                    x: window.frame.origin.x + event.locationInWindow.x,
-                    y: screenTop - window.frame.origin.y - event.locationInWindow.y)
+                    x: event.locationInWindow.x,
+                    y: window.frame.height - event.locationInWindow.y)
                 if !nameFieldFrame.contains(point) {
                     isNameFieldFocused = false
                 }

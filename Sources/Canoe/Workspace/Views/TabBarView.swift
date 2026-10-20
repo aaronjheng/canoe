@@ -34,6 +34,19 @@ struct TabBarView: View {
     /// tab went. Suppressing the double-click action for one
     /// `NSEvent.doubleClickInterval` makes the whole gesture a plain close.
     @State private var lastTabCloseAt: Date?
+    /// The closed pill's frame at close time. The double-click suppression
+    /// is scoped to this rect: a second click landing where the closed tab
+    /// WAS (the freed slot, or the neighbor that slid under the pointer)
+    /// must not act on the reshuffled strip - but a deliberate double-click
+    /// on any other pill is a separate gesture and still pins. (The former
+    /// blanket interval suppression swallowed exactly that gesture.)
+    @State private var lastClosedPillFrame: CGRect?
+    /// The closed pill's frame at close time. The double-click suppression
+    /// is scoped to this rect: a second click landing where the closed tab
+    /// WAS (the freed slot, or the neighbor that slid under the pointer)
+    /// must not act on the reshuffled strip - but a deliberate double-click
+    /// on any other pill is a separate gesture and still pins. (The former
+    /// blanket interval suppression swallowed exactly that gesture.)
     /// Whether the tab drawer / environment dropdown panel is open. Owned by
     /// ContentView: both float at window level (a strip-level overlay gets
     /// clipped where it overflows the strip bounds).
@@ -58,6 +71,7 @@ struct TabBarView: View {
                                 onHover: { hoveredTab = $0 ? tab : nil },
                                 onClose: {
                                     lastTabCloseAt = Date()
+                                    lastClosedPillFrame = stripGeometry.pillFrames[tab]
                                     store.requestCloseTab(tab)
                                 }
                             )
@@ -308,7 +322,7 @@ struct TabBarView: View {
         .background(TabStripWindowCapture { stripGeometry.window = $0 })
         .onAppear {
             store.pruneDanglingTabs()
-            doubleClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { event in
+            doubleClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
                 var consumed = false
                 MainActor.assumeIsolated {
                     consumed = handleDoubleClick(event)
@@ -469,22 +483,31 @@ struct TabBarView: View {
         guard event.clickCount == 2, event.window === stripGeometry.window,
             let window = event.window
         else { return false }
+        // The registry stores SwiftUI .global frames - which on macOS are
+        // WINDOW coordinates (top-left of the window's root view), NOT
+        // screen coordinates. The old screen-top conversion landed every
+        // point ~one menu-bar height below the strip and missed every
+        // pill. Match the space: window-base (bottom-left origin) ->
+        // window-top-left, exactly what .global reports.
+        let point = CGPoint(
+            x: event.locationInWindow.x,
+            y: window.frame.height - event.locationInWindow.y)
         // The gesture's first click already closed a tab (its × was the
-        // press target): the second click must not act on the strip that
-        // reshuffled under it - it would pin the neighbor that slid in, or
-        // mint a brand-new request out of a close gesture.
-        if let closedAt = lastTabCloseAt, Date().timeIntervalSince(closedAt) < NSEvent.doubleClickInterval {
+        // press target): a second click landing where that tab WAS - the
+        // freed slot, or the neighbor that slid under the pointer - must
+        // not act on the strip that reshuffled underneath (it would pin
+        // the neighbor, or mint a brand-new request out of a close
+        // gesture). Anywhere else the double-click is its own gesture.
+        // Scoped to the closed pill's frame; the former blanket interval
+        // suppression swallowed deliberate double-clicks elsewhere.
+        let withinCloseInterval =
+            lastTabCloseAt.map { Date().timeIntervalSince($0) < NSEvent.doubleClickInterval } ?? false
+        if withinCloseInterval, let closedFrame = lastClosedPillFrame, closedFrame.contains(point) {
+            // Consume once: the next double-click is a fresh gesture.
             lastTabCloseAt = nil
+            lastClosedPillFrame = nil
             return true
         }
-        // NSEvent lives in window-base (bottom-left) space; the registry
-        // stores SwiftUI .global frames (top-left screen). Convert via the
-        // screen's top edge.
-        let screenTop = NSScreen.screens.first?.frame.maxY ?? 0
-        let windowFrame = window.frame
-        let point = CGPoint(
-            x: windowFrame.origin.x + event.locationInWindow.x,
-            y: screenTop - windowFrame.origin.y - event.locationInWindow.y)
         // Double-clicking the preview pill pins it (VSCode behavior);
         // double-clicks on pinned pills are already where they belong.
         if let hit = stripGeometry.pillFrames.first(where: { $0.value.contains(point) }) {
