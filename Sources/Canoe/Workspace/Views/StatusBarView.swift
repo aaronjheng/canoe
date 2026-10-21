@@ -25,7 +25,7 @@ struct StatusBarView: View {
             ToolbarToggleButton(
                 systemImage: "terminal",
                 isOn: store.showConsole,
-                help: store.showConsole ? "Hide Console" : "Show Console"
+                help: store.showConsole ? "Hide Console (⌘⌥C)" : "Show Console (⌘⌥C)"
             ) {
                 store.toggleConsole()
             }
@@ -35,7 +35,7 @@ struct StatusBarView: View {
             ToolbarToggleButton(
                 systemImage: "sidebar.right",
                 isOn: store.isRightSidebarVisible,
-                help: store.isRightSidebarVisible ? "Hide Right Sidebar" : "Show Right Sidebar"
+                help: store.isRightSidebarVisible ? "Hide Right Sidebar (⌘⌥\\)" : "Show Right Sidebar (⌘⌥\\)"
             ) {
                 store.toggleRightSidebar()
             }

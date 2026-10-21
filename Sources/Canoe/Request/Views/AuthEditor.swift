@@ -526,7 +526,8 @@ struct AuthorizationForm: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(IconButtonStyle(inset: 0))
-                        .help("Delete the selected token; the manual Access Token field takes over")
+                        .accessibilityLabel("Delete token")
+                        .help("Delete token")
                     }
                 }
             }

@@ -247,7 +247,9 @@ struct TabBarView: View {
             ToolbarToggleButton(
                 systemImage: "curlybraces",
                 isOn: store.showVariablesSidebar,
-                help: store.showVariablesSidebar ? "Hide Variables in Request" : "Show Variables in Request"
+                help: store.showVariablesSidebar
+                    ? "Hide Variables in Request (⌘⇧V)"
+                    : "Show Variables in Request (⌘⇧V)"
             ) {
                 store.toggleVariablesSidebar()
             }

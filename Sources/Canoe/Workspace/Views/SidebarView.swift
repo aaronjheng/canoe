@@ -427,6 +427,7 @@ private struct HistoryView: View {
                     .labelStyle(.iconOnly)
                     .buttonStyle(IconButtonStyle())
                     .foregroundStyle(AppColor.textSecondary)
+                    .accessibilityLabel("Clear history")
                     .help("Clear history")
                     .confirmationDialog(
                         "Clear all history",
@@ -1579,6 +1580,7 @@ private struct HistoryRow: View {
                         .foregroundStyle(AppColor.textSecondary)
                 }
                 .buttonStyle(IconButtonStyle(inset: 0))
+                .accessibilityLabel("Remove from history")
                 .help("Remove from history")
                 .padding(.trailing, AppSpacing.xSmall)
             }

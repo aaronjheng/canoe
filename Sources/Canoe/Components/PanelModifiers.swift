@@ -251,21 +251,29 @@ struct PopupPanelModifier: ViewModifier {
 }
 
 /// Border language for fields (see `focusRingBorder`): rest is the strong
-/// border at the standard field width, focused is accent at the wider focus
-/// width. Hover/focus fills are handled by the caller so they can pick the
-/// right idle background. The URL bar's spliced rest outline is a bespoke
+/// border at the standard field width, hover lifts the border to the shared
+/// hover color, focus takes over with the accent at the wider focus width.
+/// Fills are handled by the caller so they can pick the right idle
+/// background. The URL bar's spliced rest outline is a bespoke
 /// variant of the same language (`SplicedBarRestOutline`) because its two
 /// halves draw their own accent rings.
 struct FocusRingBorderModifier: ViewModifier {
     let isFocused: Bool
+    var isHovered = false
 
     func body(content: Content) -> some View {
         content.overlay(
             RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                .strokeBorder(
-                    isFocused ? AppColor.accent : AppColor.borderStrong,
-                    lineWidth: isFocused ? AppLine.focusedField : AppLine.field)
+                .strokeBorder(borderColor, lineWidth: isFocused ? AppLine.focusedField : AppLine.field)
         )
+    }
+
+    /// Border tiers: rest the standard field border, hover the shared hover
+    /// border, focus the accent.
+    private var borderColor: Color {
+        if isFocused { return AppColor.accent }
+        if isHovered { return AppColor.fieldHoverBorder }
+        return AppColor.borderStrong
     }
 }
 
@@ -349,9 +357,10 @@ extension View {
     }
 
     /// Border language for fields: rest is the strong border at the
-    /// standard field width, focused is accent at the wider focus width.
-    func focusRingBorder(isFocused: Bool) -> some View {
-        modifier(FocusRingBorderModifier(isFocused: isFocused))
+    /// standard field width, hover lifts it to the shared hover border,
+    /// focused is accent at the wider focus width.
+    func focusRingBorder(isFocused: Bool, isHovered: Bool = false) -> some View {
+        modifier(FocusRingBorderModifier(isFocused: isFocused, isHovered: isHovered))
     }
 
     /// Borderless-at-rest field chrome: brighter hover/focus fill + field border.

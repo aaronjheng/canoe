@@ -1491,7 +1491,7 @@ extension View {
     /// Wraps a borderless variable editor in the standard rounded-border
     /// field chrome (a match of `.textFieldStyle(.roundedBorder)`).
     /// Hover/focus lift the fill one step brighter than the idle wash; the
-    /// border stays at the standard field width (strong → accent).
+    /// border follows the shared field tiers (standard → hover → accent).
     /// The plain style is forced here so native `TextField`/`SecureField`
     /// wrapped by this chrome don't draw their own system bezel inside it -
     /// that double border is exactly what this modifier exists to replace.
@@ -1515,6 +1515,6 @@ extension View {
             )
             // Shared border language (see focusRingBorder): fields apply the
             // standard outline through this modifier.
-            .focusRingBorder(isFocused: isFocused)
+            .focusRingBorder(isFocused: isFocused, isHovered: isHovered)
     }
 }

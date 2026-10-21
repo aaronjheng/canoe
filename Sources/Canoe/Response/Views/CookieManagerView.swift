@@ -176,10 +176,10 @@ struct CookieManagerView: View {
                 Image(systemName: "trash")
                     .contentShape(Rectangle())
             }
-            .labelStyle(.iconOnly)
             .buttonStyle(IconButtonStyle(inset: 0))
             .foregroundStyle(AppColor.textSecondary)
             .frame(width: AppSize.controlHeight)
+            .accessibilityLabel("Delete \(cookie.name)")
             .help("Delete \(cookie.name) for \(cookie.domain)")
         }
         .frame(minHeight: AppSize.tableRowHeight)

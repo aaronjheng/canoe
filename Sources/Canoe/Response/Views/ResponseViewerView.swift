@@ -1810,7 +1810,7 @@ struct ResponseViewerView: View {
                     cookieColumnHeader("Domain", width: 140)
                     cookieColumnHeader("Path", width: 110)
                     cookieColumnHeader("Expires", width: 150)
-                    cookieColumnHeader("Flags", width: 120)
+                    cookieColumnHeader("Flags", width: 130)
                 }
                 .frame(height: AppSize.tableRowHeight)
                 .background(AppColor.tableHeaderBackground)
@@ -1875,10 +1875,13 @@ struct ResponseViewerView: View {
             HStack(spacing: AppSpacing.xxSmall) {
                 FlagLabel(label: "Secure", isOn: cookie.isSecure)
                 FlagLabel(label: "HttpOnly", isOn: cookie.isHTTPOnly)
+                if cookie.expiresDate.map({ $0 <= Date() }) ?? false {
+                    FlagLabel(label: "Expired", isOn: true)
+                }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, AppSpacing.small)
-            .frame(width: 120, alignment: .leading)
+            .frame(width: 130, alignment: .leading)
         }
         .frame(height: AppSize.tableRowHeight)
         .help(cookieText(cookie))
@@ -1898,7 +1901,8 @@ struct ResponseViewerView: View {
     private var formatter: DateFormatter {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
-        formatter.timeStyle = .medium
+        // Same precision the Cookie Jar shows for its Expires column.
+        formatter.timeStyle = .short
         return formatter
     }
 

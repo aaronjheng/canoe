@@ -69,7 +69,11 @@ struct SaveRequestSheet: View {
                     .foregroundStyle(AppColor.textSecondary)
                 TextField("Request Name", text: $name)
                     .font(AppFont.small)
-                    .modifier(SheetFieldChrome(isFocused: isNameFocused, isHovered: nameHovered))
+                    .variableFieldBordered(
+                        isFocused: isNameFocused,
+                        isHovered: nameHovered,
+                        verticalPadding: AppSpacing.compact
+                    )
                     .focused($isNameFocused)
                     .onHover { nameHovered = $0 }
                     .onSubmit(saveIfReady)
@@ -77,8 +81,8 @@ struct SaveRequestSheet: View {
 
             HStack(spacing: AppSpacing.small) {
                 Text("Save to")
-                    .font(AppFont.sectionTitle)
-                    .foregroundStyle(AppColor.textPrimary)
+                    .font(AppFont.microHeader)
+                    .foregroundStyle(AppColor.textSecondary)
                 if let targetName {
                     Text(targetName)
                 } else if isSelectionStale {
@@ -133,7 +137,7 @@ struct SaveRequestSheet: View {
                     newCollectionRow
                 } else {
                     // Same field height as the sheet's other inputs (compact
-                    // vertical padding, like SheetFieldChrome).
+                    // vertical padding, like variableFieldBordered).
                     FilterField(
                         text: $search, placeholder: "Search for collection or folder",
                         verticalPadding: AppSpacing.compact)
@@ -321,7 +325,11 @@ struct SaveRequestSheet: View {
                 .foregroundStyle(AppColor.textSecondary)
             TextField("Name your collection", text: $newCollectionName)
                 .font(AppFont.small)
-                .modifier(SheetFieldChrome(isFocused: isNewCollectionFocused, isHovered: newCollectionNameHovered))
+                .variableFieldBordered(
+                    isFocused: isNewCollectionFocused,
+                    isHovered: newCollectionNameHovered,
+                    verticalPadding: AppSpacing.compact
+                )
                 .focused($isNewCollectionFocused)
                 .onHover { newCollectionNameHovered = $0 }
                 .onSubmit(createCollection)
@@ -475,40 +483,5 @@ private struct ExpanderChevron: View {
             .font(AppFont.sidebarChevron)
             .rotationEffect(.degrees(isExpanded ? 90 : 0))
             .frame(width: AppSize.treeChevronWidth)
-    }
-}
-
-/// Chrome for the sheet's plain text fields (request name, new collection):
-/// base background at rest under a standard field border, hover switches the
-/// border to the shared hover color (and lifts the fill), focus rings in
-/// accent.
-private struct SheetFieldChrome: ViewModifier {
-    let isFocused: Bool
-    let isHovered: Bool
-
-    func body(content: Content) -> some View {
-        content
-            .textFieldStyle(.plain)
-            .focusEffectDisabled()
-            .padding(.horizontal, AppSpacing.compact)
-            .padding(.vertical, AppSpacing.compact)
-            .background {
-                if isFocused || isHovered {
-                    RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                        .fill(isFocused ? AppColor.fieldFocusBackground : AppColor.fieldHoverBackground)
-                }
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                    .strokeBorder(borderColor, lineWidth: isFocused ? AppLine.focusedField : AppLine.field)
-            }
-    }
-
-    /// Border tiers: rest the standard field border, hover the shared hover
-    /// border, focus the accent.
-    private var borderColor: Color {
-        if isFocused { return AppColor.accent }
-        if isHovered { return AppColor.fieldHoverBorder }
-        return AppColor.borderStrong
     }
 }

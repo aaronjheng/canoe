@@ -389,7 +389,7 @@ struct WorkspacesView: View {
                     deleteTargets = [workspace.id]
                 } label: {
                     Image(systemName: "trash")
-                        .foregroundStyle(isHovered ? AppColor.error : AppColor.textSecondary)
+                        .foregroundStyle(AppColor.textSecondary)
                 }
                 .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
                 .focused($focusedActionRow, equals: workspace.id)

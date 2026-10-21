@@ -1222,6 +1222,7 @@ private struct KVRow: View {
                 .buttonStyle(IconButtonStyle(inset: 0))
                 .opacity(isDeleteVisible ? 1 : 0)
                 .disabled(!isDeleteVisible)
+                .accessibilityLabel("Remove row")
                 .help("Remove row")
             } else {
                 Color.clear
