@@ -50,7 +50,7 @@ struct NewWorkspaceView: View {
         }
         .padding(.horizontal, AppSpacing.xLarge)
         .padding(.vertical, AppSpacing.large)
-        .frame(width: 380)
+        .frame(width: AppSize.newWorkspaceSheetWidth)
         .sheetSurface()
         // Sheet is its own root: suppress SwiftUI focus chrome here too so
         // first focus in the name field never paints the white-box flash.

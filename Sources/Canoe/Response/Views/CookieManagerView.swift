@@ -59,7 +59,7 @@ struct CookieManagerView: View {
         .background(AppColor.controlBackground)
         .task { await refreshCookies() }
         .confirmationDialog(
-            "Clear all stored cookies?",
+            "Clear all stored cookies",
             isPresented: $isConfirmingClear,
             titleVisibility: .visible
         ) {
@@ -198,22 +198,15 @@ struct CookieManagerView: View {
 
     private func cookieFlagsCell(_ cookie: StoredCookie, width: CGFloat) -> some View {
         HStack(spacing: AppSpacing.xxSmall) {
-            flagText("Secure", isOn: cookie.secure)
-            flagText("HttpOnly", isOn: cookie.httpOnly)
+            FlagLabel(label: "Secure", isOn: cookie.secure)
+            FlagLabel(label: "HttpOnly", isOn: cookie.httpOnly)
             if Self.isExpired(cookie) {
-                flagText("Expired", isOn: true)
+                FlagLabel(label: "Expired", isOn: true)
             }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, AppSpacing.small)
         .frame(width: width, alignment: .leading)
-    }
-
-    private func flagText(_ label: String, isOn: Bool) -> some View {
-        Text(label)
-            .font(AppFont.small)
-            .foregroundStyle(isOn ? AppColor.textSecondary : AppColor.tertiaryText)
-            .opacity(isOn ? 1 : 0.5)
     }
 
     private static func isExpired(_ cookie: StoredCookie) -> Bool {
@@ -236,7 +229,7 @@ struct CookieManagerView: View {
             }
             .buttonStyle(SecondaryButtonStyle(isDestructive: true, minHeight: AppSize.controlHeight))
             .disabled(cookies.isEmpty)
-            .help("Delete every stored cookie")
+            .help("Clear all stored cookies")
         }
         .padding(.horizontal, AppSpacing.medium)
         .padding(.vertical, AppSpacing.small)

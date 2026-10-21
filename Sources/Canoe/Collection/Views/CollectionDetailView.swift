@@ -285,7 +285,7 @@ struct CollectionDetailView: View {
     private func overviewStat(value: String, label: String) -> some View {
         VStack(alignment: .leading, spacing: AppSpacing.xxSmall) {
             Text(value)
-                .font(.title2.weight(.semibold))
+                .font(AppFont.featureHeadline)
                 .monospacedDigit()
             Text(label)
                 .font(AppFont.small)

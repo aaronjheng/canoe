@@ -12,7 +12,7 @@ struct WelcomeView: View {
 
             VStack(spacing: AppSpacing.small) {
                 Text("Welcome to Canoe")
-                    .font(.largeTitle.weight(.semibold))
+                    .font(AppFont.welcomeHeadline)
                 Text("Create a workspace to start organizing your API requests.")
                     .font(AppFont.emptyStateBody)
                     .foregroundStyle(AppColor.textSecondary)

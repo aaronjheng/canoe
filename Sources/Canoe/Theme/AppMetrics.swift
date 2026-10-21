@@ -32,6 +32,10 @@ enum AppLine {
 enum AppOpacity {
     static let disabled: CGFloat = 0.45
     static let badgeBackground: CGFloat = 0.12
+    /// Off feature flags (cookie tables' Secure / HttpOnly / Expired) stay
+    /// visible at half presence: an unset flag reads as receded, not gone,
+    /// so the two cookie surfaces show the same shape.
+    static let unsetFlag: CGFloat = 0.5
     static let errorBackground: CGFloat = 0.10
     /// `{{variable}}` highlight wash inside editors (tints the syntax color).
     static let variableHighlight: CGFloat = 0.22
@@ -181,6 +185,13 @@ enum AppSize {
     /// the detail split.
     static let requestEditorMinHeight: CGFloat = 240
     static let responseViewerMinHeight: CGFloat = 200
+    /// The three sheets' widths, growing with the content they carry: the
+    /// workspace naming sheet, the Save Request destination sheet, and the
+    /// Import cURL form. Fixed measures (not content-sized) keep a sheet
+    /// from reflowing while its text is edited.
+    static let newWorkspaceSheetWidth: CGFloat = 380
+    static let saveRequestSheetWidth: CGFloat = 460
+    static let importCURLSheetWidth: CGFloat = 560
     /// Shared cap for a form's field column, so a wide window does not
     /// stretch one editor's inputs across it.
     static let formFieldMaxWidth: CGFloat = 520
@@ -202,4 +213,11 @@ enum AppMotion {
     static let travel = Animation.easeOut(duration: 0.2)
     /// The sidebar's collapsible group headers and sections.
     static let group = Animation.smooth(duration: 0.25)
+    /// Dwell needed before a hover-triggered card opens (the workspace info
+    /// card): a pointer merely crossing its anchor must not pop a card up.
+    static let hoverOpenDwell: TimeInterval = 0.28
+    /// Grace once pointer and anchor have both left before a hover-triggered
+    /// panel hides, so crossing the gap between them does not flicker it
+    /// away mid-trip.
+    static let hoverHideGrace: TimeInterval = 0.14
 }

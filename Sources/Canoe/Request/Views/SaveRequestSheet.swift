@@ -109,7 +109,7 @@ struct SaveRequestSheet: View {
         }
         .padding(.horizontal, AppSpacing.xLarge)
         .padding(.vertical, AppSpacing.large)
-        .frame(width: 460)
+        .frame(width: AppSize.saveRequestSheetWidth)
         .sheetSurface()
         // The sheet is its own root: suppress SwiftUI focus chrome here too
         // so first focus in the name field never paints the white-box flash.

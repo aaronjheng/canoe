@@ -334,6 +334,14 @@ struct RequestEditorView: View {
     @State private var hoveredCrumbID: UUID?
     @State private var crumbNameDraft = ""
     @FocusState private var isCrumbFieldFocused: Bool
+    /// The renamed crumb field's frame in window coordinates - the
+    /// click-away monitor needs it to spare clicks inside the field.
+    @State private var crumbFieldFrame: CGRect = .zero
+    /// Local left-mouse-down monitor that ends a crumb rename when a click
+    /// lands outside the field. Same device as the request name field's
+    /// monitor: macOS text fields do not blur on background clicks on their
+    /// own, so "clicking away commits" has to be driven by hand.
+    @State private var crumbDismissMonitor: Any?
 
     /// The raw text currently shown in the URL bar.
     @State private var urlText = ""
@@ -643,9 +651,11 @@ struct RequestEditorView: View {
             draft = request
             urlText = composedURLText(base: draft.urlString, params: draft.params)
             installNameDismissMonitor()
+            installCrumbDismissMonitor()
         }
         .onDisappear {
             removeNameDismissMonitor()
+            removeCrumbDismissMonitor()
             // A detail switch can unmount the editor while the window-level
             // dropdown is open; close it or its backdrop would linger.
             isMethodMenuVisible = false
@@ -790,10 +800,25 @@ struct RequestEditorView: View {
             .borderlessFieldChrome(isFocused: isCrumbFieldFocused)
             .focused($isCrumbFieldFocused)
             .frame(minWidth: 80, maxWidth: 200)
+            .onGeometryChange(for: CGRect.self) { proxy in
+                proxy.frame(in: .global)
+            } action: {
+                crumbFieldFrame = $0
+            }
             .onSubmit { commitCrumbRename(crumb) }
-            .onExitCommand { renamingCrumbID = nil }
+            .onExitCommand {
+                // Esc is a cancel, not a commit (same as the name field):
+                // drop the rename first so the blur below finds nothing to
+                // commit, then release the focus instead of leaving stale
+                // state for the click-away monitor to trip over.
+                renamingCrumbID = nil
+                isCrumbFieldFocused = false
+            }
             .onChange(of: isCrumbFieldFocused) { _, focused in
-                // Clicking away commits, like the sidebar's inline rename.
+                // Clicking away commits, like the sidebar's inline rename -
+                // the click-away thuds via `installCrumbDismissMonitor`
+                // forcing this blur; Tab, moving to another control, and
+                // every other focus-loss route commit right here too.
                 if !focused { commitCrumbRename(crumb) }
             }
             .onDisappear {
@@ -863,7 +888,7 @@ struct RequestEditorView: View {
 
     private var requestNameFieldBody: some View {
         TextField("Request Name", text: $draft.name)
-            .font(AppFont.detailTitle)
+            .font(AppFont.panelTitle)
             .textFieldStyle(.plain)
             .focusEffectDisabled()
             .focused($isNameFieldFocused)
@@ -879,11 +904,13 @@ struct RequestEditorView: View {
                     )
             )
             .overlay {
-                // Borderless at rest: field border on hover/focus.
+                // Borderless at rest: field border on hover/focus, on the
+                // shared language's hover token (`fieldHoverBorder`, as in
+                // `BorderlessFieldChromeModifier` and `InlineNameField`).
                 if isNameFieldFocused || isNameHovered {
                     RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                         .strokeBorder(
-                            isNameFieldFocused ? AppColor.accent : AppColor.borderStrong,
+                            isNameFieldFocused ? AppColor.accent : AppColor.fieldHoverBorder,
                             lineWidth: isNameFieldFocused ? AppLine.focusedField : AppLine.field
                         )
                 }
@@ -923,6 +950,37 @@ struct RequestEditorView: View {
         if let monitor = nameDismissMonitor {
             NSEvent.removeMonitor(monitor)
             nameDismissMonitor = nil
+        }
+    }
+
+    /// Ends a crumb rename when a click lands outside the field - by forcing
+    /// the blur, not by committing directly: the field's own focus-loss
+    /// commits (and honors Esc already having cancelled), so every exit
+    /// route lands in one place. Same local-observer discipline as the
+    /// request name field's monitor: observes without consuming, clicks
+    /// inside the field are never delayed or stolen.
+    private func installCrumbDismissMonitor() {
+        guard crumbDismissMonitor == nil else { return }
+        crumbDismissMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
+            MainActor.assumeIsolated {
+                guard isCrumbFieldFocused, let window = event.window else { return }
+                // Window-base (bottom-left origin) -> window-top-left, the
+                // space SwiftUI .global frames report on macOS.
+                let point = CGPoint(
+                    x: event.locationInWindow.x,
+                    y: window.frame.height - event.locationInWindow.y)
+                if !crumbFieldFrame.contains(point) {
+                    isCrumbFieldFocused = false
+                }
+            }
+            return event
+        }
+    }
+
+    private func removeCrumbDismissMonitor() {
+        if let monitor = crumbDismissMonitor {
+            NSEvent.removeMonitor(monitor)
+            crumbDismissMonitor = nil
         }
     }
 

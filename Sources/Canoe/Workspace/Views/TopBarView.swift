@@ -190,14 +190,16 @@ private struct WorkspaceSwitcher: View {
             // click that opens the menu, never flashes the card - and a short
             // grace on the way out, because the pill and the card are separate
             // hover regions and stepping from one to the other crosses a gap
-            // where neither is hovered.
+            // where neither is hovered. Timing on shared tokens (`AppMotion`
+            // hoverOpenDwell / hoverHideGrace): the hover panels on the
+            // response toolbar use the same values.
             .task(id: wantsCard) {
                 if wantsCard {
-                    try? await Task.sleep(for: .milliseconds(280))
+                    try? await Task.sleep(for: .seconds(AppMotion.hoverOpenDwell))
                     guard !Task.isCancelled, dropdown.active?.id != menuID else { return }
                     isCardShown = true
                 } else {
-                    try? await Task.sleep(for: .milliseconds(140))
+                    try? await Task.sleep(for: .seconds(AppMotion.hoverHideGrace))
                     guard !Task.isCancelled else { return }
                     isCardShown = false
                 }
@@ -273,7 +275,9 @@ private struct WorkspaceInfoCard: View {
     static let width: CGFloat = 300
 
     let workspace: Workspace
-    @State private var didCopyID = false
+    /// In-place copy acknowledgement (the shared one - see
+    /// `CopyAcknowledgement`).
+    @State private var copyAck = CopyAcknowledgement()
 
     /// Construction is expensive, so one instance serves the card.
     private static let relativeFormatter = RelativeDateTimeFormatter()
@@ -336,13 +340,13 @@ private struct WorkspaceInfoCard: View {
                 Button {
                     copyID()
                 } label: {
-                    Image(systemName: didCopyID ? "checkmark" : "doc.on.doc")
+                    Image(systemName: copyAck.didCopy ? "checkmark" : "doc.on.doc")
                 }
                 // The style's default squared glyph box, deliberately: the
                 // copy glyph and the checkmark are different sizes, and the
                 // swap must not resize the row under the divider.
                 .buttonStyle(IconButtonStyle())
-                .foregroundStyle(didCopyID ? AppColor.success : AppColor.textSecondary)
+                .foregroundStyle(copyAck.didCopy ? AppColor.success : AppColor.textSecondary)
                 .help("Copy workspace ID")
             }
             Text(workspace.id.uuidString)
@@ -359,11 +363,7 @@ private struct WorkspaceInfoCard: View {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(workspace.id.uuidString, forType: .string)
-        didCopyID = true
-        Task {
-            try? await Task.sleep(for: .milliseconds(1500))
-            didCopyID = false
-        }
+        copyAck.acknowledge()
     }
 }
 

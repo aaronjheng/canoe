@@ -5,11 +5,7 @@ import SwiftUI
 /// `LICENSE` text, selectable and copyable, with the whole text also available
 /// on the pasteboard for pasting into a source-distribution form.
 struct LicenseView: View {
-    @State private var didCopy = false
-    /// The acknowledgement timer, kept so a second copy cancels the first
-    /// one's reset (same language as the variables inspector and the
-    /// dynamic-variables help).
-    @State private var copyResetTask: Task<Void, Never>?
+    @State private var copyAck = CopyAcknowledgement()
 
     private let licenseText = AppLicense.text
 
@@ -57,16 +53,10 @@ struct LicenseView: View {
     private var footer: some View {
         HStack(spacing: AppSpacing.small) {
             Spacer()
-            Button("Copy License Text", systemImage: didCopy ? "checkmark" : "doc.on.doc") {
+            Button("Copy License Text", systemImage: copyAck.didCopy ? "checkmark" : "doc.on.doc") {
                 guard let licenseText else { return }
                 copyToPasteboard(licenseText)
-                didCopy = true
-                copyResetTask?.cancel()
-                copyResetTask = Task {
-                    try? await Task.sleep(for: .milliseconds(1500))
-                    guard !Task.isCancelled else { return }
-                    didCopy = false
-                }
+                copyAck.acknowledge()
             }
             .buttonStyle(SecondaryButtonStyle())
             .disabled(licenseText == nil)

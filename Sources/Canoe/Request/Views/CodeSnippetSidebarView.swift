@@ -12,10 +12,10 @@ import SwiftUI
 struct CodeSnippetSidebarView: View {
     @Environment(AppStore.self) private var store
     @AppStorage("codeSnippetLanguage") private var languageRaw = CodeSnippetLanguage.curl.rawValue
-    @State private var copied = false
-    /// The acknowledgement timer, kept so a second copy cancels the first
-    /// one's reset - otherwise the second checkmark is cut short by it.
-    @State private var copyResetTask: Task<Void, Never>?
+    /// In-place copy acknowledgement (the shared one - see
+    /// `CopyAcknowledgement`): the copy glyph flips to a checkmark for a
+    /// moment, restarting its window on a second copy.
+    @State private var copyAck = CopyAcknowledgement()
     /// Whether the snippet is scrolled past its top, so the picker bar seam
     /// shows the scrolled-under shadow.
     @State private var isCodeScrolledPastTop = false
@@ -74,11 +74,11 @@ struct CodeSnippetSidebarView: View {
         Button {
             copySnippet()
         } label: {
-            Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                .foregroundStyle(copied ? AppColor.success : AppColor.textSecondary)
+            Image(systemName: copyAck.didCopy ? "checkmark" : "doc.on.doc")
+                .foregroundStyle(copyAck.didCopy ? AppColor.success : AppColor.textSecondary)
         }
         .buttonStyle(IconButtonStyle())
-        // Deliberately not disabled while `copied`: disabling dims the
+        // Deliberately not disabled while the checkmark is up: disabling dims
         // checkmark to 45% opacity, washing out the feedback it exists to
         // show - and re-copying during the brief window is harmless.
         .help("Copy snippet to the clipboard")
@@ -177,13 +177,7 @@ struct CodeSnippetSidebarView: View {
     private func copySnippet() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(resolvedCode, forType: .string)
-        copied = true
-        copyResetTask?.cancel()
-        copyResetTask = Task {
-            try? await Task.sleep(for: .seconds(1.5))
-            guard !Task.isCancelled else { return }
-            copied = false
-        }
+        copyAck.acknowledge()
     }
 }
 

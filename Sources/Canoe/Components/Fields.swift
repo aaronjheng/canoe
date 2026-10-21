@@ -218,7 +218,7 @@ struct UnderlineTab: View {
 struct InlineNameField: View {
     @Binding var text: String
     var placeholder: String = "Name"
-    var font: Font = AppFont.detailTitle
+    var font: Font = AppFont.panelTitle
     /// Fired when an editing session ends with a commit - Return, or a click
     /// away through the dismissal monitor. Callers whose value only lands on
     /// a commit (a structural rename, say) need this: macOS text fields do

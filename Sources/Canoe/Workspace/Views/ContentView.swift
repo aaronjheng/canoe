@@ -544,7 +544,7 @@ struct EmptyStateView: View {
 
             VStack(spacing: AppSpacing.small) {
                 Text("No Request Selected")
-                    .font(.title2.weight(.semibold))
+                    .font(AppFont.featureHeadline)
                 Text("Select a request from the sidebar, or create a new one to get started.")
                     .font(AppFont.emptyStateBody)
                     .foregroundStyle(AppColor.textSecondary)

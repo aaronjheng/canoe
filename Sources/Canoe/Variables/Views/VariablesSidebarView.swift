@@ -480,11 +480,7 @@ private struct VariableRow: View {
     /// stable key - so the ack is also cleared whenever the value on
     /// screen changes (see the `onChange` below). A green checkmark must
     /// never certify a value that was not the one copied.
-    @State private var didCopy = false
-    /// Pending reset for the acknowledgement above: cancelled on every new
-    /// copy so a second copy restarts the window instead of being cut short
-    /// by the first one's timer.
-    @State private var copyResetTask: Task<Void, Never>?
+    @State private var copyAck = CopyAcknowledgement()
     /// Per-field chrome states: the hover tier and the focused accent ring
     /// come from the field itself (AppKit first-responder), not the row.
     @State private var isValueFocused = false
@@ -590,21 +586,15 @@ private struct VariableRow: View {
                     let pasteboard = NSPasteboard.general
                     pasteboard.clearContents()
                     pasteboard.setString(shownValue, forType: .string)
-                    didCopy = true
-                    copyResetTask?.cancel()
-                    copyResetTask = Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(1500))
-                        guard !Task.isCancelled else { return }
-                        didCopy = false
-                    }
+                    copyAck.acknowledge()
                 } label: {
-                    hoverGlyph(didCopy ? "checkmark" : "doc.on.doc")
+                    hoverGlyph(copyAck.didCopy ? "checkmark" : "doc.on.doc")
                 }
                 .buttonStyle(IconButtonStyle(inset: 0))
-                .foregroundStyle(didCopy ? AppColor.success : AppColor.textSecondary)
+                .foregroundStyle(copyAck.didCopy ? AppColor.success : AppColor.textSecondary)
                 .focused($focusedAction, equals: .copy)
-                .accessibilityLabel(didCopy ? "Copied" : "Copy value")
-                .help(didCopy ? "Copied" : "Copy Value")
+                .accessibilityLabel(copyAck.didCopy ? "Copied" : "Copy value")
+                .help(copyAck.didCopy ? "Copied" : "Copy value")
             }
             .font(AppFont.small)
             .opacity(isHovering || focusedAction != nil ? 1 : 0)
@@ -622,7 +612,7 @@ private struct VariableRow: View {
         // or a different variable started winning the key - drop it rather than
         // tick over a value nobody copied.
         .onChange(of: shownValue) { _, _ in
-            didCopy = false
+            copyAck.clear()
         }
     }
 

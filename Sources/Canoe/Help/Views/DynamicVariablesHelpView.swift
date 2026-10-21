@@ -8,18 +8,13 @@ import SwiftUI
 /// not a second source of truth - new entries need no UI work). Clicking a
 /// row copies its `{{$key}}` placeholder, so the sheet doubles as a picker.
 struct DynamicVariablesHelpView: View {
-    /// The row whose placeholder was just copied (the button glyph flips to
-    /// a checkmark for a moment, like every other copy control in the app).
-    @State private var copiedKey: String?
-    @State private var copyResetTask: Task<Void, Never>?
-
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppSpacing.large) {
                 intro
                 LazyVStack(alignment: .leading, spacing: AppSpacing.xSmall) {
                     ForEach(DynamicVariables.entries, id: \.key) { entry in
-                        row(entry)
+                        DynamicVariableRow(entry: entry)
                     }
                 }
             }
@@ -31,9 +26,6 @@ struct DynamicVariablesHelpView: View {
         // Window root: no control here takes focus, but the scroll view can
         // (see the focus-ring checklist in AGENTS.md).
         .focusEffectDisabled()
-        .onDisappear {
-            copyResetTask?.cancel()
-        }
     }
 
     private var intro: some View {
@@ -45,10 +37,19 @@ struct DynamicVariablesHelpView: View {
         .font(AppFont.emptyStateBody)
         .foregroundStyle(AppColor.textSecondary)
     }
+}
 
-    private func row(_ entry: DynamicVariables.Entry) -> some View {
+/// One dynamic-variables row: the `{{$key}}` placeholder, its explanation,
+/// and a click that copies the placeholder (so the sheet doubles as a
+/// picker). The copy acknowledgement is row-local - see
+/// `CopyAcknowledgement`.
+private struct DynamicVariableRow: View {
+    let entry: DynamicVariables.Entry
+    @State private var copyAck = CopyAcknowledgement()
+
+    var body: some View {
         Button {
-            copy(entry)
+            copy()
         } label: {
             // Key and explanation stack vertically (like the inspector's
             // variable rows): a horizontal layout would let the trailing
@@ -67,7 +68,7 @@ struct DynamicVariablesHelpView: View {
                 }
                 Spacer(minLength: 0)
                 Group {
-                    if copiedKey == entry.key {
+                    if copyAck.didCopy {
                         Image(systemName: "checkmark")
                             .foregroundStyle(AppColor.success)
                     } else {
@@ -82,7 +83,7 @@ struct DynamicVariablesHelpView: View {
             .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                    .fill(copiedKey == entry.key ? AppColor.selectionBackground : Color.clear)
+                    .fill(copyAck.didCopy ? AppColor.selectionBackground : Color.clear)
             )
         }
         .buttonStyle(.plain)
@@ -90,18 +91,12 @@ struct DynamicVariablesHelpView: View {
         .help("Copy {{\(entry.key)}}")
     }
 
-    private func copy(_ entry: DynamicVariables.Entry) {
+    private func copy() {
         // clearContents first, like every other copy path: a stale declared
         // type from a previous owner can otherwise survive and a paste
         // elsewhere may deliver the old content.
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString("{{\(entry.key)}}", forType: .string)
-        copiedKey = entry.key
-        copyResetTask?.cancel()
-        copyResetTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(1500))
-            guard !Task.isCancelled else { return }
-            copiedKey = nil
-        }
+        copyAck.acknowledge()
     }
 }

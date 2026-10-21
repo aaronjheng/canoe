@@ -482,7 +482,7 @@ struct WorkspacesView: View {
         VStack(spacing: AppSpacing.small) {
             HStack {
                 Text("Workspaces")
-                    .font(.title2.weight(.semibold))
+                    .font(AppFont.featureHeadline)
                 Spacer(minLength: 0)
             }
             HStack(spacing: AppSpacing.small) {
@@ -509,7 +509,7 @@ struct WorkspacesView: View {
                     Label("New Workspace", systemImage: "plus")
                 }
                 .buttonStyle(PrimaryButtonStyle(minHeight: AppSize.controlHeight))
-                .help("Create a workspace")
+                .help("New workspace")
             }
         }
         .padding(.horizontal, AppSpacing.medium)

@@ -50,7 +50,7 @@ struct KeyboardShortcutsView: View {
                 Shortcut(action: "Send Request", keys: "⌘↩"),
                 Shortcut(action: "Cancel Request", keys: "⎋"),
                 Shortcut(action: "Jump to Request URL", keys: "⌘L"),
-                Shortcut(action: "Search in Response", keys: "⌘F"),
+                Shortcut(action: "Find in Response", keys: "⌘F"),
             ]),
         Group(
             title: "Interface",

@@ -7,7 +7,6 @@ struct ConsoleView: View {
     @Environment(AppStore.self) private var store
     @State private var errorsOnly = false
     @State private var expandedIDs: Set<UUID> = []
-    @State private var copiedEntryID: UUID?
     /// Whether the log is currently scrolled to the bottom. New entries only
     /// autoscroll when this holds, so sending never yanks the user away from
     /// history they are reading.
@@ -167,9 +166,7 @@ struct ConsoleView: View {
                             entry: entry,
                             isExpanded: expandedIDs.contains(entry.id),
                             showsTimestamp: showTimestamps,
-                            copied: copiedEntryID == entry.id,
-                            onToggle: { toggle(entry) },
-                            onCopyRaw: { copyRaw(entry) }
+                            onToggle: { toggle(entry) }
                         )
                         Divider()
                     }
@@ -209,18 +206,6 @@ struct ConsoleView: View {
             expandedIDs.insert(entry.id)
         }
     }
-
-    private func copyRaw(_ entry: ConsoleEntry) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(entry.rawLog, forType: .string)
-        copiedEntryID = entry.id
-        Task {
-            try? await Task.sleep(for: .seconds(1.5))
-            if copiedEntryID == entry.id {
-                copiedEntryID = nil
-            }
-        }
-    }
 }
 
 /// One console row: status icon, method, actual URL, and - when expanded -
@@ -230,9 +215,7 @@ private struct ConsoleEntryRow: View {
     let isExpanded: Bool
     /// Whether the summary row leads with the entry's timestamp.
     let showsTimestamp: Bool
-    let copied: Bool
     let onToggle: () -> Void
-    let onCopyRaw: () -> Void
 
     @State private var isHovering = false
 
@@ -256,9 +239,7 @@ private struct ConsoleEntryRow: View {
                     entry: entry,
                     // The summary row already carries the time when the
                     // timestamp option is on; don't say it twice.
-                    showsTimestamp: showsTimestamp,
-                    copied: copied,
-                    onCopyRaw: onCopyRaw)
+                    showsTimestamp: showsTimestamp)
             }
         }
         .background(entry.isError ? AppColor.error.opacity(AppOpacity.errorBackground) : Color.clear)
@@ -320,13 +301,16 @@ private struct ConsoleEntryDetail: View {
     /// The summary row already shows the time; then the detail omits its
     /// own copy.
     let showsTimestamp: Bool
-    let copied: Bool
     /// Rendered body cap: the formatted view shows a triage excerpt, the
     /// full text goes through Copy.
     private static let bodyPreviewLimit = 16 * 1024
     /// Raw view cap: bodies are already capped on storage, keep the text
     /// view responsive on top of that.
     private static let rawViewLimit = 64 * 1024
+    /// In-place copy acknowledgement (the shared one - see
+    /// `CopyAcknowledgement`). Row-local: LazyVStack recycling retires the
+    /// checkmark with the row, so it can never certify a different entry.
+    @State private var copyAck = CopyAcknowledgement()
     @State private var showRaw = false
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.small) {
@@ -351,8 +335,8 @@ private struct ConsoleEntryDetail: View {
                 )
                 .buttonStyle(LinkButtonStyle())
                 .foregroundStyle(AppColor.accent)
-                Button(action: onCopyRaw) {
-                    Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                Button(action: copyRaw) {
+                    Label(copyAck.didCopy ? "Copied" : "Copy", systemImage: copyAck.didCopy ? "checkmark" : "doc.on.doc")
                         .labelStyle(.titleAndIcon)
                         .font(AppFont.small)
                 }
@@ -405,7 +389,14 @@ private struct ConsoleEntryDetail: View {
         .padding(.bottom, AppSpacing.small)
     }
 
-    private let onCopyRaw: () -> Void
+    /// Copy clears first (like every other copy path: a stale declared type
+    /// from a previous owner can otherwise survive a paste elsewhere), then
+    /// opens the shared acknowledgement window.
+    private func copyRaw() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(entry.rawLog, forType: .string)
+        copyAck.acknowledge()
+    }
 
     /// The HTTP exchange, kept responsive: storage already caps bodies and
     /// the view further trims the tail (Copy carries the full text).
@@ -416,13 +407,6 @@ private struct ConsoleEntryDetail: View {
             return String(raw.prefix(Self.rawViewLimit)) + "\n… (\(remainder) more characters; use Copy)"
         }
         return raw
-    }
-
-    init(entry: ConsoleEntry, showsTimestamp: Bool, copied: Bool, onCopyRaw: @escaping () -> Void) {
-        self.entry = entry
-        self.showsTimestamp = showsTimestamp
-        self.copied = copied
-        self.onCopyRaw = onCopyRaw
     }
 
     private func sectionTitle(_ title: String) -> some View {

@@ -32,19 +32,14 @@ struct ResponseViewerView: View {
     @State private var responseExtras: [UUID: ResponseExtras] = [:]
     @State private var responseExtrasOrder: [UUID] = []
     @State private var saveError: String?
-    /// Copy Body's in-place acknowledgement: the glyph turns into a
-    /// checkmark for a moment. Same language as every other copy control in
-    /// the app (the code-snippet copy button, the console's Copy action,
-    /// the License panel, the workspace-ID card) - a copy that overwrites
-    /// the pasteboard silently gives the user nothing to confirm it ran.
-    @State private var didCopyBody = false
-    /// Pending reset for the acknowledgement above. Cancelled on every new
-    /// copy, so a second copy restarts the window instead of being cut short
-    /// by the first one's timer (same pattern as the console's Copy action).
-    @State private var copyResetTask: Task<Void, Never>?
-    /// Copy as cURL's in-place acknowledgement - same pattern as Copy Body's.
-    @State private var didCopyCURL = false
-    @State private var cURLCopyResetTask: Task<Void, Never>?
+    /// Copy Body's and Copy as cURL's in-place acknowledgements: the glyph
+    /// turns into a checkmark for a moment. Same language as every other
+    /// copy control in the app (`CopyAcknowledgement`: the code-snippet
+    /// pane, the console's Copy action, the License panel, the workspace-ID
+    /// card) - a copy that overwrites the pasteboard silently gives the
+    /// user nothing to confirm it ran.
+    @State private var bodyCopyAck = CopyAcknowledgement()
+    @State private var cURLCopyAck = CopyAcknowledgement()
     /// Response-body find (⌘F): query, bar visibility, and which match is
     /// the current one (index into the match list, cycled by ⌘G/⇧⌘G).
     @State private var findVisible = false
@@ -377,8 +372,8 @@ struct ResponseViewerView: View {
             saveError = nil
             // The acknowledgement belongs to the response it was copied
             // from: a fresh response must not wear a stale checkmark.
-            didCopyBody = false
-            didCopyCURL = false
+            bodyCopyAck.clear()
+            cURLCopyAck.clear()
             // The staged media file belongs to the old response; the next
             // preview (if media again) stages its own.
             removeStagedMedia()
@@ -437,7 +432,7 @@ struct ResponseViewerView: View {
             visiblePanel = kind
         } else if visiblePanel == kind {
             panelHideTask = Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(140))
+                try? await Task.sleep(for: .seconds(AppMotion.hoverHideGrace))
                 if !Task.isCancelled, !isAnchorHovered(kind), hoveredPanel != kind, visiblePanel == kind {
                     visiblePanel = nil
                 }
@@ -712,7 +707,9 @@ struct ResponseViewerView: View {
                     .padding(AppSpacing.medium)
             }
         }
-        .frame(width: 380, alignment: .leading)
+        // Same measure as the other floating response panels (and the right
+        // inspector), so every hover card reads as one family.
+        .frame(width: AppSize.responsePanelWidth, alignment: .leading)
         .popupPanel()
     }
 
@@ -1053,14 +1050,14 @@ struct ResponseViewerView: View {
                     .foregroundStyle(findVisible ? AppColor.accent : AppColor.textSecondary)
                     .help("Find in Response (⌘F)")
                 }
-                Button("Copy as cURL", systemImage: didCopyCURL ? "checkmark" : "terminal") {
+                Button("Copy as cURL", systemImage: cURLCopyAck.didCopy ? "checkmark" : "terminal") {
                     copyCURL()
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(IconButtonStyle())
-                .foregroundStyle(didCopyCURL ? AppColor.success : AppColor.textPrimary)
+                .foregroundStyle(cURLCopyAck.didCopy ? AppColor.success : AppColor.textPrimary)
                 .help("Copy the request as a cURL command (resolved like a send)")
-                Button("Copy Body", systemImage: didCopyBody ? "checkmark" : "doc.on.doc") {
+                Button("Copy Body", systemImage: bodyCopyAck.didCopy ? "checkmark" : "doc.on.doc") {
                     if bodyMode == .hex {
                         copyBody(hexCopyText(for: response))
                     } else if bodyMode == .preview {
@@ -1071,10 +1068,10 @@ struct ResponseViewerView: View {
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(IconButtonStyle())
-                .foregroundStyle(didCopyBody ? AppColor.success : AppColor.textPrimary)
+                .foregroundStyle(bodyCopyAck.didCopy ? AppColor.success : AppColor.textPrimary)
                 .disabled(copyBodyUnavailable(for: response))
                 .help(
-                    didCopyBody
+                    bodyCopyAck.didCopy
                         ? "Copied"
                         : (copyBodyUnavailable(for: response)
                             ? (bodyMode == .hex
@@ -1876,8 +1873,8 @@ struct ResponseViewerView: View {
                 width: 150
             )
             HStack(spacing: AppSpacing.xxSmall) {
-                cookieFlag("Secure", isOn: cookie.isSecure)
-                cookieFlag("HttpOnly", isOn: cookie.isHTTPOnly)
+                FlagLabel(label: "Secure", isOn: cookie.isSecure)
+                FlagLabel(label: "HttpOnly", isOn: cookie.isHTTPOnly)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, AppSpacing.small)
@@ -1885,13 +1882,6 @@ struct ResponseViewerView: View {
         }
         .frame(height: AppSize.tableRowHeight)
         .help(cookieText(cookie))
-    }
-
-    private func cookieFlag(_ label: String, isOn: Bool) -> some View {
-        Text(label)
-            .font(AppFont.small)
-            .foregroundStyle(isOn ? AppColor.textSecondary : AppColor.tertiaryText)
-            .opacity(isOn ? 1 : 0.5)
     }
 
     /// The Netscape-ish text form used by the copy action and the row help.
@@ -1982,13 +1972,7 @@ struct ResponseViewerView: View {
     /// Copy plus the in-place acknowledgement.
     private func copyBody(_ text: String) {
         copyToPasteboard(text)
-        didCopyBody = true
-        copyResetTask?.cancel()
-        copyResetTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(1500))
-            guard !Task.isCancelled else { return }
-            didCopyBody = false
-        }
+        bodyCopyAck.acknowledge()
     }
 
     /// The request Copy as cURL mirrors: the editor's live draft (the
@@ -2010,13 +1994,7 @@ struct ResponseViewerView: View {
             language: .curl
         )
         copyToPasteboard(command)
-        didCopyCURL = true
-        cURLCopyResetTask?.cancel()
-        cURLCopyResetTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(1500))
-            guard !Task.isCancelled else { return }
-            didCopyCURL = false
-        }
+        cURLCopyAck.acknowledge()
     }
 
     /// The full body text for the current mode (not the truncated preview):
@@ -2062,7 +2040,7 @@ private struct MetricHoverChip<Content: View>: View {
     var body: some View {
         content
             .padding(.horizontal, AppSpacing.xxSmall)
-            .padding(.vertical, 2)
+            .padding(.vertical, AppSpacing.xxSmall)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
                     .fill(isHovering ? AppColor.subtleBackground : .clear)
@@ -2106,7 +2084,7 @@ private struct HistoryEntryButton: View {
                 }
             }
             .padding(.horizontal, AppSpacing.compact)
-            .padding(.vertical, 6)
+            .padding(.vertical, AppSpacing.compact)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
                     .fill(isHovering || isOpen ? AppColor.subtleBackground : .clear)

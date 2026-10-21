@@ -280,7 +280,7 @@ struct ScrolledUnderEdgeShadow: View {
             Divider()
             LinearGradient(
                 stops: [
-                    .init(color: Color.primary.opacity(0.12), location: 0),
+                    .init(color: AppColor.scrolledUnderShadow, location: 0),
                     .init(color: Color.primary.opacity(0), location: 1),
                 ],
                 startPoint: .top,

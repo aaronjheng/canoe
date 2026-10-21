@@ -189,7 +189,7 @@ struct SettingsView: View {
         .scrollContentBackground(.hidden)
         .background(AppColor.controlBackground)
         .confirmationDialog(
-            "Sync your vault with iCloud Drive?",
+            "Sync your vault with iCloud Drive",
             isPresented: $isConfirmingSyncOn,
             titleVisibility: .visible
         ) {

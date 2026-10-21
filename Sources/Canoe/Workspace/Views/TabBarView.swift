@@ -780,7 +780,7 @@ struct EnvironmentPickerPanel: View {
             .onHover { isHoveringCreate = $0 }
             .clickCursor(isEnabled: canCreate)
             .disabled(!canCreate)
-            .help("New Environment")
+            .help("New environment")
             .padding(.horizontal, AppSpacing.xSmall)
             .padding(.vertical, AppSpacing.xSmall)
         }

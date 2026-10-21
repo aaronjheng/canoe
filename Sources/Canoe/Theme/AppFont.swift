@@ -37,11 +37,10 @@ enum AppFont {
 
     /// Panel/section titles ("Query Params", scope kind labels excluded).
     static let sectionTitle = Font.system(size: 12, weight: .semibold)
-    /// Detail headers with an icon + name ("Collection Variables").
+    /// Detail headers with an icon + name ("Collection Variables"); the one
+    /// inline-rename heading language too (folder, environment, request
+    /// name fields all sit at this size, so the caret stays the focus).
     static let panelTitle = Font.headline
-    /// Quiet detail header used by inline rename fields (Environment, Request
-    /// name) - a step lighter than `panelTitle` so the caret stays the focus.
-    static let detailTitle = Font.system(size: 12, weight: .semibold)
     /// Uppercase micro-headers above grouped lists (sidebar sections, console
     /// groups). Small + semibold, often paired with `textCase(.uppercase)`.
     static let microHeader = Font.system(size: 12, weight: .semibold)
@@ -69,6 +68,19 @@ enum AppFont {
     /// Key/value cell text in tables. Alias of `monoSubheadline`; use
     /// `monoSubheadline` for new code.
     static let cellText = monoSubheadline
+
+    // MARK: - Feature headlines (the full-page scale)
+
+    /// The largest text a screen shows, on the system scale: Overview stat
+    /// values (Requests / Folders / Variables), the Workspaces management
+    /// header, and the "No Request Selected" empty-state heading. One step
+    /// above the app's own body floor, so a page leads with its subject.
+    static let featureHeadline = Font.title2.weight(.semibold)
+    /// The Welcome screen's full-page headline (nothing created yet): the
+    /// onboarding invite reads bigger than any in-app headline.
+    static let welcomeHeadline = Font.largeTitle.weight(.semibold)
+    /// The About panel's app-name line.
+    static let aboutHeadline = Font.title2.bold()
 
     // MARK: - Badges and compact labels (decorative; may sit below the 12pt body floor)
 

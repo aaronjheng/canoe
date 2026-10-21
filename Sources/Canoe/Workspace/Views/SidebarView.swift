@@ -111,13 +111,13 @@ private struct ItemsView: View {
                 withAnimation(groupToggleAnimation) { store.toggleEnvironmentsSection() }
             },
             actions: {
-                Button("Add Environment", systemImage: "plus") {
+                Button("New Environment", systemImage: "plus") {
                     store.addEnvironment()
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
                 .foregroundStyle(AppColor.textSecondary)
-                .help("Add environment")
+                .help("New environment")
             }
         )
     }
@@ -355,7 +355,7 @@ private struct EnvironmentRow: View {
             isPresented: $showDeleteConfirm,
             titleVisibility: .visible
         ) {
-            Button("Delete", role: .destructive) { store.deleteEnvironment(env.id) }
+            Button("Delete Environment", role: .destructive) { store.deleteEnvironment(env.id) }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Its variables will be permanently deleted.")
@@ -1512,7 +1512,7 @@ private struct RequestRow: View {
                     isPresented: $showDeleteConfirm,
                     titleVisibility: .visible
                 ) {
-                    Button("Delete", role: .destructive) {
+                    Button("Delete Request", role: .destructive) {
                         store.deleteRequest(request.id)
                     }
                     Button("Cancel", role: .cancel) {}

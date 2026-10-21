@@ -15,15 +15,14 @@ struct AboutView: View {
 
             VStack(spacing: AppSpacing.xSmall) {
                 Text("Canoe")
-                    .font(.title2)
-                    .bold()
+                    .font(AppFont.aboutHeadline)
 
                 Text(Self.versionText)
-                    .font(.callout)
+                    .font(AppFont.small)
                     .foregroundStyle(AppColor.textSecondary)
 
                 Text("Native macOS API client")
-                    .font(.subheadline)
+                    .font(AppFont.small)
                     .foregroundStyle(AppColor.textSecondary)
             }
             .multilineTextAlignment(.center)

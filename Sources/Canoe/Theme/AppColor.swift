@@ -244,6 +244,11 @@ enum AppColor {
 
     /// Soft shadow for floating popup cards (method dropdown, URL editor).
     static let popupShadow: Color = Color.primary.opacity(0.22)
+    /// Top color of the scrolled-under edge shadow: content rolling under a
+    /// pinned toolbar fades from this step to nothing (see
+    /// `ScrolledUnderEdgeShadow`). This faint keeps it a depth cue rather
+    /// than a second border.
+    static let scrolledUnderShadow: Color = Color.primary.opacity(0.12)
 
     /// Hairline for the sidebar tree indent guides (adapts to appearance).
     static let treeGuide: Color = Color(nsColor: .separatorColor)

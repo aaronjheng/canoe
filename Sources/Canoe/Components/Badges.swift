@@ -1,6 +1,7 @@
 import SwiftUI
 
-// Sidebar/history badges, method tags, and the response status pill.
+// Sidebar/history badges, method tags, the response status pill, and the
+// small on/off attribute flags of grid rows.
 // MARK: - Badge
 
 struct Badge: View {
@@ -84,5 +85,23 @@ struct StatusCapsule: View {
         .background(AppColor.badgeBackground(color))
         .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
         .fixedSize()
+    }
+}
+
+// MARK: - Flag label
+
+/// A small on/off attribute flag for grid rows (the cookie tables' Secure /
+/// HttpOnly / Expired): set flags read as quiet meta text, unset ones dim
+/// to half presence - visible but receded, not gone - so an off flag never
+/// vanishes from the row, and both cookie surfaces show the same shape.
+struct FlagLabel: View {
+    let label: String
+    let isOn: Bool
+
+    var body: some View {
+        Text(label)
+            .font(AppFont.small)
+            .foregroundStyle(isOn ? AppColor.textSecondary : AppColor.tertiaryText)
+            .opacity(isOn ? 1 : AppOpacity.unsetFlag)
     }
 }

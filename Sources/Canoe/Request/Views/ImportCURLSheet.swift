@@ -62,7 +62,7 @@ struct ImportCURLSheet: View {
         }
         .padding(.horizontal, AppSpacing.xLarge)
         .padding(.vertical, AppSpacing.large)
-        .frame(width: 560)
+        .frame(width: AppSize.importCURLSheetWidth)
         .sheetSurface()
         // The sheet is its own root: suppress SwiftUI focus chrome here too
         // (see the focus-ring checklist in AGENTS.md).

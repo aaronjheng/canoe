@@ -362,6 +362,57 @@ struct IconSwitcher: View {
     }
 }
 
+// MARK: - Copy acknowledgement
+
+/// The shared copy confirmation behind every copy control in the app (the
+/// response toolbar's Copy Body / Copy as cURL, the code-snippet pane, the
+/// console's Copy action, the License panel, the variables inspector, the
+/// workspace-ID card): the glyph flips to a checkmark for a moment, then
+/// reverts. A copy that overwrites the pasteboard silently gives the user
+/// nothing to confirm it ran.
+///
+/// One holder owns the acknowledgement state and its pending reset. Every
+/// new copy cancels the previous reset, so a second copy restarts the
+/// window instead of being cut short by the first one's timer. `clear()`
+/// retires the checkmark at once, for call sites that must not let an
+/// acknowledgement outlive the content it certified (a replaced response,
+/// a changed row value, a disappearing view) - and so does the holder's
+/// own destruction: a recycled row's timer never outlives its holder.
+@MainActor
+@Observable
+final class CopyAcknowledgement {
+    /// How long the checkmark stays up. One window for the whole app.
+    private static let window: Duration = .milliseconds(1500)
+
+    private(set) var didCopy = false
+    private var resetTask: Task<Void, Never>?
+
+    /// Records one copy: the checkmark goes up now and comes back down
+    /// after the shared window.
+    func acknowledge() {
+        didCopy = true
+        resetTask?.cancel()
+        resetTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.window)
+            guard !Task.isCancelled else { return }
+            self?.didCopy = false
+        }
+    }
+
+    /// Retires the checkmark at once (and any pending reset with it).
+    func clear() {
+        resetTask?.cancel()
+        didCopy = false
+    }
+
+    isolated deinit {
+        // Running on the main actor (SE-0415), so the holder's destruction
+        // - which on SwiftUI happens during a main-thread teardown - ends
+        // any pending reset immediately.
+        resetTask?.cancel()
+    }
+}
+
 // MARK: - File panel
 
 /// Single-file open panel shared by the binary body editor and form-data
