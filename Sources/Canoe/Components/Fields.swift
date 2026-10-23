@@ -144,6 +144,12 @@ struct UnderlineTab: View {
     /// Draws the success-green content dot (the request editor's signal that
     /// the section holds data even when it shows no count).
     var hasContent: Bool = false
+    /// Trailing text badge (e.g. the response's "1/1" test-results ratio),
+    /// shown instead of the plain `count` badge. The color carries the
+    /// caller's semantics: green when everything passed, the error hue when
+    /// anything failed.
+    var countText: String?
+    var countTextColor: Color = AppColor.textSecondary
     /// Horizontal inset between the label and the tab's underline/hit area.
     /// The request editor passes 0 and pads the whole row to its content
     /// gutter instead, so label, underline, and content share one edge.
@@ -169,7 +175,12 @@ struct UnderlineTab: View {
                             // so the row reads as interactive before the click.
                             .foregroundStyle(isSelected || isHovering ? AppColor.textPrimary : AppColor.textSecondary)
                     }
-                if let count, count > 0 {
+                if let countText {
+                    Text(countText)
+                        .font(AppFont.countBadge)
+                        .monospacedDigit()
+                        .foregroundStyle(countTextColor)
+                } else if let count, count > 0 {
                     Text("\(count)")
                         .font(AppFont.countBadge)
                         .monospacedDigit()

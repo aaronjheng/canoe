@@ -15,6 +15,51 @@ extension AppStore {
         return merged
     }
 
+    /// Per-scope variable maps for the scripts' read-side scope objects,
+    /// keyed by the names the prelude uses ("workspace" / "collection" /
+    /// "environment"). Values are the raw stored strings (a script's
+    /// pm.environment.get returns what the scope stores, without
+    /// cross-scope reference resolution). Disabled variables are skipped.
+    func variablesByScope(_ request: Request) -> [String: [String: String]] {
+        var scopes: [String: [String: String]] = [:]
+        for scope in variableScopesForRequest(request) {
+            var map: [String: String] = [:]
+            for variable in scope.variables where variable.isEnabled {
+                map[variable.key] = variable.value
+            }
+            switch scope.kind {
+            case .workspace: scopes["workspace"] = map
+            case .collection: scopes["collection"] = map
+            case .environment: scopes["environment"] = map
+            }
+        }
+        return scopes
+    }
+
+    /// The variable state one scripted send needs: the resolved merged
+    /// view, the raw per-scope maps (the scope objects read these), and the
+    /// per-scope maps with references resolved (the tiers pm.variables
+    /// reads and the outgoing variable map are built from these).
+    struct ScriptVariables {
+        var base: [String: String]
+        var scopes: [String: [String: String]]
+        var scopesResolved: [String: [String: String]]
+        /// Cookies matching the request's URL (the pm.cookies surface),
+        /// attached by the send pipeline just before the scripts run.
+        var cookies: [[String: String]] = []
+    }
+
+    func scriptVariables(for request: Request) -> ScriptVariables {
+        let base = variablesForRequest(request)
+        var scopes: [String: [String: String]] = [:]
+        var scopesResolved: [String: [String: String]] = [:]
+        for (kind, map) in variablesByScope(request) {
+            scopes[kind] = map
+            scopesResolved[kind] = map.mapValues { VariableResolver.resolve($0, variables: base) }
+        }
+        return ScriptVariables(base: base, scopes: scopes, scopesResolved: scopesResolved)
+    }
+
     /// The values of every enabled secret variable in scope for a request,
     /// already resolved - the console redacts these from what it logs (see
     /// `redactingSecrets`), and it logs post-resolution text. A secret

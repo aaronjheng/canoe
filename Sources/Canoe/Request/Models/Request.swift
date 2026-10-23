@@ -58,6 +58,11 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
     /// Free-form request documentation (Postman's description), shown
     /// under the name bar and saved with ⌘S like the rest of the request.
     var requestDescription: String = ""
+    /// Request-level script sources (Postman's Pre-request / Tests tabs),
+    /// executed by the Scripts engine in the send pipeline. Empty string =
+    /// no script; editing saves with ⌘S like everything else.
+    var preRequestScript: String = ""
+    var postResponseScript: String = ""
     /// Per-request send settings (Postman's request-level Settings tab):
     /// whether 3xx responses are followed (and how many at most), the idle
     /// timeout in seconds (0 = the app default of 30), cookie-jar
@@ -129,6 +134,7 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
         case authOAuthHeaderPrefix, authOAuthAccessToken
         case authOAuthTokens, authOAuthSelectedTokenID
         case requestDescription
+        case preRequestScript, postResponseScript
         case followRedirects, timeoutSeconds, maxRedirects, followAuthorizationHeader
         case useCookieJar, verifySSLCertificate
         case orderIndex, folderID, createdAt, updatedAt, headers, params
@@ -180,6 +186,10 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
         authOAuthSelectedTokenID =
             try container.decodeIfPresent(UUID.self, forKey: .authOAuthSelectedTokenID)
         requestDescription = try container.decodeIfPresent(String.self, forKey: .requestDescription) ?? ""
+        preRequestScript =
+            try container.decodeIfPresent(String.self, forKey: .preRequestScript) ?? ""
+        postResponseScript =
+            try container.decodeIfPresent(String.self, forKey: .postResponseScript) ?? ""
         followRedirects = try container.decodeIfPresent(Bool.self, forKey: .followRedirects) ?? true
         timeoutSeconds = try container.decodeIfPresent(Double.self, forKey: .timeoutSeconds) ?? 0
         followAuthorizationHeader =
@@ -278,6 +288,8 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
             && authOAuthTokens == other.authOAuthTokens
             && authOAuthSelectedTokenID == other.authOAuthSelectedTokenID
             && requestDescription == other.requestDescription
+            && preRequestScript == other.preRequestScript
+            && postResponseScript == other.postResponseScript
             && followRedirects == other.followRedirects
             && timeoutSeconds == other.timeoutSeconds
             && followAuthorizationHeader == other.followAuthorizationHeader

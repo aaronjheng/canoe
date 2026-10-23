@@ -33,6 +33,25 @@ actor CookieStore {
         self.url = canoeDir.appendingPathComponent("cookies.json")
     }
 
+    /// Structured cookies matching `url` (the scripts' pm.cookies surface):
+    /// name/value/domain/path/secure per cookie, same fit rules as
+    /// `cookieHeader(for:)`.
+    func cookies(for url: URL) -> [[String: String]] {
+        loadIfNeeded()
+        let host = url.host?.lowercased() ?? ""
+        guard !host.isEmpty else { return [] }
+        return fittingCookies(for: url, host: host, isSecure: url.scheme?.lowercased() == "https", now: Date())
+            .map { cookie in
+                [
+                    "name": cookie.name,
+                    "value": cookie.value,
+                    "domain": cookie.domain,
+                    "path": cookie.path,
+                    "secure": cookie.secure ? "true" : "false",
+                ]
+            }
+    }
+
     /// Cookie header value for `url`, or `nil` when there are no matching
     /// cookies. All cookie state stays inside the actor; callers only receive
     /// a `String`, so nothing non-`Sendable` crosses the actor boundary.
@@ -45,22 +64,32 @@ actor CookieStore {
         loadIfNeeded()
         let host = url.host?.lowercased() ?? ""
         guard !host.isEmpty else { return nil }
-        let now = Date()
-        let requestPath = url.path
-        let isSecure = url.scheme?.lowercased() == "https"
-        let fit = cookies.filter { cookie in
-            guard cookie.domainMatches(host) else { return false }
-            if let expires = cookie.expires, expires <= now { return false }
-            if cookie.secure && !isSecure { return false }
-            return cookie.pathMatches(requestPath)
-        }
-        .sorted {
-            if $0.path.count != $1.path.count { return $0.path.count > $1.path.count }
-            return $0.name < $1.name
-        }
+        let fit = fittingCookies(
+            for: url, host: host,
+            isSecure: url.scheme?.lowercased() == "https", now: Date())
         guard !fit.isEmpty else { return nil }
         let httpCookies = fit.compactMap { $0.makeHTTPCookie(for: url) }
         return HTTPCookie.requestHeaderFields(with: httpCookies)["Cookie"]
+    }
+
+    /// Cookies that fit `url` (domain/path/secure/expiry rules), longest
+    /// path first. Shared by the header builder and the scripts' snapshot.
+    private func fittingCookies(
+        for url: URL, host: String, isSecure: Bool, now: Date
+    ) -> [StoredCookie] {
+        let requestPath = url.path
+        return
+            cookies
+            .filter { cookie in
+                guard cookie.domainMatches(host) else { return false }
+                if let expires = cookie.expires, expires <= now { return false }
+                if cookie.secure && !isSecure { return false }
+                return cookie.pathMatches(requestPath)
+            }
+            .sorted {
+                if $0.path.count != $1.path.count { return $0.path.count > $1.path.count }
+                return $0.name < $1.name
+            }
     }
 
     /// Parses `Set-Cookie` header values and persists the cookies. Accepts

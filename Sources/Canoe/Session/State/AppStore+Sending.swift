@@ -97,16 +97,111 @@ extension AppStore {
 
             // Full scope chain (workspace > collection > environment),
             // matching what the "Variables in Request" inspector displays.
-            let variables = variablesForRequest(request)
+            let baseVariables = variablesForRequest(request)
+            var scriptVariables = scriptVariables(for: request)
+            // The cookie jar for the request's URL, snapshotted before the
+            // scripts run (pm.cookies reads it; the response's Set-Cookie
+            // updates land in the jar after the send, so test scripts see
+            // the fresh cookies through the same snapshot).
+            if let url = URL(
+                string: VariableResolver.resolve(request.urlString, variables: baseVariables)
+            ).flatMap({ URLComponents(url: $0, resolvingAgainstBaseURL: false)?.url }) {
+                scriptVariables.cookies = await CookieStore.shared.cookies(for: url)
+            }
+            // Secret variable values, redacted from everything the console
+            // records below (the resolved URL, both bodies, the error text).
+            let secretValues = secretVariableValues(for: request, variables: baseVariables)
+            // Pre-request scripts (Postman's inheritance chain): the
+            // collection's Pre-request runs first, then the request's own.
+            // All phases of one send share the carried variable state, so a
+            // token the collection script mints reaches the request script
+            // and then authorization. A script throwing - or an engine
+            // failure - ends the send with an error banner and nothing
+            // recorded: no request went out.
+            var variables = baseVariables
+            var preRequestLogs: [ScriptLog] = []
+            var preResults: [ScriptTestResult] = []
+            var preHeaderChanges: [ScriptHeaderChange] = []
+            var prePhaseRan = false
+            do {
+                // The collection's Pre-request script (inherited chain top).
+                let collection = collectionForRequest(request)
+                if let collection, !collection.preRequestScript.isEmpty {
+                    let outcome = try await runScript(
+                        .preRequest, script: collection.preRequestScript, of: request,
+                        variables: scriptVariables, resetsCarriedState: true)
+                    preRequestLogs += outcome.logs
+                    preResults += outcome.results
+                    if let error = outcome.error {
+                        errorsByTab[tab] =
+                            "Collection pre-request script error: \(error)"
+                        return
+                    }
+                    if let final = outcome.finalVariables {
+                        variables = final
+                        scriptVariables.base = final
+                    }
+                    preHeaderChanges += outcome.headerChanges
+                    prePhaseRan = true
+                }
+                // Folder Pre-request scripts, outermost folder first.
+                for folder in (collection?.folderChain(forRequest: request.id) ?? []).reversed()
+                where !folder.preRequestScript.isEmpty {
+                    let outcome = try await runScript(
+                        .preRequest, script: folder.preRequestScript, of: request,
+                        variables: scriptVariables, resetsCarriedState: false)
+                    preRequestLogs += outcome.logs
+                    preResults += outcome.results
+                    if let error = outcome.error {
+                        errorsByTab[tab] =
+                            "Folder pre-request script error (\(folder.name)): \(error)"
+                        return
+                    }
+                    if let final = outcome.finalVariables {
+                        variables = final
+                        scriptVariables.base = final
+                    }
+                    preHeaderChanges += outcome.headerChanges
+                    prePhaseRan = true
+                }
+                // The request's own Pre-request script.
+                let outcome = try await runScript(
+                    .preRequest, script: request.preRequestScript, of: request,
+                    variables: scriptVariables, resetsCarriedState: !prePhaseRan)
+                preRequestLogs += outcome.logs
+                preResults += outcome.results
+                if let error = outcome.error {
+                    errorsByTab[tab] = "Pre-request script error: \(error)"
+                    return
+                }
+                // The engine already applied script writes and tier
+                // fallback - adopt its variable map for the outgoing
+                // request's placeholder resolution.
+                if let final = outcome.finalVariables {
+                    variables = final
+                }
+                preHeaderChanges += outcome.headerChanges
+                prePhaseRan = prePhaseRan || !request.preRequestScript.isEmpty
+            } catch {
+                errorsByTab[tab] = "Pre-request script failed: \(scriptFailureText(error))"
+                return
+            }
+            // Script-minted headers (`pm.request.headers.add` / `.upsert`)
+            // apply to the request that goes out: adds append, upserts
+            // replace the enabled same-name rows (case-insensitive). The
+            // tab's rows stay the user's template, and the values still go
+            // through `{{placeholder}}` resolution with the same map.
+            var outbound = request
+            if !preHeaderChanges.isEmpty {
+                outbound.headers = Self.applyScriptHeaderChanges(
+                    preHeaderChanges, to: request.headers)
+            }
             // A stale OAuth 2.0 token is refreshed (or re-fetched, for the
             // silent grants) before the request goes out: the sent request
             // carries whatever the renewal produced, and the owner's token
             // entry lands back in the store either way.
-            var authorization = await authorizationForSend(
-                of: request, variables: variables)
-            // Secret variable values, redacted from everything the console
-            // records below (the resolved URL, both bodies, the error text).
-            let secretValues = secretVariableValues(for: request, variables: variables)
+            let authorization = await authorizationForSend(
+                of: outbound, variables: variables)
             let sendStart = Date()
             // The HTTP client runs off the main actor; the callback hands the
             // assembled request back through this mutex-guarded slot. It is
@@ -118,17 +213,109 @@ extension AppStore {
             HTTPClient.applyProxySettings()
             do {
                 let response = try await HTTPClient.send(
-                    request: request,
+                    request: outbound,
                     variables: variables,
                     authorization: authorization,
                     onRequest: { urlRequest in sentRequest.withLock { $0 = urlRequest } }
                 )
                 guard sendTokens[tab] == token else { return }
                 guard !Task.isCancelled else { return }
+                // Post-response scripts (Postman's Tests tab): the
+                // request's own first, then the collection's - assertions
+                // and console lines land on the response snapshot, merged
+                // with the pre-request phase's console lines. Engine and
+                // script failures surface as a failed row - the send itself
+                // is never discarded at this point.
+                var responseWithScripts = response
+                let collection = collectionForRequest(request)
+                let collectionHasPost = !(collection?.postResponseScript.isEmpty ?? true)
+                if !request.postResponseScript.isEmpty || collectionHasPost {
+                    var results = preResults
+                    var logs = preRequestLogs
+                    // The request's own Tests script. Carries this send's
+                    // pre-request writes (resets only when no pre phase ran).
+                    let requestPost: ScriptPhaseOutcome
+                    do {
+                        requestPost = try await runScript(
+                            .postResponse, script: request.postResponseScript, of: request,
+                            variables: scriptVariables, resetsCarriedState: !prePhaseRan,
+                            response: response)
+                    } catch {
+                        // Engine-level failure: a failed row, the response
+                        // survives (scriptFailureText keeps the JS message).
+                        requestPost = ScriptPhaseOutcome(
+                            results: [
+                                ScriptTestResult(
+                                    name: "Script engine", status: .failed,
+                                    message: scriptFailureText(error))
+                            ])
+                    }
+                    results += requestPost.results
+                    logs += requestPost.logs
+                    if let error = requestPost.error {
+                        results.append(
+                            ScriptTestResult(
+                                name: "Script error", status: .failed, message: error))
+                    }
+                    // Folder Tests scripts, innermost folder first.
+                    for folder in (collection?.folderChain(forRequest: request.id) ?? [])
+                    where !folder.postResponseScript.isEmpty {
+                        let folderPost: ScriptPhaseOutcome
+                        do {
+                            folderPost = try await runScript(
+                                .postResponse, script: folder.postResponseScript,
+                                of: request, variables: scriptVariables,
+                                resetsCarriedState: false, response: response)
+                        } catch {
+                            folderPost = ScriptPhaseOutcome(
+                                results: [
+                                    ScriptTestResult(
+                                        name: "Script engine", status: .failed,
+                                        message: scriptFailureText(error))
+                                ])
+                        }
+                        results += folderPost.results
+                        logs += folderPost.logs
+                        if let error = folderPost.error {
+                            results.append(
+                                ScriptTestResult(
+                                    name: "Folder script error (\(folder.name))",
+                                    status: .failed, message: error))
+                        }
+                    }
+                    // The collection's Tests script, reading the same
+                    // carried state.
+                    if let collection, !collection.postResponseScript.isEmpty {
+                        let collectionPost: ScriptPhaseOutcome
+                        do {
+                            collectionPost = try await runScript(
+                                .postResponse, script: collection.postResponseScript,
+                                of: request, variables: scriptVariables,
+                                resetsCarriedState: false, response: response)
+                        } catch {
+                            collectionPost = ScriptPhaseOutcome(
+                                results: [
+                                    ScriptTestResult(
+                                        name: "Script engine", status: .failed,
+                                        message: scriptFailureText(error))
+                                ])
+                        }
+                        results += collectionPost.results
+                        logs += collectionPost.logs
+                        if let error = collectionPost.error {
+                            results.append(
+                                ScriptTestResult(
+                                    name: "Collection script error", status: .failed,
+                                    message: error))
+                        }
+                    }
+                    responseWithScripts = response.withScripts(
+                        results: results, logs: logs)
+                }
                 // The response becomes history's newest entry, which IS what
                 // the tab displays (latest = index nil = history[0]). No
                 // separate current-response copy exists to keep in sync.
-                recordResponseHistory(response, for: request)
+                recordResponseHistory(responseWithScripts, for: request)
                 // The console logs the address actually requested:
                 // variables resolved (and query params merged) by the HTTP
                 // client, with a resolved fallback so it never shows
@@ -373,6 +560,32 @@ extension AppStore {
     /// Machine-stable name of what went wrong - nil for successes. `URLError`
     /// codes surface as their case name (`timedOut`, `cannotConnectToHost`,
     /// …); everything else lands as `error`.
+    /// Applies script header mutations (`pm.request.headers.add` /
+    /// `.upsert` / `.remove`) to the outgoing header list, in call order:
+    /// adds append a new row, upserts replace every enabled row of the same
+    /// name (case-insensitive), removes drop the enabled rows of the same
+    /// name. Disabled rows and the stored request stay untouched; the
+    /// returned list feeds `{{placeholder}}` resolution like tab-authored
+    /// headers.
+    private static func applyScriptHeaderChanges(
+        _ changes: [ScriptHeaderChange], to headers: [HTTPHeader]
+    ) -> [HTTPHeader] {
+        var result = headers
+        for change in changes {
+            let name = change.name.lowercased()
+            switch change.kind {
+            case .add:
+                result.append(HTTPHeader(key: change.name, value: change.value))
+            case .upsert:
+                result.removeAll { $0.isEnabled && $0.key.lowercased() == name }
+                result.append(HTTPHeader(key: change.name, value: change.value))
+            case .remove:
+                result.removeAll { $0.isEnabled && $0.key.lowercased() == name }
+            }
+        }
+        return result
+    }
+
     private static func errorKind(of error: Error) -> String? {
         (error as? URLError).map { String(describing: $0.code) } ?? "error"
     }

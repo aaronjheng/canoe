@@ -9,6 +9,11 @@ import Synchronization
 final class AppStore {
     let vault = VaultStore()
 
+    /// The QuickJS engine running request scripts (see `AppStore+Scripts`).
+    /// Created lazily on the first scripted send; a failed initialization
+    /// stays nil and re-tries on the next send.
+    var scriptEngine: ScriptEngine?
+
     var presentNewWorkspace = false
     /// File ▸ Import cURL…: the paste-a-cURL-command sheet.
     var presentImportCURL = false

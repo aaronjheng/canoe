@@ -21,6 +21,7 @@ struct FolderDetailView: View {
     enum Section: String, CaseIterable, Identifiable {
         case overview = "Overview"
         case authorization = "Authorization"
+        case scripts = "Scripts"
 
         var id: String { rawValue }
     }
@@ -107,6 +108,8 @@ struct FolderDetailView: View {
                 overviewPane
             case .authorization:
                 authorizationPane
+            case .scripts:
+                scriptsPane
             }
         }
     }
@@ -218,6 +221,9 @@ struct FolderDetailView: View {
                 UnderlineTab(
                     title: tab.rawValue,
                     count: nil,
+                    hasContent: tab == .scripts
+                        && (!draft.preRequestScript.isEmpty
+                            || !draft.postResponseScript.isEmpty),
                     isSelected: section == tab,
                     action: { section = tab }
                 )
@@ -225,6 +231,119 @@ struct FolderDetailView: View {
             Spacer()
         }
         .padding(.horizontal, AppSpacing.small)
+    }
+
+    // MARK: - Scripts
+
+    /// Which folder script the Scripts tab edits. Edited text auto-saves
+    /// (debounced, like the description).
+    @State private var scriptColumn: FolderScriptColumn = .preRequest
+    @State private var scriptSaveTask: Task<Void, Never>?
+
+    enum FolderScriptColumn: String {
+        case preRequest = "Before request"
+        case postResponse = "After response"
+    }
+
+    /// The folder's Scripts tab: a sidebar picks the phase, the editor
+    /// holds that phase's script. Every request in this folder's subtree
+    /// runs these between the collection's and the request's own scripts.
+    /// Text auto-saves (debounced), like the Overview's description.
+    private var scriptsPane: some View {
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
+                scriptColumnRow(.preRequest)
+                scriptColumnRow(.postResponse)
+                Spacer()
+            }
+            .padding(.top, AppSpacing.medium)
+            .frame(width: 168, alignment: .topLeading)
+            Divider()
+            scriptEditor
+        }
+    }
+
+    private func scriptColumnRow(_ column: FolderScriptColumn) -> some View {
+        Button {
+            scriptColumn = column
+        } label: {
+            HStack(spacing: AppSpacing.xSmall) {
+                Text(column.rawValue)
+                    .font(AppFont.rowTitle)
+                    .foregroundStyle(AppColor.textPrimary)
+                if hasScriptContent(column) {
+                    Circle()
+                        .fill(AppColor.success)
+                        .frame(width: AppSize.contentDot, height: AppSize.contentDot)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, AppSpacing.small)
+            .padding(.vertical, AppSpacing.compact)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                    .fill(scriptColumn == column ? AppColor.subtleBackground : .clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .clickCursor()
+        .padding(.horizontal, AppSpacing.compact)
+    }
+
+    private func hasScriptContent(_ column: FolderScriptColumn) -> Bool {
+        switch column {
+        case .preRequest: !draft.preRequestScript.isEmpty
+        case .postResponse: !draft.postResponseScript.isEmpty
+        }
+    }
+
+    private var scriptEditor: some View {
+        VariableHighlightEditor<Bool>(
+            text: Binding(
+                get: {
+                    scriptColumn == .preRequest
+                        ? draft.preRequestScript : draft.postResponseScript
+                },
+                set: {
+                    if scriptColumn == .preRequest {
+                        draft.preRequestScript = $0
+                    } else {
+                        draft.postResponseScript = $0
+                    }
+                }
+            ),
+            variables: resolvedVariables,
+            suggestions: suggestions,
+            isSingleLine: false,
+            fillsContainer: true,
+            font: .systemSubheadline,
+            placeholder: scriptColumn == .preRequest
+                ? "Runs before the request scripts of this folder (pm.variables.set, ...)"
+                : "Runs after the request scripts of this folder (pm.expect, pm.test)"
+        )
+        .padding(.horizontal, AppSpacing.medium)
+        .padding(.top, AppSpacing.small)
+        .padding(.bottom, AppSpacing.small)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(AppColor.controlBackground)
+        .onChange(of: draft.preRequestScript) { _, _ in scheduleScriptSave() }
+        .onChange(of: draft.postResponseScript) { _, _ in scheduleScriptSave() }
+    }
+
+    /// Debounces script keystrokes into one auto-save per idle gap (the
+    /// description's pattern): both fields land together.
+    private func scheduleScriptSave() {
+        guard let collection else { return }
+        scriptSaveTask?.cancel()
+        scriptSaveTask = Task {
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            store.updateFolderScripts(
+                draft.id, in: collection.id,
+                preRequestScript: draft.preRequestScript,
+                postResponseScript: draft.postResponseScript)
+        }
     }
 
     // MARK: - Overview

@@ -87,6 +87,18 @@ struct ResponseViewerView: View {
     @State private var hoveredPanel: HoverPanelKind?
     @State private var visiblePanel: HoverPanelKind?
     @State private var panelHideTask: Task<Void, Never>?
+    /// Postman's Test Results "Result type" checkboxes: each checked type
+    /// keeps only its rows; an empty set shows the unfiltered list (the
+    /// default view).
+    @State private var testResultsTypeFilter: Set<TestResultType> = []
+
+    /// The three states a `pm.test` can conclude in (Postman's "Result
+    /// type" filter).
+    enum TestResultType {
+        case passed
+        case skipped
+        case failed
+    }
 
     /// Max characters rendered in the body pane. Beyond this a single SwiftUI
     /// `Text` becomes sluggish, so the view shows a prefix plus a notice.
@@ -102,10 +114,12 @@ struct ResponseViewerView: View {
 
     enum ResponseSection: String, CaseIterable, Identifiable {
         // Postman order: Body first and selected by default, then Cookies,
-        // then Headers.
+        // then Headers. Test Results only exists on responses the
+        // post-response script ran on (the tab is added conditionally).
         case body = "Body"
         case cookies = "Cookies"
         case headers = "Headers"
+        case testResults = "Test Results"
         var id: String { rawValue }
     }
 
@@ -233,6 +247,175 @@ struct ResponseViewerView: View {
             .foregroundStyle(AppColor.tertiaryText)
     }
 
+    // MARK: - Test Results
+
+    /// Whether the Test Results tab exists for this response: result rows
+    /// or console lines from the post-response script's run.
+    private func hasScriptResults(_ response: ResponseModel) -> Bool {
+        response.scriptResults?.isEmpty == false || response.scriptLogs?.isEmpty == false
+    }
+
+    /// The tab's "passed/total" badge; nil when the run only printed to the
+    /// console (no `pm.test` rows to count).
+    private func scriptResultsBadge(_ response: ResponseModel) -> String? {
+        let results = response.scriptResults ?? []
+        guard !results.isEmpty else { return nil }
+        return "\(results.filter { $0.status == .passed }.count)/\(results.count)"
+    }
+
+    private func scriptResultsBadgeColor(_ response: ResponseModel) -> Color {
+        let results = response.scriptResults ?? []
+        return results.contains { $0.status == .failed } ? AppColor.error : AppColor.success
+    }
+
+    /// Filters the results by the checked "Result type" checkboxes: none
+    /// checked keeps the unfiltered list.
+    private func filteredTestResults(_ all: [ScriptTestResult]) -> [ScriptTestResult] {
+        guard !testResultsTypeFilter.isEmpty else { return all }
+        return all.filter { testResultsTypeFilter.contains($0.status.resultType) }
+    }
+
+    private func toggleResultType(_ type: TestResultType) {
+        if testResultsTypeFilter.contains(type) {
+            testResultsTypeFilter.remove(type)
+        } else {
+            testResultsTypeFilter.insert(type)
+        }
+    }
+
+    /// Postman's Test Results pane: the "Filter results" dropdown with the
+    /// three "Result type" checkboxes, one row per `pm.test` outcome (a
+    /// status pill + the name, the assertion message under failures), then
+    /// the console lines both phases printed.
+    private func testResultsPane(_ response: ResponseModel) -> some View {
+        let all = response.scriptResults ?? []
+        let results = filteredTestResults(all)
+        let logs = response.scriptLogs ?? []
+        return VStack(spacing: 0) {
+            DropdownFieldButton(
+                id: "response.test-results.filter",
+                label: "Filter results",
+                showsSelection: false,
+                width: 136
+            ) {
+                [
+                    DropdownRow.action("Result type", isDisabled: true),
+                    DropdownRow.action(
+                        "Passed",
+                        systemImage: testResultsTypeFilter.contains(.passed)
+                            ? "checkmark.square.fill" : "square",
+                        isSelected: testResultsTypeFilter.contains(.passed)
+                    ) {
+                        toggleResultType(.passed)
+                    },
+                    DropdownRow.action(
+                        "Skipped",
+                        systemImage: testResultsTypeFilter.contains(.skipped)
+                            ? "checkmark.square.fill" : "square",
+                        isSelected: testResultsTypeFilter.contains(.skipped)
+                    ) {
+                        toggleResultType(.skipped)
+                    },
+                    DropdownRow.action(
+                        "Failed",
+                        systemImage: testResultsTypeFilter.contains(.failed)
+                            ? "checkmark.square.fill" : "square",
+                        isSelected: testResultsTypeFilter.contains(.failed)
+                    ) {
+                        toggleResultType(.failed)
+                    },
+                ]
+            }
+            .help("Filter the results by type")
+            .padding(.horizontal, AppSpacing.medium)
+            .padding(.vertical, AppSpacing.xSmall)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    if results.isEmpty {
+                        Text(
+                            all.isEmpty
+                                ? "No test results - add pm.test(...) to the After response script."
+                                : "No results match the checked result types."
+                        )
+                        .font(AppFont.small)
+                        .foregroundStyle(AppColor.textSecondary)
+                        .padding(.horizontal, AppSpacing.medium)
+                        .padding(.vertical, AppSpacing.medium)
+                    }
+                    ForEach(Array(results.enumerated()), id: \.offset) { _, result in
+                        HStack(alignment: .top, spacing: AppSpacing.small) {
+                            Text(result.status.resultPillLabel)
+                                .font(AppFont.countBadge.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, AppSpacing.small)
+                                .padding(.vertical, 2)
+                                .background(
+                                    RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                                        .fill(result.status.resultPillColor)
+                                )
+                            VStack(alignment: .leading, spacing: AppSpacing.xxSmall) {
+                                Text(result.name)
+                                    .font(AppFont.rowTitle)
+                                    .foregroundStyle(AppColor.textPrimary)
+                                let failure = result.status == .failed ? result.message : nil
+                                if let failure, !failure.isEmpty {
+                                    Text(failure)
+                                        .font(AppFont.monoCaption)
+                                        .foregroundStyle(AppColor.error)
+                                        .textSelection(.enabled)
+                                }
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, AppSpacing.medium)
+                        .padding(.vertical, AppSpacing.xSmall)
+                    }
+                    if !logs.isEmpty {
+                        Divider()
+                            .padding(.horizontal, AppSpacing.medium)
+                            .padding(.vertical, AppSpacing.xSmall)
+                        Text("Console output")
+                            .font(AppFont.sectionTitle)
+                            .foregroundStyle(AppColor.textSecondary)
+                            .padding(.horizontal, AppSpacing.medium)
+                            .padding(.bottom, AppSpacing.xSmall)
+                        ForEach(Array(logs.enumerated()), id: \.offset) { _, line in
+                            HStack(alignment: .top, spacing: AppSpacing.compact) {
+                                Image(
+                                    systemName: {
+                                        switch line.level {
+                                        case .log: "text.bubble"
+                                        case .warn: "exclamationmark.bubble"
+                                        case .error: "xmark.bubble"
+                                        }
+                                    }()
+                                )
+                                .font(AppFont.small)
+                                .foregroundStyle(
+                                    {
+                                        switch line.level {
+                                        case .log: AppColor.textSecondary
+                                        case .warn: AppColor.warning
+                                        case .error: AppColor.error
+                                        }
+                                    }())
+                                Text(line.message)
+                                    .font(AppFont.monoCaption)
+                                    .foregroundStyle(AppColor.textSecondary)
+                                    .textSelection(.enabled)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, AppSpacing.medium)
+                            .padding(.vertical, AppSpacing.xxSmall)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
     /// One trailing metric in the tab bar ("261 ms"). `onHover` opts a
     /// metric into the hover-panel behavior (the time and size breakdowns);
     /// the pill itself makes the panel discoverable.
@@ -290,7 +473,9 @@ struct ResponseViewerView: View {
             // divider, content all on one column).
             Divider()
                 .padding(.horizontal, AppSpacing.medium)
-            if responseSection == .headers {
+            if responseSection == .testResults && hasScriptResults(response) {
+                testResultsPane(response)
+            } else if responseSection == .headers {
                 headersPane(response)
             } else if responseSection == .cookies {
                 cookiesPane(response)
@@ -385,6 +570,9 @@ struct ResponseViewerView: View {
             // entry (the store shifts the selection, the menu rows move).
             isHistoryPanelOpen = false
             dismissPanels()
+
+            testResultsTypeFilter = []
+            if responseSection == .testResults && !hasScriptResults(response) { responseSection = .body }
         }
         .onDisappear {
             // Stop playback and drop the staged file; a reappear re-stages
@@ -484,6 +672,21 @@ struct ResponseViewerView: View {
                 isSelected: responseSection == .headers,
                 action: { responseSection = .headers }
             )
+            // Postman keeps the Test Results tab out of plain sends: it
+            // exists once the post-response script produced result rows or
+            // console lines. The trailing "1/1" is green while everything
+            // passed and the error hue once anything failed.
+            if hasScriptResults(response) {
+                UnderlineTab(
+                    title: ResponseSection.testResults.rawValue,
+                    count: nil,
+                    countText: scriptResultsBadge(response),
+                    countTextColor: scriptResultsBadgeColor(response),
+                    labelInset: 0,
+                    isSelected: responseSection == .testResults,
+                    action: { responseSection = .testResults }
+                )
+            }
             Spacer()
             HStack(spacing: AppSpacing.small) {
                 StatusCapsule(statusCode: response.statusCode, statusText: response.statusText)
@@ -2100,5 +2303,33 @@ private struct HistoryEntryButton: View {
         .onHover { isHovering = $0 }
         .animation(AppMotion.quick, value: isHovering)
         .help("Switch between this tab's response history")
+    }
+}
+
+/// Pill text and color for a test results row, and the filter type each
+/// status maps to (skipped reads neutral like Postman's gray skipped pill).
+extension ScriptTestResult.Status {
+    fileprivate var resultType: ResponseViewerView.TestResultType {
+        switch self {
+        case .passed: .passed
+        case .skipped: .skipped
+        case .failed: .failed
+        }
+    }
+
+    fileprivate var resultPillLabel: String {
+        switch self {
+        case .passed: "PASSED"
+        case .skipped: "SKIPPED"
+        case .failed: "FAILED"
+        }
+    }
+
+    fileprivate var resultPillColor: Color {
+        switch self {
+        case .passed: AppColor.success
+        case .skipped: AppColor.textSecondary
+        case .failed: AppColor.error
+        }
     }
 }

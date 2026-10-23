@@ -2,15 +2,17 @@ import AppKit
 import SwiftTreeSitter
 import SwiftUI
 import TreeSitterJSON
+import TreeSitterJavaScript
 import TreeSitterXML
 
 /// Request-body language selected in the raw editor. Drives syntax
 /// foreground colors there; `{{variable}}` background tints compose on top
-/// independently.
+/// independently. The Scripts tab's editors reuse the `.javascript` case.
 enum BodySyntax {
     case plain
     case json
     case xml
+    case javascript
 }
 
 /// Syntax highlighting backed by tree-sitter.
@@ -64,7 +66,7 @@ enum SyntaxHighlight {
         switch syntax {
         case .plain:
             return nil
-        case .json, .xml:
+        case .json, .xml, .javascript:
             // Reuse the flat (range, color) foreground runs shared with the
             // request body editor, laid over the source as alternating text
             // runs like the JSON painter does.
@@ -174,6 +176,8 @@ enum SyntaxHighlight {
             return jsonForegroundRuns(in: source)
         case .xml:
             return xmlForegroundRuns(in: source)
+        case .javascript:
+            return javascriptForegroundRuns(in: source)
         }
     }
 
@@ -323,6 +327,122 @@ enum SyntaxHighlight {
     }
 
     private static func paintXMLLeaf(
+        _ node: Node,
+        color: NSColor,
+        length: Int,
+        cursor: inout Int,
+        runs: inout [(NSRange, NSColor)]
+    ) {
+        let range = node.range.clamped(to: 0..<length)
+        guard range.length > 0 else { return }
+        cursor = range.location + range.length
+        runs.append((range, color))
+    }
+
+    private static func javascriptForegroundRuns(in source: String) -> [(NSRange, NSColor)]? {
+        let length = (source as NSString).length
+        guard length <= maxSyntaxLength else { return nil }
+        let pointer: OpaquePointer? = tree_sitter_javascript()
+        guard let pointer else { return nil }
+        let parser = Parser()
+        guard (try? parser.setLanguage(Language(pointer))) != nil else { return nil }
+        guard let tree = parser.parse(source), let root = tree.rootNode else { return nil }
+        var runs: [(NSRange, NSColor)] = []
+        var cursor = 0
+        paintJS(run: root, length: length, cursor: &cursor, runs: &runs)
+        return runs
+    }
+
+    /// Anonymous JavaScript tokens that read as keywords: statements,
+    /// declarations, literals, the arrow. Anything not on the list falls
+    /// through to the editor's default text color, so being out of sync
+    /// with the grammar only costs a color, never a crash.
+    private static let jsKeywordTokens: Set<String> = [
+        "function", "const", "let", "var", "return", "if", "else",
+        "for", "while", "do", "switch", "case", "default", "break",
+        "continue", "new", "delete", "typeof", "instanceof", "in", "of",
+        "true", "false", "null", "undefined", "import", "export",
+        "from", "class", "extends", "try", "catch", "finally", "throw",
+        "this", "await", "async", "yield", "void", "=>",
+    ]
+
+    /// Walks a JavaScript tree: strings/numbers/comments take the shared
+    /// token colors, anonymous keyword tokens the keyword color, and the
+    /// callee side of every call (`pm.test`, `pm.expect(...).to.equal`)
+    /// reads as one blue function-name chain like Postman's script editor
+    /// emphasizes the `pm` surface. Plain identifiers and punctuation stay
+    /// the default text color; malformed input degrades through the generic
+    /// recursion like the JSON/XML walks.
+    private static func paintJS(
+        run node: Node,
+        length: Int,
+        cursor: inout Int,
+        runs: inout [(NSRange, NSColor)]
+    ) {
+        guard let type = node.nodeType, !node.isMissing else { return }
+        switch type {
+        case "string", "template_string":
+            paintJSLeaf(node, color: NSColor(AppColor.syntaxString), length: length, cursor: &cursor, runs: &runs)
+        case "number":
+            paintJSLeaf(node, color: NSColor(AppColor.syntaxNumber), length: length, cursor: &cursor, runs: &runs)
+        case "comment":
+            paintJSLeaf(node, color: NSColor(AppColor.syntaxPlain), length: length, cursor: &cursor, runs: &runs)
+        case "call_expression":
+            for index in 0..<node.childCount {
+                guard let child = node.child(at: index) else { continue }
+                if child.id == node.child(byFieldName: "function")?.id {
+                    paintJSCallee(child, length: length, cursor: &cursor, runs: &runs)
+                } else {
+                    paintJS(run: child, length: length, cursor: &cursor, runs: &runs)
+                }
+            }
+        default:
+            if node.childCount == 0 {
+                if jsKeywordTokens.contains(type) {
+                    paintJSLeaf(node, color: NSColor(AppColor.syntaxKeyword), length: length, cursor: &cursor, runs: &runs)
+                }
+            } else {
+                for index in 0..<node.childCount {
+                    guard let child = node.child(at: index) else { continue }
+                    paintJS(run: child, length: length, cursor: &cursor, runs: &runs)
+                }
+            }
+        }
+    }
+
+    /// Recursively paints a callee chain with the function-name color:
+    /// identifiers and property names inside the chain, so `pm.test` and
+    /// deep `pm.response.to.have.status` read whole. Strings in computed
+    /// member chains (`a["x"]`) stay string-colored via the generic walk.
+    private static func paintJSCallee(
+        _ node: Node,
+        length: Int,
+        cursor: inout Int,
+        runs: inout [(NSRange, NSColor)]
+    ) {
+        guard let type = node.nodeType, !node.isMissing else { return }
+        switch type {
+        case "identifier", "property_identifier":
+            paintJSLeaf(node, color: NSColor(AppColor.syntaxKey), length: length, cursor: &cursor, runs: &runs)
+        case "member_expression":
+            let objectID = node.child(byFieldName: "object")?.id
+            let propertyID = node.child(byFieldName: "property")?.id
+            for index in 0..<node.childCount {
+                guard let child = node.child(at: index) else { continue }
+                if child.id == objectID || child.id == propertyID {
+                    paintJSCallee(child, length: length, cursor: &cursor, runs: &runs)
+                } else {
+                    paintJS(run: child, length: length, cursor: &cursor, runs: &runs)
+                }
+            }
+        default:
+            // Anything else on the callee side (a parenthesized expression,
+            // a call used as a callee) walks with the generic rules.
+            paintJS(run: node, length: length, cursor: &cursor, runs: &runs)
+        }
+    }
+
+    private static func paintJSLeaf(
         _ node: Node,
         color: NSColor,
         length: Int,

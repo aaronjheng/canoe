@@ -21,6 +21,14 @@ struct Collection: Identifiable, Codable, Hashable, Sendable {
     /// Collection documentation (Postman's collection description), edited
     /// in the Overview and auto-saved (debounced), like a rename.
     var requestDescription: String = ""
+    /// Collection-level scripts (Postman's collection Pre-request / Tests):
+    /// run around every request's own scripts in this collection -
+    /// collection pre -> request pre, request test -> collection test -
+    /// sharing one carried variable state per send. Edited in the
+    /// collection's Scripts tab and auto-saved (debounced), like the
+    /// description.
+    var preRequestScript: String = ""
+    var postResponseScript: String = ""
 
     init(
         id: UUID = UUID(),
@@ -45,10 +53,31 @@ struct Collection: Identifiable, Codable, Hashable, Sendable {
         case variables
         case authorization
         case requestDescription
+        case preRequestScript
+        case postResponseScript
     }
 }
 
 extension Collection {
+    /// The folder chain containing `requestID`, innermost folder first
+    /// (empty when the request sits at the collection root or its folder is
+    /// unknown). Cycles in hand-edited parentFolderID data terminate the
+    /// walk.
+    func folderChain(forRequest requestID: UUID) -> [Folder] {
+        var chain: [Folder] = []
+        var visited: Set<UUID> = []
+        var currentID = requests.first(where: { $0.id == requestID })?.folderID
+        while currentID != nil {
+            guard let id = currentID, !visited.contains(id),
+                let folder = folders.first(where: { $0.id == id })
+            else { break }
+            chain.append(folder)
+            visited.insert(id)
+            currentID = folder.parentFolderID
+        }
+        return chain
+    }
+
     /// Tolerates files written before `variables` existed so old vault files
     /// keep loading, and drops a single malformed row instead of the whole
     /// file: a bad folder/request/variable no longer takes the collection's
@@ -65,5 +94,7 @@ extension Collection {
         variables = try container.decodeLossyArray(forKey: .variables)
         authorization = try container.decodeIfPresent(Authorization.self, forKey: .authorization) ?? Authorization()
         requestDescription = try container.decodeIfPresent(String.self, forKey: .requestDescription) ?? ""
+        preRequestScript = try container.decodeIfPresent(String.self, forKey: .preRequestScript) ?? ""
+        postResponseScript = try container.decodeIfPresent(String.self, forKey: .postResponseScript) ?? ""
     }
 }

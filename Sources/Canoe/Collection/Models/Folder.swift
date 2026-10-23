@@ -19,6 +19,13 @@ struct Folder: Identifiable, Codable, Hashable, Sendable {
     /// Folder documentation (Postman's folder description), edited in the
     /// folder page and auto-saved (debounced), like a rename.
     var requestDescription: String = ""
+    /// Folder-level scripts (Postman's folder Pre-request / Tests): run
+    /// around the scripts of every request in this folder's subtree -
+    /// outer folders first for pre, innermost first for test - between the
+    /// collection's and the request's own. Edited in the folder's Scripts
+    /// tab and auto-saved (debounced), like the description.
+    var preRequestScript: String = ""
+    var postResponseScript: String = ""
 
     init(
         id: UUID = UUID(),
@@ -44,6 +51,8 @@ struct Folder: Identifiable, Codable, Hashable, Sendable {
         case parentFolderID
         case authorization
         case requestDescription
+        case preRequestScript
+        case postResponseScript
     }
 
     /// Tolerates files written before `authorization` / `createdAt` existed
@@ -58,5 +67,7 @@ struct Folder: Identifiable, Codable, Hashable, Sendable {
         authorization =
             try container.decodeIfPresent(Authorization.self, forKey: .authorization) ?? Authorization(type: .inherit)
         requestDescription = try container.decodeIfPresent(String.self, forKey: .requestDescription) ?? ""
+        preRequestScript = try container.decodeIfPresent(String.self, forKey: .preRequestScript) ?? ""
+        postResponseScript = try container.decodeIfPresent(String.self, forKey: .postResponseScript) ?? ""
     }
 }

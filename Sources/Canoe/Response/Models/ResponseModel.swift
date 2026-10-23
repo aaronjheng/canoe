@@ -74,10 +74,18 @@ struct ResponseModel: Identifiable, Sendable, Codable {
     let network: NetworkInfo?
     let size: SizeInfo?
     let timing: TimingInfo?
+    /// Postman-style script outcomes: `pm.test` results from the
+    /// post-response script and console lines from both phases, attached
+    /// after the send so the results strip survives history navigation.
+    /// Persisted only in the machine-local response-history mirror; absent
+    /// on responses recorded before scripts existed.
+    let scriptResults: [ScriptTestResult]?
+    let scriptLogs: [ScriptLog]?
 
     private enum CodingKeys: String, CodingKey {
         case statusCode, headers, body, bodyTruncated, duration, timestamp
         case mimeType, requestURL, network, size, timing
+        case scriptResults, scriptLogs
     }
 
     init(
@@ -91,7 +99,9 @@ struct ResponseModel: Identifiable, Sendable, Codable {
         requestURL: String?,
         network: NetworkInfo?,
         size: SizeInfo?,
-        timing: TimingInfo?
+        timing: TimingInfo?,
+        scriptResults: [ScriptTestResult]? = nil,
+        scriptLogs: [ScriptLog]? = nil
     ) {
         self.statusCode = statusCode
         self.headers = headers
@@ -104,6 +114,8 @@ struct ResponseModel: Identifiable, Sendable, Codable {
         self.network = network
         self.size = size
         self.timing = timing
+        self.scriptResults = scriptResults
+        self.scriptLogs = scriptLogs
     }
 
     init(from decoder: any Decoder) throws {
@@ -119,11 +131,35 @@ struct ResponseModel: Identifiable, Sendable, Codable {
             requestURL: try container.decodeIfPresent(String.self, forKey: .requestURL),
             network: try container.decodeIfPresent(NetworkInfo.self, forKey: .network),
             size: try container.decodeIfPresent(SizeInfo.self, forKey: .size),
-            timing: try container.decodeIfPresent(TimingInfo.self, forKey: .timing)
+            timing: try container.decodeIfPresent(TimingInfo.self, forKey: .timing),
+            scriptResults: try container.decodeIfPresent(
+                [ScriptTestResult].self, forKey: .scriptResults),
+            scriptLogs: try container.decodeIfPresent([ScriptLog].self, forKey: .scriptLogs)
         )
     }
 
     var bodySize: Int { body.count }
+
+    /// The same response carrying script outcomes: tests-phase `pm.test`
+    /// results plus console lines from both phases, merged by the send
+    /// pipeline (pre-request lines ride first, in phase order). Empty lists
+    /// stay nil so "no script content" remains observable, not just blank.
+    func withScripts(results: [ScriptTestResult], logs: [ScriptLog]) -> ResponseModel {
+        ResponseModel(
+            statusCode: statusCode,
+            headers: headers,
+            body: body,
+            bodyTruncated: bodyTruncated,
+            duration: duration,
+            timestamp: timestamp,
+            mimeType: mimeType,
+            requestURL: requestURL,
+            network: network,
+            size: size,
+            timing: timing,
+            scriptResults: results.isEmpty ? nil : results,
+            scriptLogs: logs.isEmpty ? nil : logs)
+    }
 
     /// The body's display language, mirroring Postman's data type selector:
     /// auto-detect by default, with manual overrides. JSON/XML/HTML are

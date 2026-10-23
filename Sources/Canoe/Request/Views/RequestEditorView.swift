@@ -20,6 +20,8 @@ struct RequestEditorView: View {
 
     @State private var draft: Request
     @State private var section: RequestSection = .params
+    /// Which script the Scripts tab edits (Postman's sidebar order).
+    @State private var scriptColumn: ScriptColumn = .beforeRequest
 
     /// Path-variable keys in URL order, deduped: the path variables table
     /// derives its rows from the URL's `:segment` path parameters (Postman's
@@ -48,8 +50,15 @@ struct RequestEditorView: View {
         case auth = "Authorization"
         case headers = "Headers"
         case body = "Body"
+        case scripts = "Scripts"
         case settings = "Settings"
         var id: String { rawValue }
+    }
+
+    /// Which script the Scripts tab edits (Postman's sidebar order).
+    enum ScriptColumn: String {
+        case beforeRequest = "Before request"
+        case afterResponse = "After response"
     }
 
     init(request: Request, isMethodMenuVisible: Binding<Bool>, pendingMethodPick: Binding<HTTPMethod?>) {
@@ -68,6 +77,11 @@ struct RequestEditorView: View {
     /// Shown on the Headers tab; same non-blank rule as Params.
     private var enabledHeaderCount: Int {
         draft.headers.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count
+    }
+
+    /// Shown on the Scripts tab: either script having content lights it up.
+    private var hasScriptsContent: Bool {
+        !draft.preRequestScript.isEmpty || !draft.postResponseScript.isEmpty
     }
 
     private var generatedHeaders: [KeyValueReadOnlyItem] {
@@ -1275,6 +1289,17 @@ struct RequestEditorView: View {
                 }
             )
             UnderlineTab(
+                title: RequestSection.scripts.rawValue,
+                count: nil,
+                hasContent: hasScriptsContent,
+                labelInset: 0,
+                isSelected: section == .scripts,
+                action: {
+                    urlFieldFocused = nil
+                    section = .scripts
+                }
+            )
+            UnderlineTab(
                 title: RequestSection.settings.rawValue,
                 count: nil,
                 hasContent: isSettingsChangedFromDefault,
@@ -1374,6 +1399,8 @@ struct RequestEditorView: View {
             AuthEditor(request: $draft)
         case .body:
             BodyEditor(request: $draft)
+        case .scripts:
+            scriptsPane
         case .settings:
             settingsPane
         }
@@ -1395,6 +1422,171 @@ struct RequestEditorView: View {
         )
         .padding(.horizontal, AppSpacing.medium)
         .padding(.vertical, AppSpacing.small)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(AppColor.controlBackground)
+    }
+
+    /// Postman's Scripts tab: a narrow sidebar picks the phase ("Before
+    /// request" / "After response", the green dot marking content), the
+    /// editor on the right holds that phase's script. The text lives on the
+    /// draft, so it saves with ⌘S like everything else.
+    private var scriptsPane: some View {
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
+                scriptColumnRow(.beforeRequest)
+                scriptColumnRow(.afterResponse)
+                Spacer()
+            }
+            .padding(.top, AppSpacing.medium)
+            .frame(width: 168, alignment: .topLeading)
+            Divider()
+            VStack(spacing: 0) {
+                ForEach(inheritedScripts, id: \.label) { inherited in
+                    inheritedScriptBlock(inherited.label, script: inherited.script)
+                }
+                scriptEditorFill
+            }
+        }
+    }
+
+    /// The owning collection's script for the selected phase (Postman's
+    /// inherited collection scripts - they run around this request's own).
+    /// Nil when the request is scratch or the collection has no script for
+    /// the phase.
+    /// The inherited scripts for the selected phase, in execution order
+    /// (Postman's inheritance chain): Before request runs collection ->
+    /// outermost folder -> ... -> innermost folder; After response runs the
+    /// reverse. Empty when the request is scratch or nothing is inherited.
+    private var inheritedScripts: [(label: String, script: String)] {
+        guard
+            let collection = store.vault.collections.first(where: { collection in
+                collection.requests.contains { $0.id == draft.id }
+            })
+        else { return [] }
+        var result: [(label: String, script: String)] = []
+        let chain = collection.folderChain(forRequest: draft.id)
+        switch scriptColumn {
+        case .beforeRequest:
+            if !collection.preRequestScript.isEmpty {
+                result.append(("Collection script", collection.preRequestScript))
+            }
+            for folder in chain.reversed() where !folder.preRequestScript.isEmpty {
+                result.append(("Folder script - \(folder.name)", folder.preRequestScript))
+            }
+        case .afterResponse:
+            for folder in chain where !folder.postResponseScript.isEmpty {
+                result.append(("Folder script - \(folder.name)", folder.postResponseScript))
+            }
+            if !collection.postResponseScript.isEmpty {
+                result.append(("Collection script", collection.postResponseScript))
+            }
+        }
+        return result
+    }
+
+    /// The read-only inherited block pinned above the editable request
+    /// script: inherited scripts run around this request's own (before it
+    /// for Before request, after it for After response).
+    private func inheritedScriptBlock(_ label: String, script: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: AppSpacing.xSmall) {
+                Text(label)
+                    .font(AppFont.sectionTitle)
+                    .foregroundStyle(AppColor.textSecondary)
+                Text("read-only")
+                    .font(AppFont.small)
+                    .foregroundStyle(AppColor.tertiaryText)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, AppSpacing.medium)
+            .padding(.top, AppSpacing.small)
+            .padding(.bottom, AppSpacing.xSmall)
+            // Explicit specialization: no programmatic focus wiring.
+            VariableHighlightEditor<Bool>(
+                text: .constant(script),
+                variables: resolvedVariables,
+                suggestions: requestSuggestions,
+                isSingleLine: false,
+                font: .systemSubheadline,
+                isEditable: false
+            )
+            .frame(minHeight: 96, maxHeight: 160)
+            .padding(.horizontal, AppSpacing.medium)
+            .padding(.bottom, AppSpacing.small)
+            Divider()
+        }
+        .background(AppColor.controlBackground)
+    }
+
+    /// One sidebar row of the Scripts tab: the phase label, the green
+    /// content dot right after it (nothing but the dot between script and
+    /// no script), the light pill when selected.
+    private func scriptColumnRow(_ column: ScriptColumn) -> some View {
+        Button {
+            scriptColumn = column
+        } label: {
+            HStack(spacing: AppSpacing.xSmall) {
+                Text(column.rawValue)
+                    .font(AppFont.rowTitle)
+                    .foregroundStyle(AppColor.textPrimary)
+                if hasScriptContent(column) {
+                    Circle()
+                        .fill(AppColor.success)
+                        .frame(width: AppSize.contentDot, height: AppSize.contentDot)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, AppSpacing.small)
+            .padding(.vertical, AppSpacing.compact)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                    .fill(scriptColumn == column ? AppColor.subtleBackground : .clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .clickCursor()
+        .padding(.horizontal, AppSpacing.compact)
+    }
+
+    private func hasScriptContent(_ column: ScriptColumn) -> Bool {
+        switch column {
+        case .beforeRequest: !draft.preRequestScript.isEmpty
+        case .afterResponse: !draft.postResponseScript.isEmpty
+        }
+    }
+
+    /// The editor side of the Scripts tab: full height, bound to whichever
+    /// phase the sidebar picked.
+    private var scriptEditorFill: some View {
+        VariableHighlightEditor<Bool>(
+            text: Binding(
+                get: {
+                    scriptColumn == .beforeRequest
+                        ? draft.preRequestScript : draft.postResponseScript
+                },
+                set: {
+                    if scriptColumn == .beforeRequest {
+                        draft.preRequestScript = $0
+                    } else {
+                        draft.postResponseScript = $0
+                    }
+                }
+            ),
+            variables: resolvedVariables,
+            suggestions: requestSuggestions,
+            isSingleLine: false,
+            fillsContainer: true,
+            font: .systemSubheadline,
+            placeholder: scriptColumn == .beforeRequest
+                ? "Runs before the request is sent (pm.variables.set, pm.request.headers.add, ...)"
+                : "Runs after the response arrives (pm.expect, pm.test)",
+            syntax: .javascript
+        )
+        // Explicit specialization: no programmatic focus wiring.
+        .padding(.horizontal, AppSpacing.medium)
+        .padding(.top, AppSpacing.small)
+        .padding(.bottom, AppSpacing.small)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AppColor.controlBackground)
     }

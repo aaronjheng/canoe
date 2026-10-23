@@ -423,6 +423,47 @@ extension AppStore {
         enqueueStructuralWrite { await self.vault.writeCollection(self.persistable(updated)) }
     }
 
+    /// Applies collection-level script edits (Postman's collection
+    /// Pre-request / Tests) and auto-saves them like a description edit:
+    /// the caller debounces keystrokes, this lands the value in the vault
+    /// and writes the collection file.
+    func updateCollectionScripts(
+        _ id: UUID, preRequestScript: String, postResponseScript: String
+    ) {
+        guard let idx = vault.collections.firstIndex(where: { $0.id == id }) else { return }
+        guard
+            vault.collections[idx].preRequestScript != preRequestScript
+                || vault.collections[idx].postResponseScript != postResponseScript
+        else { return }
+        vault.collections[idx].preRequestScript = preRequestScript
+        vault.collections[idx].postResponseScript = postResponseScript
+        // An edit is an edit: it pins a live preview like any other.
+        if previewTab == .collection(id) { previewTab = nil }
+        let updated = vault.collections[idx]
+        enqueueStructuralWrite { await self.vault.writeCollection(self.persistable(updated)) }
+    }
+
+    /// Applies folder-level script edits (Postman's folder Pre-request /
+    /// Tests) and auto-saves them like a folder description edit: the
+    /// caller debounces keystrokes, this lands the value in the vault and
+    /// writes the collection file.
+    func updateFolderScripts(
+        _ folderID: UUID, in collectionID: UUID,
+        preRequestScript: String, postResponseScript: String
+    ) {
+        guard let collectionIdx = vault.collections.firstIndex(where: { $0.id == collectionID }),
+            let folderIdx = vault.collections[collectionIdx].folders.firstIndex(where: { $0.id == folderID })
+        else { return }
+        guard
+            vault.collections[collectionIdx].folders[folderIdx].preRequestScript != preRequestScript
+                || vault.collections[collectionIdx].folders[folderIdx].postResponseScript != postResponseScript
+        else { return }
+        vault.collections[collectionIdx].folders[folderIdx].preRequestScript = preRequestScript
+        vault.collections[collectionIdx].folders[folderIdx].postResponseScript = postResponseScript
+        let updated = vault.collections[collectionIdx]
+        enqueueStructuralWrite { await self.vault.writeCollection(self.persistable(updated)) }
+    }
+
     /// Same auto-save for a folder's description.
     func updateFolderDescription(_ folderID: UUID, in collectionID: UUID, to description: String) {
         guard let at = folderIndexes(folderID) else { return }
