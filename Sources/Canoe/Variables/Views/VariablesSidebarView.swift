@@ -278,6 +278,11 @@ private struct ScopeSection: View {
     let suggestions: [VariableSuggestion]?
     @Binding var revealedSecrets: Set<UUID>
     let onEdit: () -> Void
+    /// Header hover state for the script-revert action: like the row
+    /// actions, it stays visually hidden until hovered or focused - but
+    /// focus can always land on it, so keyboard users can reach it too.
+    @State private var isHeaderHovering = false
+    @FocusState private var isRevertFocused: Bool
 
     private enum HintAction {
         /// Opens the scope's variable editor in a tab.
@@ -343,7 +348,8 @@ private struct ScopeSection: View {
             // Revert-to-stored-values: drops the script overrides this scope
             // carries (values the send pipeline persisted from
             // pm.environment.set & co), so resolution falls back to the
-            // vault files. Only shown when script data exists.
+            // vault files. Hover-gated like the row actions; only shown
+            // when script data exists.
             if scope.hasScriptData, let ownerID = scope.ownerID {
                 Button {
                     store.clearVariableOverrides(kind: scope.kind, ownerID: ownerID)
@@ -355,16 +361,23 @@ private struct ScopeSection: View {
                 }
                 .buttonStyle(IconButtonStyle(inset: 0))
                 .foregroundStyle(AppColor.textSecondary)
+                .focused($isRevertFocused)
                 .accessibilityLabel("Revert Script Values")
                 .help(
                     "Revert script-set values to the stored ones"
-                        + " - drop what request scripts wrote for this scope")
+                        + " - drop what request scripts wrote for this scope"
+                )
+                .opacity(isHeaderHovering || isRevertFocused ? 1 : 0)
+                // An invisible button must not keep hit-testing (stray
+                // clicks would wipe the scope's script values unseen).
+                .allowsHitTesting(isHeaderHovering || isRevertFocused)
             }
             Text("\(isFiltering ? visibleVariables.count : scope.variables.count)")
                 .font(AppFont.countBadge)
                 .monospacedDigit()
                 .foregroundStyle(AppColor.textSecondary)
         }
+        .onHover { isHeaderHovering = $0 }
         .padding(.leading, AppSpacing.medium)
         .padding(.trailing, AppSpacing.medium)
         .padding(.top, AppSpacing.small)
@@ -398,6 +411,12 @@ private struct ScopeSection: View {
                     guard let ownerID = scope.ownerID else { return }
                     store.persistVariableEdit(edited, kind: scope.kind, ownerID: ownerID)
                 },
+                onRevert: isScriptSet
+                    ? {
+                        guard let ownerID = scope.ownerID else { return }
+                        store.removeVariableOverride(
+                            kind: scope.kind, ownerID: ownerID, key: variable.key)
+                    } : nil,
                 revealedSecrets: $revealedSecrets
             )
         }
@@ -500,6 +519,10 @@ private struct VariableRow: View {
     /// untouched. Script-set rows no-op here - their edits live in the
     /// overrides layer, written per keystroke.
     var onCommit: ((Variable) -> Void)?
+    /// Removes this row's script override (per-row revert): script-created
+    /// variables disappear entirely, vault rows fall back to their stored
+    /// values. Nil for non-script rows.
+    var onRevert: (() -> Void)?
     @Binding var revealedSecrets: Set<UUID>
     @State private var isHovering = false
     /// This row's copy acknowledgement (the glyph turns into a checkmark
@@ -529,7 +552,7 @@ private struct VariableRow: View {
     @FocusState private var focusedAction: ActionFocus?
 
     private enum ActionFocus: Hashable {
-        case toggle, reveal, copy
+        case toggle, revert, reveal, copy
     }
 
     private var trimmedKey: String {
@@ -569,7 +592,8 @@ private struct VariableRow: View {
                             .help(
                                 "Value written by a request script - stored on this Mac"
                                     + " (never in the vault files). Edit the value to adjust it;"
-                                    + " the scope header's revert button falls back to the stored value")
+                                    + " the hover revert action drops it (script-created variables"
+                                    + " disappear, vault rows fall back to their stored values)")
                     }
                     if let source {
                         Image(systemName: source.systemImage)
@@ -621,6 +645,20 @@ private struct VariableRow: View {
                     .focused($focusedAction, equals: .reveal)
                     .accessibilityLabel(isRevealed ? "Hide value" : "Reveal value")
                     .help(isRevealed ? "Hide value" : "Reveal value")
+                }
+                if let onRevert {
+                    Button {
+                        onRevert()
+                    } label: {
+                        hoverGlyph("arrow.uturn.backward")
+                    }
+                    .buttonStyle(IconButtonStyle(inset: 0))
+                    .foregroundStyle(AppColor.textSecondary)
+                    .focused($focusedAction, equals: .revert)
+                    .accessibilityLabel("Revert Script Value")
+                    .help(
+                        "Revert to the stored value - drop what the script"
+                            + " wrote for this variable")
                 }
                 Button {
                     let pasteboard = NSPasteboard.general

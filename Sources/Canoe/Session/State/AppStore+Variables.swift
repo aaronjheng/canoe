@@ -234,6 +234,16 @@ extension AppStore {
         scheduleVariableOverridesPersistence()
     }
 
+    /// Removes ONE variable's script override (the inspector's per-row
+    /// revert): a script-created variable disappears entirely, a vault row
+    /// falls back to its stored value.
+    func removeVariableOverride(kind: VariableScope.Kind, ownerID: UUID, key: String) {
+        var updated = variableOverrides
+        guard updated.remove(kind: kind.scriptKind, ownerID: ownerID, key: key) else { return }
+        variableOverrides = updated
+        scheduleVariableOverridesPersistence()
+    }
+
     /// Mirrors the script overrides into canoe.sqlite (debounced
     /// like the history mirror; per-send rewrites coalesce into one write).
     func scheduleVariableOverridesPersistence() {

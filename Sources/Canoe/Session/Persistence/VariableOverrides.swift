@@ -59,6 +59,21 @@ struct VariableOverrides: Codable, Sendable, Equatable {
         owner.removeValue(forKey: ownerID.uuidString)
         scopes[kind] = owner
     }
+
+    /// Drops ONE key's override (the inspector's per-row revert): a
+    /// script-created variable disappears entirely; a vault row falls back
+    /// to its stored value.
+    /// @return whether anything was removed.
+    mutating func remove(kind: String, ownerID: UUID, key: String) -> Bool {
+        guard
+            var owner = scopes[kind],
+            var entries = owner[ownerID.uuidString],
+            entries.removeValue(forKey: key) != nil
+        else { return false }
+        owner[ownerID.uuidString] = entries
+        scopes[kind] = owner
+        return true
+    }
 }
 
 extension VariableScope.Kind {
