@@ -264,6 +264,13 @@ final class AppStore {
     /// log itself - 200 entries at two 512 KB bodies each would otherwise
     /// reach 200 MB.
     static let consoleBodyByteLimit = 16 * 1024 * 1024
+    /// Script-written variable overrides (machine-local
+    /// `variable-overrides.json`): pre-request/post-response scripts persist
+    /// their `pm.environment.set` & co writes here instead of the vault
+    /// files - per-device runtime state like a minted token, never synced.
+    /// `variableScopesForRequest` folds them over the stored scopes, so the
+    /// send path and the variables inspector read the same effective values.
+    var variableOverrides = VariableOverrides()
     /// Whether the console panel is docked below the Response pane.
     var showConsole = false
     var selectedTab: OpenTab?
@@ -281,6 +288,9 @@ final class AppStore {
     /// recorded entry (and on Clear) so a burst of sends rewrites
     /// console.json once.
     @ObservationIgnored var consoleSaveTask: Task<Void, Never>?
+    /// Debounced writer for the variable-overrides mirror; rescheduled per
+    /// send so a burst of sends rewrites variable-overrides.json once.
+    @ObservationIgnored var variableOverridesSaveTask: Task<Void, Never>?
     /// In-flight Save (⌘S) task, if any. Tracked so the quit path can
     /// wait for the vault writes to land before the process exits: the
     /// pending snapshots are cleared up front, so quitting mid-save would

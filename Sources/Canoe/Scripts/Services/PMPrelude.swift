@@ -144,9 +144,11 @@ enum PMPrelude {
 
         // Postman's read-side scope objects (VariableScope): get/has read
         // ONE scope (its script writes first, then the stored map minus its
-        // unsets); set/unset write that scope for this send. Unlike
-        // Postman, scope writes are not persisted back to the variable
-        // files - they live for this send only.
+        // unsets); set/unset write that scope for this send. The send
+        // pipeline persists the final writes to the machine-local overrides
+        // layer (see VariableOverrides) so later sends of other requests
+        // resolve them; the vault files themselves are never written by
+        // scripts.
         function pmScope(kind) {
           return {
             get: function (name) {

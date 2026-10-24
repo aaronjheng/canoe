@@ -340,6 +340,26 @@ private struct ScopeSection: View {
                 .font(AppFont.microHeader)
                 .foregroundStyle(AppColor.textSecondary)
             Spacer(minLength: 0)
+            // Revert-to-stored-values: drops the script overrides this scope
+            // carries (values the send pipeline persisted from
+            // pm.environment.set & co), so resolution falls back to the
+            // vault files. Only shown when script data exists.
+            if scope.hasScriptData, let ownerID = scope.ownerID {
+                Button {
+                    store.clearVariableOverrides(kind: scope.kind, ownerID: ownerID)
+                } label: {
+                    Image(systemName: "arrow.uturn.backward")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 11, height: 11)
+                }
+                .buttonStyle(IconButtonStyle(inset: 0))
+                .foregroundStyle(AppColor.textSecondary)
+                .accessibilityLabel("Revert Script Values")
+                .help(
+                    "Revert script-set values to the stored ones"
+                        + " - drop what request scripts wrote for this scope")
+            }
             Text("\(isFiltering ? visibleVariables.count : scope.variables.count)")
                 .font(AppFont.countBadge)
                 .monospacedDigit()
@@ -355,12 +375,18 @@ private struct ScopeSection: View {
         // No hairlines between rows: the variables within a section read as
         // one compact list.
         ForEach(visibleVariables) { variable in
+            let isScriptSet = scope.scriptSetKeys.contains(variable.key)
             VariableRow(
                 variable: variable,
                 // Disabled rows are excluded from resolution, so they never
                 // earn the referenced-in-request marker.
                 isUsed: variable.isEnabled && usedKeys.contains(variable.key.trimmingCharacters(in: .whitespacesAndNewlines)),
                 overriddenBy: overrideLabels[variable.key.trimmingCharacters(in: .whitespacesAndNewlines)],
+                isScriptSet: isScriptSet,
+                // Script rows edit like any other row - the edit lands in the
+                // overrides layer (the value the row shows), not the vault row
+                // underneath. Only their enable/disable toggle is hidden:
+                // that flag lives on the vault row.
                 isEditable: true,
                 resolvedVariables: resolvedVariables,
                 suggestions: suggestions,
@@ -368,9 +394,9 @@ private struct ScopeSection: View {
                     guard let ownerID = scope.ownerID else { return }
                     store.updateVariable(updated, kind: scope.kind, ownerID: ownerID)
                 },
-                onCommit: { variableID in
+                onCommit: { edited in
                     guard let ownerID = scope.ownerID else { return }
-                    store.persistVariableEdit(variableID, kind: scope.kind, ownerID: ownerID)
+                    store.persistVariableEdit(edited, kind: scope.kind, ownerID: ownerID)
                 },
                 revealedSecrets: $revealedSecrets
             )
@@ -448,6 +474,9 @@ private struct VariableRow: View {
     let variable: Variable
     let isUsed: Bool
     let overriddenBy: String?
+    /// The row's value comes from the script overrides layer (see
+    /// `VariableOverrides`): shown with a badge and read-only.
+    var isScriptSet = false
     /// Value the row shows and copies - defaults to the variable's raw
     /// value; the resolved section passes the fully expanded value instead.
     /// Non-nil also makes the row read-only: resolved rows are derived.
@@ -468,8 +497,9 @@ private struct VariableRow: View {
     var onUpdate: ((Variable) -> Void)?
     /// Fires when the field commits (Enter or focus loss): that one row is
     /// persisted to disk right away, leaving any editor draft in a tab
-    /// untouched.
-    var onCommit: ((UUID) -> Void)?
+    /// untouched. Script-set rows no-op here - their edits live in the
+    /// overrides layer, written per keystroke.
+    var onCommit: ((Variable) -> Void)?
     @Binding var revealedSecrets: Set<UUID>
     @State private var isHovering = false
     /// This row's copy acknowledgement (the glyph turns into a checkmark
@@ -534,6 +564,13 @@ private struct VariableRow: View {
                         // than its neighbors the moment it appears.
                         Badge(text: "Disabled", isCompact: true)
                     }
+                    if isScriptSet {
+                        Badge(text: "Script", isCompact: true)
+                            .help(
+                                "Value written by a request script - stored on this Mac"
+                                    + " (never in the vault files). Edit the value to adjust it;"
+                                    + " the scope header's revert button falls back to the stored value")
+                    }
                     if let source {
                         Image(systemName: source.systemImage)
                             .font(AppFont.small)
@@ -553,10 +590,13 @@ private struct VariableRow: View {
             Spacer(minLength: 0)
 
             HStack(spacing: AppSpacing.xSmall) {
-                if isEditable, let onUpdate {
+                if isEditable, !isScriptSet, let onUpdate {
+                    // Script-set rows carry no toggle: the overrides layer has
+                    // no enabled flag - that lives on the vault row underneath
+                    // (owning editor, or the scope's revert button).
                     Button {
                         onUpdate(updating(isEnabled: !variable.isEnabled))
-                        onCommit?(variable.id)
+                        onCommit?(variable)
                     } label: {
                         hoverGlyph(variable.isEnabled ? "checkmark.square" : "square")
                     }
@@ -665,7 +705,7 @@ private struct VariableRow: View {
                 isValueFocused = focused
                 // Leaving the field is a commit too: whatever is in memory
                 // lands on disk, matching Enter.
-                if !focused { onCommit?(variable.id) }
+                if !focused { onCommit?(variable) }
             },
             onCommit: { commitAndExitEditing() },
             onHoverChanged: { isValueHovered = $0 }
@@ -704,7 +744,7 @@ private struct VariableRow: View {
     /// the row falls back to quiet text. The resign fires the blur commit,
     /// which is a no-op once saved.
     private func commitAndExitEditing() {
-        onCommit?(variable.id)
+        onCommit?(variable)
         DispatchQueue.main.async {
             NSApp.keyWindow?.makeFirstResponder(nil)
         }

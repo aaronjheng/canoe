@@ -86,7 +86,12 @@ extension AppStore {
     /// → collection → environment), so the inspector can list them in this
     /// order: a later section overrides an earlier one on key conflicts. The
     /// environment slot is always present; its `ownerID` is nil when no
-    /// environment is active.
+    /// environment is active. Script-written overrides (machine-local,
+    /// see `VariableOverrides`) fold over each scope: an override replaces
+    /// the row's value, an unset mask hides it, and script-created variables
+    /// (no vault row) join as synthetic rows - so everything downstream
+    /// (resolution, inspection, secret redaction) reads the same effective
+    /// values the wire will carry.
     func variableScopesForRequest(_ request: Request) -> [VariableScope] {
         let collection = collectionForRequest(request)
         // Scratch (unfiled) requests have no owning collection: they were
@@ -116,6 +121,7 @@ extension AppStore {
                 variables: environment?.variables ?? []
             ),
         ]
+        .map(scopeWithOverrides)
     }
 
     /// Scopes shown in the inspector when no request is selected (Postman's
@@ -135,6 +141,108 @@ extension AppStore {
                 variables: activeEnvironment?.variables ?? []
             ),
         ]
+        .map(scopeWithOverrides)
+    }
+
+    // MARK: - Script variable overrides
+
+    /// Folds the script overrides of one scope over its stored rows (see the
+    /// `variableScopesForRequest` doc): overrides replace values, unset
+    /// masks hide rows, script-created variables join as synthetic rows
+    /// (enabled, not secret - the script minted them; mark the vault row
+    /// secret instead if the value must be masked). A scope with no
+    /// override data passes through untouched.
+    private func scopeWithOverrides(_ scope: VariableScope) -> VariableScope {
+        guard let ownerID = scope.ownerID else { return scope }
+        let entries = variableOverrides.scopes[scope.kind.scriptKind]?[ownerID.uuidString] ?? [:]
+        guard !entries.isEmpty else { return scope }
+        var variables: [Variable] = []
+        var scriptSetKeys = Set<String>()
+        var overriddenKeys = Set<String>()
+        for variable in scope.variables {
+            guard let entry = entries[variable.key] else {
+                variables.append(variable)
+                continue
+            }
+            guard let value = entry.value else { continue }  // unset mask: the row stops resolving on this device
+            var withOverride = variable
+            withOverride.value = value
+            variables.append(withOverride)
+            scriptSetKeys.insert(variable.key)
+            overriddenKeys.insert(variable.key)
+        }
+        // Script-created variables (Postman: a script write to a name with
+        // no stored variable lands in the local layer only - the vault file
+        // stays untouched). Sorted for a stable row order.
+        for (key, entry) in entries.sorted(by: { $0.key < $1.key })
+        where !overriddenKeys.contains(key) {
+            guard let value = entry.value else { continue }
+            variables.append(Variable(id: entry.rowID, key: key, value: value))
+            scriptSetKeys.insert(key)
+        }
+        return VariableScope(
+            kind: scope.kind,
+            ownerID: scope.ownerID,
+            ownerName: scope.ownerName,
+            variables: variables,
+            scriptSetKeys: scriptSetKeys,
+            hasScriptData: true
+        )
+    }
+
+    /// Persists one send's cumulative script scope writes (the LAST phase
+    /// outcome carries every write the send made - phases inherit carried
+    /// state, see `ScriptPhaseOutcome.scopeSets`) into the machine-local
+    /// overrides layer, so later sends of other requests resolve them.
+    /// Owner ids resolve exactly like `variableScopesForRequest`; a write
+    /// with no owner (e.g. `pm.environment.set` with no active environment)
+    /// stays send-local, like before.
+    func persistScriptScopeWrites(of outcome: ScriptPhaseOutcome, for request: Request) {
+        guard !outcome.scopeSets.isEmpty || !outcome.scopeUnsets.isEmpty else { return }
+        let collection = collectionForRequest(request)
+        let workspaceID =
+            collection?.workspaceID.flatMap { id in
+                vault.workspaces.first { $0.id == id }?.id
+            }
+            ?? (collection == nil ? vault.activeWorkspace?.id : nil)
+        var owners: [String: UUID] = [:]
+        owners["environment"] = activeEnvironment?.id
+        owners["collection"] = collection?.id
+        owners["workspace"] = workspaceID
+        var updated = variableOverrides
+        for (kind, sets) in outcome.scopeSets {
+            guard let ownerID = owners[kind] else { continue }
+            updated.apply(kind: kind, ownerID: ownerID, sets: sets, unsets: outcome.scopeUnsets[kind] ?? [])
+        }
+        // A kind that only unset this send (no sets) still needs its masks.
+        for (kind, unsets) in outcome.scopeUnsets where outcome.scopeSets[kind] == nil {
+            guard let ownerID = owners[kind] else { continue }
+            updated.apply(kind: kind, ownerID: ownerID, sets: [:], unsets: unsets)
+        }
+        guard updated != variableOverrides else { return }
+        variableOverrides = updated
+        scheduleVariableOverridesPersistence()
+    }
+
+    /// Drops the script overrides of one scope owner (the inspector's revert
+    /// action): effective values fall back to what the vault files store.
+    func clearVariableOverrides(kind: VariableScope.Kind, ownerID: UUID) {
+        var updated = variableOverrides
+        updated.clear(kind: kind.scriptKind, ownerID: ownerID)
+        guard updated != variableOverrides else { return }
+        variableOverrides = updated
+        scheduleVariableOverridesPersistence()
+    }
+
+    /// Mirrors the script overrides to variable-overrides.json (debounced
+    /// like the history mirror; per-send rewrites coalesce into one write).
+    func scheduleVariableOverridesPersistence() {
+        variableOverridesSaveTask?.cancel()
+        variableOverridesSaveTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled, let self else { return }
+            await self.vault.saveVariableOverrides(self.variableOverrides)
+        }
     }
 
     /// `{{placeholder}}` keys the request references anywhere variables are
@@ -198,6 +306,10 @@ extension AppStore {
     /// is a no-op. The edit lands on disk when the field commits (blur or
     /// Enter) - see `persistVariableEdit`.
     ///
+    /// Script-set rows are the exception: their edit lands in the overrides
+    /// layer (the value the row shows), never the vault row underneath -
+    /// the same local layer scripts write, mirrored by its own debounce.
+    ///
     /// Seeds the owner's persisted baseline on the first edit, before the row
     /// changes. Without it the commit path has no "saved content" to splice
     /// the row into (`persistedRow` falls back to the live array), so a failed
@@ -206,6 +318,15 @@ extension AppStore {
     func updateVariable(
         _ variable: Variable, kind: VariableScope.Kind, ownerID: UUID
     ) {
+        if variableOverrides.scopes[kind.scriptKind]?[ownerID.uuidString]?[variable.key] != nil {
+            var updated = variableOverrides
+            updated.apply(
+                kind: kind.scriptKind, ownerID: ownerID,
+                sets: [variable.key: variable.value], unsets: [])
+            variableOverrides = updated
+            scheduleVariableOverridesPersistence()
+            return
+        }
         switch kind {
         case .workspace:
             guard let idx = vault.workspaces.firstIndex(where: { $0.id == ownerID }),
@@ -236,6 +357,9 @@ extension AppStore {
 
     /// Commits ONE inspector row to its owner's vault file, right away: the
     /// inspector has no Save button, so blur/Enter has to land the edit.
+    /// Script-set rows are absent here: their edit already lives in the
+    /// overrides layer (written per keystroke by `updateVariable`, mirrored
+    /// by its debounce) - there is no vault write for them.
     ///
     /// Only that row is written, and the owner's editor baseline is left
     /// untouched: the write-only `writeWorkspace` / `writeCollection` /
@@ -249,14 +373,17 @@ extension AppStore {
     /// actually saved) with this row swapped in. With no baseline - no
     /// editor draft in flight - the live array is exactly the saved content
     /// plus this edit, so it is written as is.
-    func persistVariableEdit(_ variableID: UUID, kind: VariableScope.Kind, ownerID: UUID) {
+    func persistVariableEdit(_ variable: Variable, kind: VariableScope.Kind, ownerID: UUID) {
+        if variableOverrides.scopes[kind.scriptKind]?[ownerID.uuidString]?[variable.key] != nil {
+            return
+        }
         switch kind {
         case .workspace:
             guard let idx = vault.workspaces.firstIndex(where: { $0.id == ownerID }) else { return }
             let baseline = persistedWorkspaceVariableBaselines[ownerID]
             guard
                 let variables = persistedRow(
-                    variableID, live: vault.workspaces[idx].variables, baseline: baseline)
+                    variable.id, live: vault.workspaces[idx].variables, baseline: baseline)
             else { return }
             // A copy, never the live slot: the editor's draft lives there.
             var workspace = vault.workspaces[idx]
@@ -271,7 +398,7 @@ extension AppStore {
                     // so writing it back would silently revert this commit.
                     let draft = self.pendingWorkspaceVariables[ownerID] ?? variables
                     self.pendingWorkspaceVariables[ownerID] = Self.splicing(
-                        variableID, into: draft, from: liveAtCommit)
+                        variable.id, into: draft, from: liveAtCommit)
                     self.persistedWorkspaceVariableBaselines[ownerID] = baseline
                     self.scheduleDraftPersistence()
                     return
@@ -286,7 +413,7 @@ extension AppStore {
             let baseline = persistedCollectionVariableBaselines[ownerID]
             guard
                 let variables = persistedRow(
-                    variableID, live: vault.collections[idx].variables, baseline: baseline)
+                    variable.id, live: vault.collections[idx].variables, baseline: baseline)
             else { return }
             // `persistable` first, so every other draft-owned field in the
             // file is rewound too - the unsaved request edits and folder
@@ -299,7 +426,7 @@ extension AppStore {
                 guard await vault.writeCollection(collection) else {
                     let draft = self.pendingCollectionVariables[ownerID] ?? variables
                     self.pendingCollectionVariables[ownerID] = Self.splicing(
-                        variableID, into: draft, from: liveAtCommit)
+                        variable.id, into: draft, from: liveAtCommit)
                     self.persistedCollectionVariableBaselines[ownerID] = baseline
                     self.scheduleDraftPersistence()
                     return
@@ -311,7 +438,7 @@ extension AppStore {
             let baseline = persistedEnvironmentBaselines[ownerID]
             guard
                 let variables = persistedRow(
-                    variableID, live: vault.environments[idx].variables, baseline: baseline?.variables)
+                    variable.id, live: vault.environments[idx].variables, baseline: baseline?.variables)
             else { return }
             // Built from the baseline, not the live profile: an unsaved
             // name edit in the environment tab must not ride along.
@@ -322,7 +449,7 @@ extension AppStore {
                 guard await vault.writeEnvironment(environment) else {
                     var retry = self.pendingEnvironmentSnapshots[ownerID] ?? environment
                     retry.variables = Self.splicing(
-                        variableID, into: retry.variables, from: liveAtCommit.variables)
+                        variable.id, into: retry.variables, from: liveAtCommit.variables)
                     self.pendingEnvironmentSnapshots[ownerID] = retry
                     self.persistedEnvironmentBaselines[ownerID] = baseline
                     self.scheduleDraftPersistence()

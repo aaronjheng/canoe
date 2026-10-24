@@ -57,7 +57,7 @@ Business terms and their canonical type names (JSON keys are unchanged by rename
 
 ## Vault & Storage
 
-- The vault is a fixed folder (`~/Library/Application Support/Canoe/`) containing `workspaces/*.json`, `collections/*.json`, `environments/*.json`, `vault.json`, and `drafts.json` (unsaved request/environment/variable edits, restored on launch); `history.json` (per-device request history), `response-history.json` (per-request responses with bodies), `console.json` (network log), and `drafts.json` are always machine-local, never synced
+- The vault is a fixed folder (`~/Library/Application Support/Canoe/`) containing `workspaces/*.json`, `collections/*.json`, `environments/*.json`, `vault.json`, and `drafts.json` (unsaved request/environment/variable edits, restored on launch); per-device runtime data lives in `canoe.sqlite` (machine-local SQLite, never synced, one table per kind - `drafts`, `history`, `response_history`, `console`, `variable_overrides`: values request scripts wrote via `pm.environment.set` & co, Postman's local-by-default values; scripts never write the vault files themselves)
 - Storage is local-only; there is no iCloud integration. Git-based sync is planned for the future
 - Use **File -> Reveal Vault in Finder** to open the vault folder
 - App-level configuration (appearance) lives in `settings.json` next to the vault, owned solely by `SettingsStore`; `UserDefaults` holds only AppKit-managed UI state

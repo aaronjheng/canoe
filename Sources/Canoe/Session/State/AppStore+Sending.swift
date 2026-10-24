@@ -123,6 +123,12 @@ extension AppStore {
             var preResults: [ScriptTestResult] = []
             var preHeaderChanges: [ScriptHeaderChange] = []
             var prePhaseRan = false
+            // The last phase outcome carrying scope writes: every phase
+            // inherits the previous ones' carried state, so the newest
+            // non-empty snapshot is the send's whole picture (pre-request
+            // writes included). Persisted once the send settles - see
+            // `persistScriptScopeWrites`.
+            var scriptScopeOutcome: ScriptPhaseOutcome?
             do {
                 // The collection's Pre-request script (inherited chain top).
                 let collection = collectionForRequest(request)
@@ -132,6 +138,9 @@ extension AppStore {
                         variables: scriptVariables, resetsCarriedState: true)
                     preRequestLogs += outcome.logs
                     preResults += outcome.results
+                    if !outcome.scopeSets.isEmpty || !outcome.scopeUnsets.isEmpty {
+                        scriptScopeOutcome = outcome
+                    }
                     if let error = outcome.error {
                         errorsByTab[tab] =
                             "Collection pre-request script error: \(error)"
@@ -152,6 +161,9 @@ extension AppStore {
                         variables: scriptVariables, resetsCarriedState: false)
                     preRequestLogs += outcome.logs
                     preResults += outcome.results
+                    if !outcome.scopeSets.isEmpty || !outcome.scopeUnsets.isEmpty {
+                        scriptScopeOutcome = outcome
+                    }
                     if let error = outcome.error {
                         errorsByTab[tab] =
                             "Folder pre-request script error (\(folder.name)): \(error)"
@@ -170,6 +182,9 @@ extension AppStore {
                     variables: scriptVariables, resetsCarriedState: !prePhaseRan)
                 preRequestLogs += outcome.logs
                 preResults += outcome.results
+                if !outcome.scopeSets.isEmpty || !outcome.scopeUnsets.isEmpty {
+                    scriptScopeOutcome = outcome
+                }
                 if let error = outcome.error {
                     errorsByTab[tab] = "Pre-request script error: \(error)"
                     return
@@ -252,6 +267,9 @@ extension AppStore {
                     }
                     results += requestPost.results
                     logs += requestPost.logs
+                    if !requestPost.scopeSets.isEmpty || !requestPost.scopeUnsets.isEmpty {
+                        scriptScopeOutcome = requestPost
+                    }
                     if let error = requestPost.error {
                         results.append(
                             ScriptTestResult(
@@ -276,6 +294,9 @@ extension AppStore {
                         }
                         results += folderPost.results
                         logs += folderPost.logs
+                        if !folderPost.scopeSets.isEmpty || !folderPost.scopeUnsets.isEmpty {
+                            scriptScopeOutcome = folderPost
+                        }
                         if let error = folderPost.error {
                             results.append(
                                 ScriptTestResult(
@@ -302,6 +323,9 @@ extension AppStore {
                         }
                         results += collectionPost.results
                         logs += collectionPost.logs
+                        if !collectionPost.scopeSets.isEmpty || !collectionPost.scopeUnsets.isEmpty {
+                            scriptScopeOutcome = collectionPost
+                        }
                         if let error = collectionPost.error {
                             results.append(
                                 ScriptTestResult(
@@ -311,6 +335,14 @@ extension AppStore {
                     }
                     responseWithScripts = response.withScripts(
                         results: results, logs: logs)
+                }
+                // Script scope writes (`pm.environment.set` & co) persist to
+                // the machine-local overrides layer - Postman's local-by-
+                // default values - so other requests resolve them on their
+                // own sends. The last carrying outcome holds the whole
+                // send's cumulative writes; vault files stay untouched.
+                if let scriptScopeOutcome {
+                    persistScriptScopeWrites(of: scriptScopeOutcome, for: request)
                 }
                 // The response becomes history's newest entry, which IS what
                 // the tab displays (latest = index nil = history[0]). No
@@ -363,6 +395,13 @@ extension AppStore {
             } catch {
                 guard sendTokens[tab] == token else { return }
                 guard !Task.isCancelled else { return }
+                // Pre-request scope writes survive a failed HTTP send - the
+                // scripts ran and Postman persists them too. The post-response
+                // phases never ran here, so the snapshot only holds what the
+                // pre-request chain wrote.
+                if let scriptScopeOutcome {
+                    persistScriptScopeWrites(of: scriptScopeOutcome, for: request)
+                }
                 errorsByTab[tab] = error.localizedDescription
                 // The failed send replaces nothing: the previous response
                 // (and its history) stays in place, so after dismissing the

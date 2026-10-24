@@ -401,6 +401,10 @@ extension AppStore {
         // previous sessions reopens with the panel (the entries load here;
         // the panel stays hidden until shown).
         consoleEntries = await vault.loadConsole(limit: Self.consoleEntryLimit)
+        // And the script-written variable overrides, also machine-local: the
+        // tokens previous sessions' scripts minted (pm.environment.set & co)
+        // resolve again after a relaunch, without touching the vault files.
+        variableOverrides = await vault.loadVariableOverrides()
         // The one-time auth migration writes vault.json: it must not run on
         // a failed load, where config is the default and persisting it would
         // clobber the user's real vault.json (active workspace/environment).

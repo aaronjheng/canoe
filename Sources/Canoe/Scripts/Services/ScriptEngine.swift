@@ -22,6 +22,15 @@ struct ScriptPhaseOutcome: Sendable {
     /// Nil when no script ran.
     var finalVariables: [String: String]?
     var headerChanges: [ScriptHeaderChange] = []
+    /// The per-scope writes the script made via `pm.environment.set` & co
+    /// (prelude scope names as keys), and the per-scope names it unset.
+    /// Cumulative carried state: every phase of a send inherits the previous
+    /// ones' writes, so the LAST phase's snapshot is the send's whole
+    /// picture (pre-request writes included). The send pipeline persists it
+    /// to the machine-local overrides layer; `pm.variables.set` (the local
+    /// overlay) is deliberately absent - it never persists.
+    var scopeSets: [String: [String: String]] = [:]
+    var scopeUnsets: [String: Set<String>] = [:]
     var error: String?
 }
 
@@ -204,6 +213,8 @@ actor ScriptEngine {
         }
 
         outcome.headerChanges = host.headerChangesSnapshot
+        outcome.scopeSets = host.scopeOverlaysSnapshot
+        outcome.scopeUnsets = host.scopeUnsetsSnapshot
         return outcome
     }
 
@@ -492,7 +503,9 @@ private final class ScriptHostState: @unchecked Sendable {
     }
 
     /// `pm.<scope>.set` - a per-scope write that overrides that scope's
-    /// stored value for this send (not persisted back to the files).
+    /// stored value for this send. The send pipeline persists the final
+    /// writes to the machine-local overrides layer (see `VariableOverrides`);
+    /// the vault files themselves are never written by scripts.
     func setScopeValue(kind: String, forKey name: String, value: String) {
         lock.lock()
         defer { lock.unlock() }
@@ -601,6 +614,14 @@ private final class ScriptHostState: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return scopeUnsets.filter { !$0.value.isEmpty }
+    }
+
+    /// The per-scope script writes (cumulative carried state) for the
+    /// phase outcome - the raw material the send pipeline persists.
+    var scopeOverlaysSnapshot: [String: [String: String]] {
+        lock.lock()
+        defer { lock.unlock() }
+        return scopeOverlays.filter { !$0.value.isEmpty }
     }
 
     /// The header mutations this run recorded (pre-request ops are the ones

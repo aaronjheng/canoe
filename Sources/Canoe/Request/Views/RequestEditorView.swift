@@ -1580,7 +1580,7 @@ struct RequestEditorView: View {
             font: .systemSubheadline,
             placeholder: scriptColumn == .beforeRequest
                 ? "Runs before the request is sent (pm.variables.set, pm.request.headers.add, ...)"
-                : "Runs after the response arrives (pm.expect, pm.test)",
+                : "Runs after the response arrives (pm.expect, pm.environment.set, pm.test)",
             syntax: .javascript
         )
         // Explicit specialization: no programmatic focus wiring.

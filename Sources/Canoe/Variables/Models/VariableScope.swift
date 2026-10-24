@@ -32,8 +32,31 @@ struct VariableScope: Identifiable, Hashable, Sendable {
     let ownerID: UUID?
     let ownerName: String?
     /// Variables exactly as stored - disabled rows included so the inspector
-    /// can show why a variable does not resolve.
+    /// can show why a variable does not resolve. Script overrides already
+    /// folded in (see `VariableOverrides`): overridden rows carry the
+    /// effective value, masked rows are gone, script-created variables join
+    /// as synthetic rows.
     let variables: [Variable]
+    /// Keys in `variables` whose value comes from the script overrides layer
+    /// (the "Script" badge in the inspector; rows also render read-only -
+    /// the local layer is script-managed runtime state).
+    var scriptSetKeys: Set<String> = []
+    /// True when any override data exists for the scope's owner, even if it
+    /// only masks stored rows (which hides them): drives the inspector's
+    /// revert-to-stored-values action.
+    var hasScriptData: Bool = false
+
+    init(
+        kind: Kind, ownerID: UUID?, ownerName: String?, variables: [Variable],
+        scriptSetKeys: Set<String> = [], hasScriptData: Bool = false
+    ) {
+        self.kind = kind
+        self.ownerID = ownerID
+        self.ownerName = ownerName
+        self.variables = variables
+        self.scriptSetKeys = scriptSetKeys
+        self.hasScriptData = hasScriptData
+    }
 
     var id: String { "\(kind.label)-\(ownerID?.uuidString ?? "none")" }
 }

@@ -83,34 +83,6 @@ final class VaultStore {
     private var collectionsDirectory: URL? { vaultURL?.appendingPathComponent("collections") }
     private var environmentsDirectory: URL? { vaultURL?.appendingPathComponent("environments") }
     private var configFileURL: URL? { vaultURL?.appendingPathComponent("vault.json") }
-    /// Unsaved request edits, mirrored so they survive relaunches without
-    /// being written into the saved request files. Always machine-local,
-    /// even when the synced vault lives on iCloud Drive: drafts are
-    /// per-device intent, and their debounced whole-file rewrites would
-    /// fight across devices.
-    private var draftsFileURL: URL? {
-        localRoot()?.appendingPathComponent("drafts.json")
-    }
-    /// Request history, mirrored so it survives relaunches. Machine-local
-    /// like drafts: history is per-device activity, and its whole-file
-    /// rewrites (one per send) would fight across synced devices.
-    private var historyFileURL: URL? {
-        localRoot()?.appendingPathComponent("history.json")
-    }
-    /// Per-request response history (with bodies), mirrored so a request's
-    /// reopen/relaunch shows what it last showed. Machine-local like drafts
-    /// and history: bodies are heavy, per-device activity - their whole-file
-    /// rewrites (one per send) would fight across synced devices.
-    private var responseHistoryFileURL: URL? {
-        localRoot()?.appendingPathComponent("response-history.json")
-    }
-    /// Console (network log) entries, mirrored so a session's sends survive
-    /// relaunch. Machine-local like drafts, history, and response history:
-    /// the log records per-device sends, and its whole-file rewrites would
-    /// fight across synced devices.
-    private var consoleFileURL: URL? {
-        localRoot()?.appendingPathComponent("console.json")
-    }
 
     // MARK: - Derived
 
@@ -603,164 +575,165 @@ final class VaultStore {
         }
     }
 
-    // MARK: - Draft persistence
+    // (Console lives in the machine-local SQLite store - see the MARK above.)
 
-    /// Reads the unsaved edits persisted by a previous session.
-    func loadDrafts() async -> VaultDrafts {
-        guard let draftsFileURL else { return VaultDrafts() }
-        guard let data = try? await FileStore.readDataIfExists(at: draftsFileURL), !data.isEmpty else {
-            return VaultDrafts()
-        }
+    // MARK: - Machine-local runtime data (SQLite)
+
+    /// The machine-local SQLite store (`canoe.sqlite`, see `LocalDatabase`)
+    /// holds every per-device runtime mirror: drafts, history, response
+    /// history, console, and the script-written variable overrides. Always
+    /// in the local root, never synced, even when the vault itself lives on
+    /// iCloud Drive. Opened lazily on first use; nil only when the
+    /// Application Support root itself is unavailable (the condition under
+    /// which the old JSON mirrors used to no-op too).
+    private var localDatabase: LocalDatabase?
+
+    private func localStore() async -> LocalDatabase? {
+        if let localDatabase { return localDatabase }
+        guard let root = localRoot() else { return nil }
+        let database = LocalDatabase(fileURL: root.appendingPathComponent("canoe.sqlite"))
         do {
-            return try JSONDecoder.iso.decode(VaultDrafts.self, from: data)
+            try await database.open()
+            localDatabase = database
+            return database
+        } catch {
+            AppLogger.error("Failed to open the local store: \(error)", category: "Vault")
+            return nil
+        }
+    }
+
+    /// Reads the unsaved edits persisted by a previous session. A payload
+    /// that no longer decodes drops only its own draft - row-per-draft
+    /// replaces the old `Lossy` map tolerance.
+    func loadDrafts() async -> VaultDrafts {
+        guard let database = await localStore() else { return VaultDrafts() }
+        do {
+            return try await database.loadDrafts()
         } catch {
             AppLogger.error("Failed to load drafts: \(error)", category: "Vault")
-            // Back up the undecodable file before any later saveDrafts
-            // overwrites it, so a manual recovery stays possible instead of
-            // a silent loss (same rule as the corrupt vault.json backup).
-            let backup = draftsFileURL.deletingLastPathComponent()
-                .appendingPathComponent("drafts.json.corrupt-\(Int(Date().timeIntervalSince1970))")
-            try? data.write(to: backup, options: .atomic)
             return VaultDrafts()
         }
     }
 
-    /// Mirrors the current unsaved edits to disk (atomic; the caller decides
-    /// when - debounced on edits, immediate on quit and after saves).
+    /// Mirrors the current unsaved edits into the store (one transaction;
+    /// the caller decides when - debounced on edits, immediate on quit and
+    /// after saves). Drafts hold the user's UNSAVED work, so a failure here
+    /// keeps the same banner a lost collection edit would raise - unlike the
+    /// rebuilt-by-sending mirrors below.
     func saveDrafts(_ drafts: VaultDrafts) async {
-        guard let draftsFileURL else {
-            noteMissingDirectory("unsaved edits", id: "drafts.json", subject: "unsaved edits")
-            return
-        }
+        guard let database = await localStore() else { return }
         do {
-            try await FileStore.write(drafts, to: draftsFileURL)
-            noteSaveSuccess("unsaved edits", id: "drafts.json")
+            try await database.saveDrafts(drafts)
+            noteSaveSuccess("unsaved edits", id: "canoe.sqlite")
         } catch {
-            noteSaveFailure("unsaved edits", id: "drafts.json", subject: "unsaved edits", error)
+            noteSaveFailure("unsaved edits", id: "canoe.sqlite", subject: "unsaved edits", error)
         }
     }
-
-    // MARK: - History persistence
 
     /// Reads the request history persisted by a previous session, newest
     /// first, trimmed to the in-memory cap (in case an older build saved
-    /// more). Per-element tolerant: one entry a newer build wrote with an
-    /// unknown field is skipped, not the whole file.
+    /// more). Rows that no longer map are skipped individually.
     func loadHistory(limit: Int) async -> [HistoryEntry] {
-        guard let historyFileURL else { return [] }
-        guard let data = try? await FileStore.readDataIfExists(at: historyFileURL), !data.isEmpty else {
-            return []
-        }
+        guard let database = await localStore() else { return [] }
         do {
-            let wrapped = try JSONDecoder.iso.decode([Lossy<HistoryEntry>].self, from: data)
-            return Array(wrapped.compactMap(\.value).prefix(limit))
+            return try await database.loadHistory(limit: limit)
         } catch {
             AppLogger.error("Failed to load history: \(error)", category: "Vault")
             return []
         }
     }
 
-    /// Mirrors the request history to disk (atomic; the caller decides
-    /// when - debounced on each recorded entry, immediate on quit).
+    /// Mirrors the request history into the store (one transaction; the
+    /// caller debounces on each recorded entry, immediate on quit). Logged
+    /// only on failure: history is machine-local and rebuilt by sending.
     func saveHistory(_ entries: [HistoryEntry]) async {
-        guard let historyFileURL else {
-            noteMissingDirectory("history", id: "history.json", subject: "history")
-            return
-        }
+        guard let database = await localStore() else { return }
         do {
-            try await FileStore.write(entries, to: historyFileURL)
+            try await database.saveHistory(entries)
         } catch {
-            // History is a convenience (it is machine-local and rebuilt by
-            // sending), so it is logged only - a failure here must not
-            // raise the same banner a lost collection edit would.
             AppLogger.error("Failed to save history: \(error)", category: "Vault")
         }
     }
 
-    // MARK: - Response history persistence
-
-    /// Reads the per-request response history persisted by a previous
-    /// session, trimmed to the per-request cap (in case an older build
-    /// saved more). Per-element tolerant: one entry a newer build wrote
-    /// with an unknown field is skipped, not the whole file; unparsable
-    /// request keys drop that request's section, not the file.
+    /// Reads the per-request response history, trimmed to the per-request
+    /// cap (in case an older build saved more). Rows that no longer decode
+    /// are skipped individually; a dropped request key costs only itself.
     func loadResponseHistory(limit: Int) async -> [UUID: [ResponseModel]] {
-        guard let responseHistoryFileURL else { return [:] }
-        guard
-            let data = try? await FileStore.readDataIfExists(at: responseHistoryFileURL),
-            !data.isEmpty
-        else { return [:] }
+        guard let database = await localStore() else { return [:] }
         do {
-            let wrapped = try JSONDecoder.iso.decode(
-                [String: [Lossy<ResponseModel>]].self, from: data)
-            var histories: [UUID: [ResponseModel]] = [:]
-            for (key, entries) in wrapped {
-                guard let id = UUID(uuidString: key) else { continue }
-                let responses = entries.compactMap(\.value).prefix(limit)
-                if !responses.isEmpty { histories[id] = Array(responses) }
-            }
-            return histories
+            return try await database.loadResponseHistory(limit: limit)
         } catch {
             AppLogger.error("Failed to load response history: \(error)", category: "Vault")
             return [:]
         }
     }
 
-    /// Mirrors the per-request response history to disk (atomic; the caller
-    /// decides when - debounced on each recorded entry, immediate on quit).
+    /// Mirror-syncs the per-request response history into the store (the
+    /// caller debounces on each recorded entry, immediate on quit). Logged
+    /// only on failure: machine-local, rebuilt by sending.
     func saveResponseHistory(_ histories: [UUID: [ResponseModel]]) async {
-        guard let responseHistoryFileURL else {
-            noteMissingDirectory(
-                "response history", id: "response-history.json", subject: "response history")
-            return
-        }
+        guard let database = await localStore() else { return }
         do {
-            let wrappers = histories.reduce(into: [String: [ResponseModel]]()) { result, pair in
-                result[pair.key.uuidString] = pair.value
-            }
-            try await FileStore.write(wrappers, to: responseHistoryFileURL)
+            try await database.saveResponseHistory(histories)
         } catch {
-            // Response history is a convenience like history (it is
-            // machine-local and rebuilt by sending), so it is logged only -
-            // a failure here must not raise the same banner a lost
-            // collection edit would.
             AppLogger.error("Failed to save response history: \(error)", category: "Vault")
         }
     }
 
-    // MARK: - Console persistence
-
-    /// Reads the console log persisted by a previous session, oldest first
-    /// as saved, trimmed to the in-memory cap at the NEWEST end. Per-element
-    /// tolerant: one entry a newer build wrote with an unknown field is
-    /// skipped, not the whole file.
+    /// Reads the console log persisted by a previous session, oldest first,
+    /// trimmed to the in-memory cap at the NEWEST end. Rows that no longer
+    /// decode are skipped individually.
     func loadConsole(limit: Int) async -> [ConsoleEntry] {
-        guard let consoleFileURL else { return [] }
-        guard let data = try? await FileStore.readDataIfExists(at: consoleFileURL), !data.isEmpty else {
-            return []
-        }
+        guard let database = await localStore() else { return [] }
         do {
-            let wrapped = try JSONDecoder.iso.decode([Lossy<ConsoleEntry>].self, from: data)
-            return Array(wrapped.compactMap(\.value).suffix(limit))
+            return try await database.loadConsole(limit: limit)
         } catch {
-            // A convenience like history: machine-local, rebuilt by
-            // sending, so log-only - no banner for a lost console log.
             AppLogger.error("Failed to load console log: \(error)", category: "Vault")
             return []
         }
     }
 
-    /// Mirrors the console log to disk (atomic; the caller decides when -
-    /// debounced on each recorded entry and on Clear, immediate on quit).
+    /// Mirror-syncs the console log into the store (the caller debounces on
+    /// each recorded entry and on Clear, immediate on quit). Logged only on
+    /// failure.
     func saveConsole(_ entries: [ConsoleEntry]) async {
-        guard let consoleFileURL else {
-            noteMissingDirectory("console", id: "console.json", subject: "console log")
-            return
-        }
+        guard let database = await localStore() else { return }
         do {
-            try await FileStore.write(entries, to: consoleFileURL)
+            try await database.saveConsole(entries)
         } catch {
             AppLogger.error("Failed to save console log: \(error)", category: "Vault")
+        }
+    }
+
+    // MARK: - Variable overrides persistence
+
+    /// Reads the script-written variable overrides. Stored in the machine-
+    /// local SQLite store, one row per override. An unreadable store is
+    /// treated as empty (logged) - the overrides rebuild by re-running the
+    /// scripts that wrote them, so nothing here is worth blocking launch on.
+    func loadVariableOverrides() async -> VariableOverrides {
+        guard let database = await localStore() else { return VariableOverrides() }
+        do {
+            return try await database.loadVariableOverrides()
+        } catch {
+            AppLogger.error("Failed to load variable overrides: \(error)", category: "Vault")
+            return VariableOverrides()
+        }
+    }
+
+    /// Mirrors the script-written variable overrides into the local store
+    /// (one transaction; the caller debounces per-send rewrites into one
+    /// write). Logged only on failure, like history and console: the layer
+    /// is per-device runtime state a re-run of the scripts rebuilds, so no
+    /// save banner.
+    func saveVariableOverrides(_ overrides: VariableOverrides) async {
+        guard let database = await localStore() else { return }
+        do {
+            // Written even when empty so clearing overrides survives a
+            // relaunch instead of resurrecting from stale rows.
+            try await database.saveVariableOverrides(overrides)
+        } catch {
+            AppLogger.error("Failed to save variable overrides: \(error)", category: "Vault")
         }
     }
 
