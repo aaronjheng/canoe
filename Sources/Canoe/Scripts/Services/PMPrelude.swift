@@ -20,6 +20,8 @@ import Foundation
 /// - `__pm_request_header_add(name, value)` -> undefined
 /// - `__pm_request_header_upsert(name, value)` -> undefined
 /// - `__pm_request_header_remove(name)` -> undefined
+/// - `__pm_request_body_update(raw, language)` -> undefined (language "" when
+///   the script did not hint one)
 /// - `__pm_request_snapshot()` -> JSON string | null
 /// - `__pm_response_snapshot()` -> JSON string | null
 ///
@@ -274,7 +276,51 @@ enum PMPrelude {
               },
             },
             body: {
-              raw: typeof req.body === "string" ? req.body : null,
+              get raw() {
+                return typeof req.body === "string" ? req.body : null;
+              },
+              set raw(value) {
+                if (typeof value !== "string") {
+                  throw new TypeError("pm.request.body.raw must be a string");
+                }
+                __pm_request_body_update(value, "");
+              },
+              // Postman's RequestBody.update: swaps the whole body on the
+              // OUTGOING request (the tab keeps the user's template). Only
+              // the raw mode is supported - the string shorthand becomes
+              // the raw text, the object form takes { mode: "raw", raw,
+              // options.raw.language }, language mapping onto the format
+              // picker (json/xml/text).
+              update: function (spec) {
+                var raw;
+                if (typeof spec === "string") {
+                  raw = spec;
+                } else if (spec && typeof spec === "object") {
+                  var mode = typeof spec.mode === "string" ? spec.mode : "";
+                  if (mode && mode !== "raw") {
+                    throw new TypeError(
+                      "pm.request.body.update: only the raw body mode is supported (got '" + mode + "')");
+                  }
+                  raw = spec.raw;
+                  if (typeof raw !== "string") {
+                    throw new TypeError(
+                      "pm.request.body.update expects { mode: 'raw', raw: '...' }");
+                  }
+                } else {
+                  throw new TypeError(
+                    "pm.request.body.update expects { mode: 'raw', raw: '...' }");
+                }
+                var language = "";
+                var options =
+                  spec && typeof spec === "object" ? spec.options : null;
+                var rawOptions =
+                  options && typeof options === "object" ? options.raw : null;
+                if (rawOptions && typeof rawOptions === "object"
+                    && typeof rawOptions.language === "string") {
+                  language = rawOptions.language;
+                }
+                __pm_request_body_update(raw, language);
+              },
             },
           };
         }

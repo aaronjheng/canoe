@@ -122,6 +122,11 @@ extension AppStore {
             var preRequestLogs: [ScriptLog] = []
             var preResults: [ScriptTestResult] = []
             var preHeaderChanges: [ScriptHeaderChange] = []
+            /// The last `pm.request.body.update` across pre-request phases
+            /// (later phases carry replaces earlier: each update swaps the
+            /// whole body). Post-response updates never apply - the request
+            /// already went out.
+            var preBodyChange: ScriptBodyChange?
             var prePhaseRan = false
             // The last phase outcome carrying scope writes: every phase
             // inherits the previous ones' carried state, so the newest
@@ -151,6 +156,7 @@ extension AppStore {
                         scriptVariables.base = final
                     }
                     preHeaderChanges += outcome.headerChanges
+                    if let change = outcome.bodyChange { preBodyChange = change }
                     prePhaseRan = true
                 }
                 // Folder Pre-request scripts, outermost folder first.
@@ -174,6 +180,7 @@ extension AppStore {
                         scriptVariables.base = final
                     }
                     preHeaderChanges += outcome.headerChanges
+                    if let change = outcome.bodyChange { preBodyChange = change }
                     prePhaseRan = true
                 }
                 // The request's own Pre-request script.
@@ -196,6 +203,7 @@ extension AppStore {
                     variables = final
                 }
                 preHeaderChanges += outcome.headerChanges
+                if let change = outcome.bodyChange { preBodyChange = change }
                 prePhaseRan = prePhaseRan || !request.preRequestScript.isEmpty
             } catch {
                 errorsByTab[tab] = "Pre-request script failed: \(scriptFailureText(error))"
@@ -210,6 +218,24 @@ extension AppStore {
             if !preHeaderChanges.isEmpty {
                 outbound.headers = Self.applyScriptHeaderChanges(
                     preHeaderChanges, to: request.headers)
+            }
+            // Script-issued body swap (`pm.request.body.update` / `.raw =`):
+            // the new raw text goes to the request that goes out, the tab
+            // keeps the user's template. The language hint (Postman's
+            // options.raw.language) maps onto the format picker; with no
+            // hint an already-raw request keeps its picker and any other
+            // body kind falls back to plain text. This lands BEFORE the
+            // auth layer, which may still amend the body's auth fields.
+            if let change = preBodyChange {
+                outbound.requestBodyType = .raw
+                outbound.bodyText = change.raw
+                if let kind = Self.rawKind(fromScriptLanguage: change.language) {
+                    outbound.rawBodyKind = kind
+                    outbound.bodyContentType = kind.contentType
+                } else if request.requestBodyType != .raw {
+                    outbound.rawBodyKind = .text
+                    outbound.bodyContentType = RawBodyKind.text.contentType
+                }
             }
             // A stale OAuth 2.0 token is refreshed (or re-fetched, for the
             // silent grants) before the request goes out: the sent request
@@ -623,6 +649,19 @@ extension AppStore {
             }
         }
         return result
+    }
+
+    /// Maps Postman's `options.raw.language` hint onto the raw format
+    /// picker (the same set the Raw dropdown offers). An unmapped hint
+    /// returns nil - the caller then keeps an already-raw request's picker
+    /// or falls back to plain text.
+    private static func rawKind(fromScriptLanguage language: String) -> RawBodyKind? {
+        switch language {
+        case "json": .json
+        case "xml": .xml
+        case "text": .text
+        default: nil
+        }
     }
 
     private static func errorKind(of error: Error) -> String? {

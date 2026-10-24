@@ -22,6 +22,9 @@ struct ScriptPhaseOutcome: Sendable {
     /// Nil when no script ran.
     var finalVariables: [String: String]?
     var headerChanges: [ScriptHeaderChange] = []
+    /// The last `pm.request.body.update` this phase recorded (last one
+    /// wins - each update swaps the whole body). Nil when none.
+    var bodyChange: ScriptBodyChange?
     /// The per-scope writes the script made via `pm.environment.set` & co
     /// (prelude scope names as keys), and the per-scope names it unset.
     /// Cumulative carried state: every phase of a send inherits the previous
@@ -50,6 +53,19 @@ struct ScriptHeaderChange: Sendable, Hashable {
     var name: String
     /// Empty for `.remove`.
     var value: String
+}
+
+/// One `pm.request.body.update` (or `pm.request.body.raw = ...`) call the
+/// script made: the replacement raw text plus Postman's optional language
+/// hint. Like header changes it applies to the outgoing request after the
+/// pre-request phase - the tab's body stays the user's template - and
+/// post-response updates are recorded but discarded. Successive updates
+/// replace the earlier ones (each swaps the whole body, last one wins).
+struct ScriptBodyChange: Sendable, Hashable {
+    var raw: String
+    /// Postman's `options.raw.language` (json/xml/text); empty when the
+    /// script did not hint one.
+    var language: String = ""
 }
 
 /// Everything one phase evaluation needs, bundled so `run` stays a
@@ -213,6 +229,7 @@ actor ScriptEngine {
         }
 
         outcome.headerChanges = host.headerChangesSnapshot
+        outcome.bodyChange = host.bodyChangeSnapshot
         outcome.scopeSets = host.scopeOverlaysSnapshot
         outcome.scopeUnsets = host.scopeUnsetsSnapshot
         return outcome
@@ -383,6 +400,15 @@ extension ScriptEngine {
             host.recordHeader(.init(kind: .remove, name: name, value: ""))
             return .undefined
         }
+        try runtime.define("__pm_request_body_update", argumentCount: 2) { arguments in
+            guard case .string(let raw) = arguments.first else { return .undefined }
+            var change = ScriptBodyChange(raw: raw)
+            if case .string(let language) = arguments.dropFirst().first, !language.isEmpty {
+                change.language = language
+            }
+            host.recordBody(change)
+            return .undefined
+        }
     }
 }
 
@@ -423,6 +449,9 @@ private final class ScriptHostState: @unchecked Sendable {
     private var scopeOverlays: [String: [String: String]] = [:]
     private var scopeUnsets: [String: Set<String>] = [:]
     private var headerChanges: [ScriptHeaderChange] = []
+    /// The last `pm.request.body.update` of the running phase (each update
+    /// swaps the whole body, so the final one carries everything).
+    private var bodyChange: ScriptBodyChange?
     /// pm.sendRequest registrations made by the running script, drained by
     /// the engine after the script evaluation returns.
     private var pendingStarts: [(id: Int, specJSON: String)] = []
@@ -459,6 +488,7 @@ private final class ScriptHostState: @unchecked Sendable {
             scopeOverlays = [:]
             scopeUnsets = [:]
             headerChanges = []
+            bodyChange = nil
             pendingStarts = []
             pendingSendRequestCount = 0
         }
@@ -632,10 +662,26 @@ private final class ScriptHostState: @unchecked Sendable {
         return headerChanges
     }
 
+    /// The body update this run recorded (nil when none; pre-request phases
+    /// are the ones the send pipeline applies).
+    var bodyChangeSnapshot: ScriptBodyChange? {
+        lock.lock()
+        defer { lock.unlock() }
+        return bodyChange
+    }
+
     func recordHeader(_ change: ScriptHeaderChange) {
         lock.lock()
         defer { lock.unlock() }
         headerChanges.append(change)
+    }
+
+    /// The last body update the phase recorded - a new one replaces the
+    /// previous (each update swaps the whole body, last one wins).
+    func recordBody(_ change: ScriptBodyChange) {
+        lock.lock()
+        defer { lock.unlock() }
+        bodyChange = change
     }
 
     /// `pm.sendRequest` registration from the running script: the spec is
