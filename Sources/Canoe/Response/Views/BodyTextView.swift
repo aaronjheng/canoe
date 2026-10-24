@@ -186,7 +186,7 @@ struct BodyTextView: NSViewRepresentable {
             width: CGFloat.greatestFiniteMagnitude,
             height: CGFloat.greatestFiniteMagnitude)
 
-        applyMetrics(textView, wordWrap: wordWrap)
+        applyMetrics(textView, scrollView: scroll, wordWrap: wordWrap)
         context.coordinator.wordWrap = wordWrap
         context.coordinator.lastAttributed = attributed
         context.coordinator.beginStream(attributed, into: textView)
@@ -204,7 +204,7 @@ struct BodyTextView: NSViewRepresentable {
         guard let textView = scrollView.documentView as? NSTextView else { return }
 
         if coordinator.wordWrap != wordWrap {
-            applyMetrics(textView, wordWrap: wordWrap)
+            applyMetrics(textView, scrollView: scrollView, wordWrap: wordWrap)
             coordinator.wordWrap = wordWrap
         }
         if attributed != coordinator.lastAttributed {
@@ -260,7 +260,9 @@ struct BodyTextView: NSViewRepresentable {
     /// scroll width: on, the container follows the viewport width (lines
     /// refill, vertical-only scroll); off, the container is unbounded so
     /// every line keeps its own width and the view pans horizontally.
-    private func applyMetrics(_ textView: NSTextView, wordWrap: Bool) {
+    private func applyMetrics(
+        _ textView: NSTextView, scrollView: NSScrollView, wordWrap: Bool
+    ) {
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = !wordWrap
         textView.autoresizingMask = wordWrap ? [.width] : []
@@ -269,6 +271,19 @@ struct BodyTextView: NSViewRepresentable {
         container.containerSize = NSSize(
             width: wordWrap ? 0 : CGFloat.greatestFiniteMagnitude,
             height: CGFloat.greatestFiniteMagnitude)
+        if wordWrap {
+            // The view still carries the unbounded width of the pan layout
+            // here, and nothing shrinks it for us: `.width` sizing only
+            // reacts to clip-view resizes, which do not occur at toggle
+            // time. Turning tracking on without the snap relayouts into a
+            // degenerate 10,000,000pt line-fragment width - the blank
+            // Pretty view - so first pull the frame back to the live
+            // content width (zero until the scroll view first tiles).
+            let contentWidth = scrollView.contentSize.width
+            if contentWidth > 0, abs(textView.frame.width - contentWidth) > 0.5 {
+                textView.frame.size.width = contentWidth
+            }
+        }
         textView.layoutManager?.ensureLayout(for: container)
     }
 
@@ -288,8 +303,32 @@ struct BodyTextView: NSViewRepresentable {
             count += 1
             index = attributed.index(afterCharacter: index)
             if count == streamChunkCharacters, index < attributed.endIndex {
-                starts.append(index)
-                count = 0
+                // Snap the cut back to the last newline so a chunk ends on
+                // whole logical lines: the per-line paragraph styles are
+                // attached chunk-wise, and a line split between chunks
+                // would lose its head indent on the second half. Bodies
+                // without any newline in the chunk (one giant line) cut
+                // at the raw character position.
+                let limit = starts.last ?? attributed.startIndex
+                var probe = index
+                var back = 0
+                var snapped: AttributedString.Index?
+                while probe > limit {
+                    let before = attributed.index(beforeCharacter: probe)
+                    if attributed.characters[before] == "\n" {
+                        snapped = attributed.index(afterCharacter: before)
+                        break
+                    }
+                    probe = before
+                    back += 1
+                }
+                if let snapped {
+                    starts.append(snapped)
+                    count = back
+                } else {
+                    starts.append(index)
+                    count = 0
+                }
             }
         }
         var ranges: [Range<AttributedString.Index>] = []
@@ -307,6 +346,7 @@ struct BodyTextView: NSViewRepresentable {
     /// palette entries, accent washes at find-highlight opacity included.
     /// Colors come from whichever scope the producer wrote; anything else
     /// (fonts, styles) is intentionally left to the view's own settings.
+    @MainActor
     private static func nsAttributed(_ attributed: AttributedString) -> NSAttributedString {
         let ns = NSMutableAttributedString(string: String(attributed.characters))
         for run in attributed.runs {
@@ -335,6 +375,78 @@ struct BodyTextView: NSViewRepresentable {
                 ns.addAttribute(.backgroundColor, value: background, range: range)
             }
         }
+        applyWrappingParagraphs(to: ns)
         return ns
+    }
+
+    /// Paragraph geometry for each logical line, keyed by the line's leading
+    /// whitespace. Pretty-printed bodies repeat a handful of indent levels,
+    /// so lines coming out of the same indent share one style instance.
+    @MainActor
+    private static var lineStyles: [String: NSParagraphStyle] = [:]
+
+    /// VS Code-style wrapped-body geometry, attached as one paragraph style
+    /// per logical line:
+    /// - Head indent = the line's own leading whitespace width, so a line
+    ///   that fills the pane wraps its tail aligned with the line's content
+    ///   start (the `headIndent` continuation indent) instead of column
+    ///   zero - `firstLineHeadIndent` stays 0 because the whitespace itself
+    ///   is text and carries the first line's indent.
+    /// - Character-granularity line breaking. This engine's word wrapping
+    ///   breaks a wrapped paragraph's FIRST line at its first whitespace,
+    ///   leaving the rest of the row empty (a long token never gets pulled
+    ///   up), which read as ragged jumps on JSON bodies; breaking at glyphs
+    ///   fills every row to the pane edge, matching how editors wrap a
+    ///   long token.
+    @MainActor
+    private static func lineStyle(forIndent indent: String) -> NSParagraphStyle {
+        if let cached = lineStyles[indent] { return cached }
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 4
+        paragraph.lineBreakMode = .byCharWrapping
+        paragraph.lineBreakStrategy = []
+        paragraph.firstLineHeadIndent = 0
+        paragraph.headIndent =
+            indent.isEmpty
+            ? 0
+            : (indent as NSString).size(
+                withAttributes: [.font: VariableEditorFont.monoBody.nsFont]
+            ).width
+        lineStyles[indent] = paragraph
+        return paragraph
+    }
+
+    /// Walks `ns` one logical line at a time and attaches the line's paragraph
+    /// style (see `lineStyle`) over its text range.
+    @MainActor
+    private static func applyWrappingParagraphs(to ns: NSMutableAttributedString) {
+        let text = ns.string as NSString
+        let length = text.length
+        var lineStart = 0
+        while lineStart < length {
+            let newline = text.range(
+                of: "\n",
+                options: [],
+                range: NSRange(location: lineStart, length: length - lineStart)
+            ).location
+            let contentsEnd = newline == NSNotFound ? length : newline
+            var indentEnd = lineStart
+            while indentEnd < contentsEnd {
+                let code = text.character(at: indentEnd)
+                guard code == 0x20 || code == 0x09 else { break }
+                indentEnd += 1
+            }
+            let indent = text.substring(
+                with: NSRange(location: lineStart, length: indentEnd - lineStart))
+            ns.addAttribute(
+                .paragraphStyle,
+                value: lineStyle(forIndent: indent),
+                range: NSRange(location: lineStart, length: contentsEnd - lineStart)
+            )
+            if newline == NSNotFound {
+                break
+            }
+            lineStart = newline + 1
+        }
     }
 }
