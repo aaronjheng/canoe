@@ -8,6 +8,8 @@ struct ErrorBanner: View {
     let message: String
     var dismissAction: (() -> Void)?
 
+    @State private var copyAck = CopyAcknowledgement()
+
     var body: some View {
         HStack(spacing: AppSpacing.small) {
             Image(systemName: "exclamationmark.triangle.fill")
@@ -16,7 +18,22 @@ struct ErrorBanner: View {
                 .font(AppFont.emptyStateBody)
                 .foregroundStyle(AppColor.textPrimary)
                 .lineLimit(3)
+                // The message is the payload users forward with bug reports:
+                // selectable in place, plus a one-click copy of the full
+                // text (visible or line-limited away).
+                .textSelection(.enabled)
             Spacer()
+            Button {
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                pasteboard.setString(message, forType: .string)
+                copyAck.acknowledge()
+            } label: {
+                Image(systemName: copyAck.didCopy ? "checkmark" : "doc.on.doc")
+            }
+            .buttonStyle(IconButtonStyle(iconSquare: false, inset: 0))
+            .foregroundStyle(copyAck.didCopy ? AppColor.success : AppColor.textSecondary)
+            .help("Copy Error Message")
             if let dismissAction {
                 Button("Dismiss", systemImage: "xmark") {
                     dismissAction()
@@ -30,6 +47,12 @@ struct ErrorBanner: View {
         .padding(.vertical, AppSpacing.compact)
         .background(AppColor.error.opacity(AppOpacity.errorBackground))
         .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
+        // The checkmark certifies the message that was on the pasteboard:
+        // a banner whose error changes (next send, next failure) drops it
+        // rather than tick over a message nobody copied.
+        .onChange(of: message) { _, _ in
+            copyAck.clear()
+        }
     }
 }
 
