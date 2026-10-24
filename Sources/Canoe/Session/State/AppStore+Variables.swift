@@ -234,7 +234,7 @@ extension AppStore {
         scheduleVariableOverridesPersistence()
     }
 
-    /// Mirrors the script overrides to variable-overrides.json (debounced
+    /// Mirrors the script overrides into canoe.sqlite (debounced
     /// like the history mirror; per-send rewrites coalesce into one write).
     func scheduleVariableOverridesPersistence() {
         variableOverridesSaveTask?.cancel()

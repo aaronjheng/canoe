@@ -8,7 +8,7 @@ struct RequestSaveContext: Identifiable {
 }
 
 /// AppStore request management: CRUD, ordering, and unsaved-draft tracking
-/// mirrored to drafts.json.
+/// mirrored to the local store.
 @MainActor
 extension AppStore {
     // MARK: - Requests
@@ -87,7 +87,7 @@ extension AppStore {
     }
 
     /// Creates a scratch request with no vault home: it exists only in the
-    /// `unfiledRequests` map (plus its drafts.json mirror) until the user
+    /// `unfiledRequests` map (plus its draft mirror) until the user
     /// saves it somewhere explicit. Dirty from birth - no baseline exists,
     /// so closing or quitting treats it as unsaved work.
     private func addUnfiledRequest() {
@@ -323,7 +323,7 @@ extension AppStore {
     /// "Save" branch of a leave-point confirmation.
     func updateRequest(_ request: Request) {
         // A scratch request lives in the unfiled map, not the vault: update
-        // it there. Still never written to disk - only mirrored to drafts.json.
+        // it there. Still never written to disk - only mirrored to the local store.
         if unfiledRequests[request.id] != nil {
             if let current = unfiledRequests[request.id], current.isContentEqual(to: request) { return }
             unfiledRequests[request.id] = request
@@ -371,7 +371,7 @@ extension AppStore {
         if vault.loadError != nil {
             // Failed load: the in-memory vault is empty, so every entity-keyed
             // draft would find no owner and be dropped here - and the mirror
-            // write the apply calls schedule would erase drafts.json for good
+            // write the apply calls schedule would erase the stored drafts for good
             // (the same rule the guarded pruneSidebarExpansionState follows).
             // Only scratch requests can apply: they have no vault owner to
             // lose. retryVaultLoad re-applies everything after a successful
@@ -658,7 +658,7 @@ extension AppStore {
 
     /// Re-applies request drafts on top of the loaded vault. Drafts whose
     /// request no longer exists are dropped (the next mirror write prunes
-    /// them from drafts.json). Merges into the pending map instead of
+    /// them from the store). Merges into the pending map instead of
     /// replacing it: a retry after a failed load already holds scratch
     /// pendings seeded by prepare's failed-load branch, and replacing the
     /// map would drop them (the next mirror write would erase those drafts
@@ -786,7 +786,7 @@ extension AppStore {
         scheduleDraftPersistence()
     }
 
-    /// The draft mirror's current content, keyed for drafts.json. Request
+    /// The draft mirror's current content, keyed for the draft store. Request
     /// drafts split by residency: scratch requests mirror under
     /// `unfiledRequests` (they have no entity file to hold an edit draft),
     /// filed ones under `requests` as before.
@@ -816,7 +816,7 @@ extension AppStore {
         )
     }
 
-    /// Mirrors pending edits to drafts.json (debounced) so unsaved edits
+    /// Mirrors pending edits to the local store (debounced) so unsaved edits
     /// survive a relaunch without being persisted as saved content.
     func scheduleDraftPersistence() {
         draftSaveTask?.cancel()
@@ -1061,7 +1061,7 @@ extension AppStore {
     func savePendingChanges(scope: SaveScope, completion: (() -> Void)? = nil) {
         let captured = pendingEdits(scope: scope)
         // Clear only what this pass captured: edits outside the scope stay
-        // dirty and keep mirroring to drafts.json, exactly as before.
+        // dirty and keep mirroring to the store, exactly as before.
         for id in captured.requests.keys { pendingRequestSnapshots[id] = nil }
         for id in captured.environments.keys { pendingEnvironmentSnapshots[id] = nil }
         for id in captured.workspaceVariables.keys { pendingWorkspaceVariables[id] = nil }

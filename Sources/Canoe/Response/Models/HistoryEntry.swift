@@ -1,7 +1,7 @@
 import Foundation
 
 /// A single entry in the request history. Per-device activity: mirrored to
-/// the machine-local `history.json` (like `drafts.json`, never synced) so
+/// the machine-local SQLite store (`canoe.sqlite`, never synced) so
 /// each device keeps its own recent-activity list across relaunches.
 struct HistoryEntry: Identifiable, Hashable, Codable {
     let id = UUID()
@@ -53,10 +53,10 @@ struct HistoryEntry: Identifiable, Hashable, Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         requestID = try container.decodeIfPresent(UUID.self, forKey: .requestID)
         name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
-        // Tolerant on purpose: history.json is machine-local and outlives
+        // Tolerant on purpose: the store is machine-local and outlives
         // builds - an entry a newer build saved with an unknown method (or
         // an older field layout) must cost one row's display, not the whole
-        // file (the next save would otherwise rewrite history.json empty).
+        // row (the next save would otherwise rewrite the table empty).
         method = HTTPMethod(rawValue: try container.decodeIfPresent(String.self, forKey: .method) ?? "") ?? .get
         urlString = try container.decodeIfPresent(String.self, forKey: .urlString) ?? ""
         statusCode = try container.decodeIfPresent(Int.self, forKey: .statusCode) ?? 0

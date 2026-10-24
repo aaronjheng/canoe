@@ -170,7 +170,7 @@ extension AppStore {
 
     /// Replaces a workspace's variables in memory and marks them dirty.
     /// Nothing is written to disk until Save (⌘S / Save button); the edit is
-    /// mirrored to drafts.json so it survives relaunches.
+    /// mirrored to the local store so it survives relaunches.
     ///
     /// Workspace variables are order-sensitive (manual Postman-style order):
     /// the array order itself is the persisted order, so a drag-to-reorder

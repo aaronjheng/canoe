@@ -3,8 +3,8 @@ import Foundation
 /// One network activity log entry (Postman's Console): the request as it was
 /// actually sent (variables resolved, query params merged, helper
 /// Authorization applied) plus the response or error it produced.
-/// Machine-local persistence: mirrored to `console.json` (like
-/// `history.json`, never synced) so the log survives relaunches.
+/// Machine-local persistence: mirrored to the machine-local SQLite store
+/// (`canoe.sqlite`, never synced) so the log survives relaunches.
 struct ConsoleEntry: Identifiable, Sendable, Codable {
     let id = UUID()
     let date: Date
@@ -360,10 +360,10 @@ struct ConsoleEntry: Identifiable, Sendable, Codable {
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        // Tolerant on purpose: console.json is machine-local and outlives
+        // Tolerant on purpose: the store is machine-local and outlives
         // builds - an entry with an unknown future field (or an older
         // layout) must cost one row, not the whole log file (the next save
-        // would otherwise rewrite console.json empty).
+        // would otherwise rewrite the table empty).
         date = try container.decodeIfPresent(Date.self, forKey: .date) ?? Date()
         requestName = try container.decodeIfPresent(String.self, forKey: .requestName) ?? ""
         method = try container.decodeIfPresent(String.self, forKey: .method) ?? "GET"

@@ -12,32 +12,50 @@ struct StoredCookie: Codable, Hashable, Sendable {
 }
 
 /// Postman-style cookie jar: responses' `Set-Cookie` headers are stored and
-/// sent back to the same domain on later requests. Lives in the Canoe vault
-/// folder next to `drafts.json` / `history.json`, so cookies survive relaunch
+/// sent back to the same domain on later requests. Persisted into the
+/// machine-local SQLite store (`canoe.sqlite`), so cookies survive relaunch
 /// but never leave the device.
 actor CookieStore {
     static let shared = CookieStore()
 
-    private let url: URL
+    /// Own connection to the shared store - `VaultStore` holds another to
+    /// the same file; SQLite serializes the two, and the jar's writes are
+    /// tiny and debounced.
+    private var database: LocalDatabase?
     private var cookies: [StoredCookie] = []
     private var loaded = false
 
-    private init() {
+    init() {}
+
+    /// Opens the store once. Nil only when the Application Support root is
+    /// unavailable - the jar then degrades to in-memory for the session.
+    private func localStore() async -> LocalDatabase? {
+        if let database { return database }
         let appSupport =
             FileManager.default.urls(
                 for: .applicationSupportDirectory, in: .userDomainMask
             ).first
             ?? URL(fileURLWithPath: NSHomeDirectory())
             .appendingPathComponent("Library/Application Support", isDirectory: true)
-        let canoeDir = appSupport.appendingPathComponent("Canoe", isDirectory: true)
-        self.url = canoeDir.appendingPathComponent("cookies.json")
+        let newDatabase = LocalDatabase(
+            fileURL: appSupport.appendingPathComponent("Canoe", isDirectory: true)
+                .appendingPathComponent("canoe.sqlite"))
+        do {
+            try await newDatabase.open()
+            database = newDatabase
+            return newDatabase
+        } catch {
+            AppLogger.error(
+                "Failed to open the local store for cookies: \(error)", category: "Vault")
+            return nil
+        }
     }
 
     /// Structured cookies matching `url` (the scripts' pm.cookies surface):
     /// name/value/domain/path/secure per cookie, same fit rules as
     /// `cookieHeader(for:)`.
-    func cookies(for url: URL) -> [[String: String]] {
-        loadIfNeeded()
+    func cookies(for url: URL) async -> [[String: String]] {
+        await loadIfNeeded()
         let host = url.host?.lowercased() ?? ""
         guard !host.isEmpty else { return [] }
         return fittingCookies(for: url, host: host, isSecure: url.scheme?.lowercased() == "https", now: Date())
@@ -60,8 +78,8 @@ actor CookieStore {
     /// suffix match, path prefix match, secure-only cookies stay off plain
     /// HTTP, and expired cookies never go out (they are also swept from the
     /// jar on load and on write so they cannot accumulate forever).
-    func cookieHeader(for url: URL) -> String? {
-        loadIfNeeded()
+    func cookieHeader(for url: URL) async -> String? {
+        await loadIfNeeded()
         let host = url.host?.lowercased() ?? ""
         guard !host.isEmpty else { return nil }
         let fit = fittingCookies(
@@ -95,10 +113,10 @@ actor CookieStore {
     /// Parses `Set-Cookie` header values and persists the cookies. Accepts
     /// raw header strings (already extracted from `HTTPURLResponse`) so no
     /// non-`Sendable` response object crosses the actor boundary. Expired
-    /// cookies already in the jar are swept here so the file never grows
+    /// cookies already in the jar are swept here so the jar never grows
     /// with dead entries.
-    func store(setCookieHeaders: [String], for url: URL) {
-        loadIfNeeded()
+    func store(setCookieHeaders: [String], for url: URL) async {
+        await loadIfNeeded()
         guard !setCookieHeaders.isEmpty else { return }
         let now = Date()
         cookies.removeAll { $0.expires.map { $0 <= now } ?? false }
@@ -126,23 +144,22 @@ actor CookieStore {
     }
 
     /// Every stored cookie (for a cookie manager UI).
-    func allCookies() -> [StoredCookie] {
-        loadIfNeeded()
+    func allCookies() async -> [StoredCookie] {
+        await loadIfNeeded()
         return cookies
     }
 
-    func deleteCookie(named name: String, domain: String, path: String) {
-        loadIfNeeded()
+    func deleteCookie(named name: String, domain: String, path: String) async {
+        await loadIfNeeded()
         cookies.removeAll {
             $0.name == name && $0.domain.lowercased() == domain.lowercased() && $0.path == path
         }
         schedulePersistence()
     }
 
-    func clearAll() {
+    func clearAll() async {
         cookies.removeAll()
-        loaded = false
-        try? FileManager.default.removeItem(at: url)
+        await persist()
     }
 
     // MARK: - Persistence
@@ -158,30 +175,28 @@ actor CookieStore {
 
     private var persistenceTask: Task<Void, Never>?
 
-    private func persist() {
+    private func persist() async {
+        guard let database = await localStore() else { return }
         do {
-            let data = try JSONEncoder().encode(cookies.sorted { $0.name < $1.name })
-            try FileManager.default.createDirectory(
-                at: url.deletingLastPathComponent(),
-                withIntermediateDirectories: true,
-                attributes: nil
-            )
-            try data.write(to: url, options: .atomic)
+            try await database.saveCookies(cookies.sorted { $0.name < $1.name })
         } catch {
             // Persistence failure must not fail a send.
+            AppLogger.error("Failed to save cookies: \(error)", category: "Vault")
         }
     }
 
-    private func loadIfNeeded() {
+    private func loadIfNeeded() async {
         guard !loaded else { return }
-        guard let data = try? Data(contentsOf: url) else { return }
-        var cookies = (try? JSONDecoder().decode([StoredCookie].self, from: data)) ?? []
+        // Claim the flag before awaiting: a second call must not re-load
+        // while the first is suspended on the store.
+        loaded = true
+        guard let database = await localStore() else { return }
+        var loadedCookies = (try? await database.loadCookies()) ?? []
         // Sweep expired cookies swept in from an old jar: they can never be
         // sent again, so there is no reason to keep them around.
         let now = Date()
-        cookies.removeAll { $0.expires.map { $0 <= now } ?? false }
-        self.cookies = cookies
-        loaded = true
+        loadedCookies.removeAll { $0.expires.map { $0 <= now } ?? false }
+        cookies = loadedCookies
     }
 }
 

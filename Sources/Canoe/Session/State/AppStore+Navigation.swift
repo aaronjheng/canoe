@@ -305,7 +305,7 @@ extension AppStore {
     /// Drops a tab's per-tab runtime state (in-flight send, errors, history
     /// position) without touching the tab strip. The response history is
     /// deliberately NOT dropped: it is keyed by request and persisted
-    /// (`response-history.json`), so it belongs to the request, not the
+    /// (in the local store), so it belongs to the request, not the
     /// tab. Shared by closeTab and preview replacement.
     private func clearTabState(_ tab: OpenTab) {
         sendTasks[tab]?.cancel()

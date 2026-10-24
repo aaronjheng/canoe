@@ -2,8 +2,9 @@ import AppKit
 import Foundation
 import Observation
 
-/// Where the synced vault files live. Drafts (`drafts.json`) and
-/// `settings.json` are always machine-local regardless of this choice.
+/// Where the synced vault unit lives. The machine-local SQLite store
+/// (`canoe.sqlite`) and `settings.json` are always machine-local regardless
+/// of this choice.
 enum VaultLocation: String, Sendable {
     case local
     case iCloud
@@ -39,7 +40,7 @@ final class VaultStore {
     /// The most recent write failure per kind of file (disk full, read-only
     /// vault, a sync lock). Every write funnels its error here: logging alone
     /// left the user pressing Save with no feedback at all, while the change
-    /// lived only in memory and in `drafts.json`.
+    /// lived only in memory and never reached disk.
     ///
     /// Tracked per kind rather than as one flag because an unrelated
     /// successful write must not silence it: a failing collection save was
@@ -79,10 +80,17 @@ final class VaultStore {
 
     // MARK: - Paths
 
-    private var workspacesDirectory: URL? { vaultURL?.appendingPathComponent("workspaces") }
-    private var collectionsDirectory: URL? { vaultURL?.appendingPathComponent("collections") }
-    private var environmentsDirectory: URL? { vaultURL?.appendingPathComponent("environments") }
-    private var configFileURL: URL? { vaultURL?.appendingPathComponent("vault.json") }
+    /// The synced vault unit: everything a future Git-based sync would
+    /// carry (entity files plus vault.json) lives in this one subdirectory,
+    /// so the sync boundary is a literal folder. Machine-local data
+    /// (`canoe.sqlite`, `settings.json`) stays outside of it.
+    private var vaultDirectory: URL? {
+        vaultURL?.appendingPathComponent("vault", isDirectory: true)
+    }
+    private var workspacesDirectory: URL? { vaultDirectory?.appendingPathComponent("workspaces") }
+    private var collectionsDirectory: URL? { vaultDirectory?.appendingPathComponent("collections") }
+    private var environmentsDirectory: URL? { vaultDirectory?.appendingPathComponent("environments") }
+    private var configFileURL: URL? { vaultDirectory?.appendingPathComponent("vault.json") }
 
     // MARK: - Derived
 
@@ -243,11 +251,13 @@ final class VaultStore {
                     config = try JSONDecoder.iso.decode(VaultConfig.self, from: data)
                 } catch {
                     AppLogger.error("Failed to decode vault config, using defaults: \(error)", category: "Vault")
-                    // Back up the undecodable file before any later
-                    // persistConfig overwrites it, so a manual recovery stays
-                    // possible instead of a silent destructive reset.
-                    let backup = vaultURL.appendingPathComponent(
-                        "vault.json.corrupt-\(Int(Date().timeIntervalSince1970))")
+                    // Back up next to the undecodable file (inside vault/),
+                    // before any later persistConfig overwrites it, so a
+                    // manual recovery stays possible instead of a silent
+                    // destructive reset.
+                    let backup = configFileURL.deletingLastPathComponent()
+                        .appendingPathComponent(
+                            "vault.json.corrupt-\(Int(Date().timeIntervalSince1970))")
                     try? data.write(to: backup, options: .atomic)
                 }
             }
@@ -364,8 +374,12 @@ final class VaultStore {
     }
 
     private func ensureDirectoryStructure(at vaultURL: URL) async throws {
+        let vault = vaultURL.appendingPathComponent("vault", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: vault.path) {
+            try FileManager.default.createDirectory(at: vault, withIntermediateDirectories: true)
+        }
         for subdir in ["workspaces", "collections", "environments"] {
-            let dir = vaultURL.appendingPathComponent(subdir, isDirectory: true)
+            let dir = vault.appendingPathComponent(subdir, isDirectory: true)
             if !FileManager.default.fileExists(atPath: dir.path) {
                 try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             }
@@ -816,9 +830,12 @@ final class VaultStore {
 
     // MARK: - Finder
 
+    /// Reveals the synced vault unit in Finder: the Canoe root opens with
+    /// `vault/` pre-selected, so the machine-local neighbors (the SQLite
+    /// store, settings) are one glance away too.
     func revealInFinder() {
-        guard let vaultURL else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([vaultURL])
+        guard let vaultDirectory else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([vaultDirectory])
     }
 
     // MARK: - Location merge
@@ -830,24 +847,27 @@ final class VaultStore {
     /// toward it instead of diverging forever. Runs synchronously on small
     /// JSON files; both roots may be absent on a first run (nothing to merge).
     private func mergeVaults(local: URL?, iCloud: URL) throws {
-        // Ties resolve toward what is on screen: the current location.
+        // Ties resolve toward what is on screen: the current location. Both
+        // roots carry the same `vault/` unit inside (see `vaultDirectory`).
         let preferLocalOnTie = location == .local
+        let localVault = local?.appendingPathComponent("vault", isDirectory: true)
+        let iCloudVault = iCloud.appendingPathComponent("vault", isDirectory: true)
         for subdir in ["workspaces", "collections", "environments"] {
-            if let local {
+            if let localVault {
                 try mergeDirectory(
-                    local.appendingPathComponent(subdir, isDirectory: true),
-                    iCloud.appendingPathComponent(subdir, isDirectory: true),
+                    localVault.appendingPathComponent(subdir, isDirectory: true),
+                    iCloudVault.appendingPathComponent(subdir, isDirectory: true),
                     preferFirstOnTie: preferLocalOnTie)
             } else {
                 try FileManager.default.createDirectory(
-                    at: iCloud.appendingPathComponent(subdir, isDirectory: true),
+                    at: iCloudVault.appendingPathComponent(subdir, isDirectory: true),
                     withIntermediateDirectories: true)
             }
         }
-        if let local {
+        if let localVault {
             try mergeFile(
-                local.appendingPathComponent("vault.json"),
-                iCloud.appendingPathComponent("vault.json"),
+                localVault.appendingPathComponent("vault.json"),
+                iCloudVault.appendingPathComponent("vault.json"),
                 preferFirstOnTie: preferLocalOnTie)
         }
     }
@@ -1072,8 +1092,13 @@ final class VaultStore {
         stopWatching()
         guard let vaultURL else { return }
         var directories = [vaultURL]
+        // The watcher is not recursive, so the vault unit and its entity
+        // directories are each watched explicitly (the root-level watch
+        // catches the vault/ folder itself appearing or vanishing).
+        let vault = vaultURL.appendingPathComponent("vault", isDirectory: true)
+        directories.append(vault)
         for sub in ["workspaces", "collections", "environments"] {
-            directories.append(vaultURL.appendingPathComponent(sub, isDirectory: true))
+            directories.append(vault.appendingPathComponent(sub, isDirectory: true))
         }
         for directory in directories {
             let fd = open(directory.path, O_EVTONLY)

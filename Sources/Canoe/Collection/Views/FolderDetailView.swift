@@ -10,7 +10,7 @@ import SwiftUI
 /// structural and lands immediately (the rule every other rename in the app
 /// follows); the Authorization edit uses the collection page's draft model, so
 /// it waits for Save (⌘S / Save chip) and survives relaunches through
-/// drafts.json.
+/// the local store.
 struct FolderDetailView: View {
     @Environment(AppStore.self) private var store
     @State private var draft: Folder

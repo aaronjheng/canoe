@@ -78,6 +78,17 @@ actor LocalDatabase {
             saved_at REAL NOT NULL,
             PRIMARY KEY (kind, entity_id)
         );
+        CREATE TABLE IF NOT EXISTS cookies (
+            name TEXT NOT NULL,
+            domain TEXT NOT NULL,
+            path TEXT NOT NULL,
+            value TEXT NOT NULL,
+            secure INTEGER NOT NULL,
+            http_only INTEGER NOT NULL,
+            expires REAL,
+            saved_at REAL NOT NULL,
+            PRIMARY KEY (name, domain, path)
+        );
         PRAGMA user_version = 1;
         """
 
@@ -88,8 +99,7 @@ actor LocalDatabase {
         var errorDescription: String? { message }
         /// Whether the store file itself is unreadable (vs a transient
         /// condition like a full disk): the caller moves such a file aside
-        /// and recreates it, the same recovery as the corrupt drafts.json
-        /// backup.
+        /// and recreates it - nothing here is precious enough to block a send.
         var isCorruption: Bool {
             let primary = code & 0xFF
             return primary == SQLITE_CORRUPT || primary == SQLITE_NOTADB
@@ -604,6 +614,67 @@ actor LocalDatabase {
             try insert("collectionAuthorizations", drafts.collectionAuthorizations)
             try insert("folderAuthorizations", drafts.folderAuthorizations)
             try insert("unfiledRequests", drafts.unfiledRequests)
+            try exec("COMMIT")
+        } catch {
+            sqlite3_exec(handle, "ROLLBACK", nil, nil, nil)
+            throw error
+        }
+    }
+
+    // MARK: - Cookies
+
+    /// Loads every stored cookie, in insertion (name-sorted) order. Expired
+    /// ones are swept by the caller on load and on write.
+    func loadCookies() throws -> [StoredCookie] {
+        guard let handle else { return [] }
+        let sql = "SELECT name, domain, path, value, secure, http_only, expires FROM cookies"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            throw Failure(code: sqlite3_extended_errcode(handle), message: lastErrorMessage())
+        }
+        defer { sqlite3_finalize(statement) }
+        var cookies: [StoredCookie] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            cookies.append(
+                StoredCookie(
+                    name: columnText(statement, 0) ?? "",
+                    value: columnText(statement, 3) ?? "",
+                    domain: columnText(statement, 1) ?? "",
+                    path: columnText(statement, 2) ?? "",
+                    secure: sqlite3_column_int(statement, 4) != 0,
+                    httpOnly: sqlite3_column_int(statement, 5) != 0,
+                    expires: sqlite3_column_type(statement, 6) == SQLITE_NULL
+                        ? nil : Date(timeIntervalSince1970: sqlite3_column_double(statement, 6))))
+        }
+        return cookies
+    }
+
+    /// Rewrites the cookie jar to exactly the in-memory list (a handful of
+    /// small rows; the jar sweeps expired entries on every write).
+    func saveCookies(_ cookies: [StoredCookie]) throws {
+        guard let handle else { return }
+        try exec("BEGIN IMMEDIATE")
+        do {
+            try exec("DELETE FROM cookies")
+            let sql = """
+                INSERT OR REPLACE INTO cookies
+                    (name, domain, path, value, secure, http_only, expires, saved_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """
+            let now = Date().timeIntervalSince1970
+            for cookie in cookies {
+                try run(sql) { statement in
+                    bindText(statement, 1, cookie.name)
+                    bindText(statement, 2, cookie.domain)
+                    bindText(statement, 3, cookie.path)
+                    bindText(statement, 4, cookie.value)
+                    sqlite3_bind_int(statement, 5, cookie.secure ? 1 : 0)
+                    sqlite3_bind_int(statement, 6, cookie.httpOnly ? 1 : 0)
+                    bindOptionalDouble(
+                        statement, 7, cookie.expires?.timeIntervalSince1970)
+                    sqlite3_bind_double(statement, 8, now)
+                }
+            }
             try exec("COMMIT")
         } catch {
             sqlite3_exec(handle, "ROLLBACK", nil, nil, nil)

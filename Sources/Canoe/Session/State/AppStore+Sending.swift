@@ -530,7 +530,7 @@ extension AppStore {
         scheduleResponseHistoryPersistence()
     }
 
-    /// Mirrors the per-request response history to response-history.json
+    /// Mirror-syncs the per-request response history into canoe.sqlite
     /// (debounced, like the drafts and history mirrors) so it survives
     /// relaunches.
     func scheduleResponseHistoryPersistence() {
@@ -652,8 +652,8 @@ extension AppStore {
         scheduleConsolePersistence()
     }
 
-    /// Mirrors the console log to console.json (debounced like the history
-    /// mirror) so a burst of sends rewrites the file once.
+    /// Mirrors the console log into the local store (debounced like the history
+    /// mirror) so a burst of sends lands in one transaction.
     func scheduleConsolePersistence() {
         consoleSaveTask?.cancel()
         consoleSaveTask = Task { [weak self] in
@@ -675,7 +675,7 @@ extension AppStore {
         scheduleHistoryPersistence()
     }
 
-    /// Mirrors the in-memory history to history.json (debounced, like the
+    /// Mirrors the in-memory history into the local store (debounced, like the
     /// drafts mirror) so it survives relaunches.
     func scheduleHistoryPersistence() {
         historySaveTask?.cancel()

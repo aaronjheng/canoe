@@ -100,7 +100,7 @@ extension AppStore {
     /// Applies a folder's Authorization edit to the in-memory vault and marks
     /// it dirty - the same draft model as the collection's own settings:
     /// nothing is written until Save (⌘S / Save button), and the edit is
-    /// mirrored to drafts.json so it survives relaunches.
+    /// mirrored to the local store so it survives relaunches.
     func updateFolderAuthorization(_ folderID: UUID, in collectionID: UUID, authorization: Authorization) {
         guard let at = folderIndexes(folderID) else { return }
         guard vault.collections[at.collection].id == collectionID else { return }
@@ -299,7 +299,7 @@ extension AppStore {
 
     /// Applies the collection edit to the in-memory vault and marks it
     /// dirty. Nothing is written to disk until Save (⌘S / Save button); the
-    /// edit is mirrored to drafts.json so it survives relaunches.
+    /// edit is mirrored to the local store so it survives relaunches.
     func updateCollectionAuthorization(_ id: UUID, authorization: Authorization) {
         if persistedCollectionAuthorizationBaselines[id] == nil {
             persistedCollectionAuthorizationBaselines[id] = vault.collections.first(where: { $0.id == id })?.authorization
@@ -314,7 +314,7 @@ extension AppStore {
 
     /// Replaces a collection's variables in memory and marks them dirty.
     /// Nothing is written to disk until Save (⌘S / Save button); the edit is
-    /// mirrored to drafts.json so it survives relaunches.
+    /// mirrored to the local store so it survives relaunches.
     ///
     /// Collection variables are order-sensitive (manual Postman-style order):
     /// the array order itself is the persisted order, so a drag-to-reorder

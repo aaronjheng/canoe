@@ -166,7 +166,7 @@ final class AppStore {
     /// in the response panel. Keyed by request id rather than tab: the same
     /// request cannot open twice, and history belongs to the REQUEST - it
     /// survives tab closes, workspace switches, and relaunches (the
-    /// machine-local mirror in `response-history.json`).
+    /// machine-local SQLite store).
     var responseHistoryByRequest: [UUID: [ResponseModel]] = [:]
     /// Which historical entry the request's tab is currently viewing
     /// (nil = the latest).
@@ -190,7 +190,7 @@ final class AppStore {
     static let sendAfterCancelQuiescence: TimeInterval = 0.5
     /// Unsaved request edits (Postman-style dirty state): the latest draft is
     /// held here until an explicit save (Save button / ⌘S) persists it, and
-    /// mirrored to drafts.json so it survives relaunches. Tracked by the
+    /// mirrored to the local store so it survives relaunches. Tracked by the
     /// observation system so the Save button and tab dirty dots update live.
     var pendingRequestSnapshots: [UUID: Request] = [:]
     /// Monotonic id of the newest Save pass. A pass that failed to write
@@ -255,7 +255,7 @@ final class AppStore {
     /// entry, per request.
     static let responseHistoryGlobalByteLimit = 32 * 1024 * 1024
     /// Console (network log) entries, newest last. Capped by count and by
-    /// retained body bytes, and mirrored to the machine-local `console.json`
+    /// retained body bytes, and mirrored to the machine-local SQLite store
     /// so the log survives relaunches.
     var consoleEntries: [ConsoleEntry] = []
     static let consoleEntryLimit = 200
@@ -265,7 +265,7 @@ final class AppStore {
     /// reach 200 MB.
     static let consoleBodyByteLimit = 16 * 1024 * 1024
     /// Script-written variable overrides (machine-local
-    /// `variable-overrides.json`): pre-request/post-response scripts persist
+    /// `canoe.sqlite`): pre-request/post-response scripts persist
     /// their `pm.environment.set` & co writes here instead of the vault
     /// files - per-device runtime state like a minted token, never synced.
     /// `variableScopesForRequest` folds them over the stored scopes, so the
@@ -275,21 +275,19 @@ final class AppStore {
     var showConsole = false
     var selectedTab: OpenTab?
     /// Debounced writer for the drafts mirror; cancelled/rescheduled on
-    /// every edit so typing does not rewrite drafts.json per keystroke.
+    /// every edit so typing does not rewrite the store per keystroke.
     @ObservationIgnored var draftSaveTask: Task<Void, Never>?
     /// Debounced writer for the history mirror; rescheduled on every
-    /// recorded entry so a burst of sends rewrites history.json once.
+    /// recorded entry so a burst of sends lands in one transaction.
     @ObservationIgnored var historySaveTask: Task<Void, Never>?
     /// Debounced writer for the response-history mirror; rescheduled on
-    /// every recorded (or purged) entry so a burst of sends rewrites
-    /// response-history.json once.
+    /// every recorded (or purged) entry so a burst of sends lands in one transaction.
     @ObservationIgnored var responseHistorySaveTask: Task<Void, Never>?
     /// Debounced writer for the console-log mirror; rescheduled on every
-    /// recorded entry (and on Clear) so a burst of sends rewrites
-    /// console.json once.
+    /// recorded entry (and on Clear) so a burst of sends lands in one transaction.
     @ObservationIgnored var consoleSaveTask: Task<Void, Never>?
-    /// Debounced writer for the variable-overrides mirror; rescheduled per
-    /// send so a burst of sends rewrites variable-overrides.json once.
+    /// Debounced writer for the variable overrides; rescheduled per
+    /// send so a burst of sends lands in one transaction.
     @ObservationIgnored var variableOverridesSaveTask: Task<Void, Never>?
     /// In-flight Save (⌘S) task, if any. Tracked so the quit path can
     /// wait for the vault writes to land before the process exits: the
@@ -311,7 +309,7 @@ final class AppStore {
     var pendingClose: PendingClose?
     /// Requests that exist only in the session: created without a collection
     /// context (New Request / new tab with no target), they live here and in
-    /// drafts.json's `unfiledRequests` mirror until an explicit save gives
+    /// the draft mirror's `unfiledRequests` until an explicit save gives
     /// them a home (the Save Request sheet). Never in the sidebar or any
     /// collection file - nothing is written until the user picks a location.
     var unfiledRequests: [UUID: Request] = [:]

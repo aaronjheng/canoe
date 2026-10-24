@@ -119,7 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        // Unsaved edits live in memory and are mirrored to drafts.json
+        // Unsaved edits live in memory and are mirrored to the local store
         // (debounced) - wait for an in-flight Save pass to land, then flush
         // the mirror, before quitting so the next launch restores the
         // edited state. Nothing is prompted and nothing is persisted as

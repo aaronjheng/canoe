@@ -66,7 +66,7 @@ extension AppStore {
 
     /// Applies the environment edit to the in-memory vault and marks it
     /// dirty. Nothing is written to disk until Save (⌘S / Save button); the
-    /// edit is mirrored to drafts.json so it survives relaunches.
+    /// edit is mirrored to the local store so it survives relaunches.
     func updateEnvironment(_ environment: EnvironmentProfile) {
         if persistedEnvironmentBaselines[environment.id] == nil {
             persistedEnvironmentBaselines[environment.id] = vault.environments.first(where: { $0.id == environment.id })

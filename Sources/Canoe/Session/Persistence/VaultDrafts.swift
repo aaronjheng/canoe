@@ -1,7 +1,7 @@
 import Foundation
 
-/// Unsaved edits mirrored to `drafts.json` so they survive relaunches
-/// without being written into the saved entity files. Keys are UUID strings
+/// Unsaved edits mirrored into the machine-local SQLite store so they
+/// survive relaunches without being written into the saved entity files. Keys are UUID strings
 /// (JSON objects need string keys).
 struct VaultDrafts: Codable {
     var requests: [String: Request] = [:]
