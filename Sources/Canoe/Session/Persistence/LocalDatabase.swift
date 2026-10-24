@@ -89,6 +89,10 @@ actor LocalDatabase {
             saved_at REAL NOT NULL,
             PRIMARY KEY (name, domain, path)
         );
+        CREATE TABLE IF NOT EXISTS vault_deletions (
+            path TEXT PRIMARY KEY,
+            deleted_at REAL NOT NULL
+        );
         PRAGMA user_version = 1;
         """
 
@@ -679,6 +683,51 @@ actor LocalDatabase {
         } catch {
             sqlite3_exec(handle, "ROLLBACK", nil, nil, nil)
             throw error
+        }
+    }
+
+    // MARK: - Vault deletion tombstones
+
+    /// One deletion intent per vault-relative path (`collections/<id>.json`).
+    /// Consumed by the next location-switch merge: a file absent from the
+    /// active side but present on the dormant one is propagated as a
+    /// deletion when the tombstone is newer than the dormant copy, and
+    /// treated as a restore (then dropped) otherwise.
+    func recordVaultDeletion(_ path: String) throws {
+        guard let handle else { return }
+        try run("INSERT OR REPLACE INTO vault_deletions (path, deleted_at) VALUES (?, ?)") { statement in
+            bindText(statement, 1, path)
+            sqlite3_bind_double(statement, 2, Date().timeIntervalSince1970)
+        }
+    }
+
+    func loadVaultDeletions() throws -> [String: Date] {
+        guard let handle else { return [:] }
+        let sql = "SELECT path, deleted_at FROM vault_deletions"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            throw Failure(code: sqlite3_extended_errcode(handle), message: lastErrorMessage())
+        }
+        defer { sqlite3_finalize(statement) }
+        var deletions: [String: Date] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            if let path = columnText(statement, 0) {
+                deletions[path] = Date(timeIntervalSince1970: sqlite3_column_double(statement, 1))
+            }
+        }
+        return deletions
+    }
+
+    /// Drops tombstones the merge consumed (deletion propagated, or the
+    /// file turned out to be a restore).
+    func removeVaultDeletions(_ paths: Set<String>) throws {
+        guard let handle, !paths.isEmpty else { return }
+        try run(
+            "DELETE FROM vault_deletions WHERE path IN (\(placeholders(paths.count)))"
+        ) { statement in
+            for (index, path) in paths.sorted().enumerated() {
+                bindText(statement, Int32(index + 1), path)
+            }
         }
     }
 

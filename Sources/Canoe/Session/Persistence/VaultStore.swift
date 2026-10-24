@@ -152,6 +152,13 @@ final class VaultStore {
     /// Switches the vault root, merging both sides file-by-file
     /// (newer-wins) first so neither side's files are lost. Disabling keeps
     /// the iCloud files in place; re-enabling merges again.
+    /// Switches the vault root, merging both sides file-by-file
+    /// (newer-wins, deletion tombstones honored) first so neither side's
+    /// files are lost. Switching to iCloud then drops the local vault unit:
+    /// it was fully reconciled into iCloud by the merge, and a dormant
+    /// snapshot would only fall behind (and resurrect deletions); switching
+    /// back rebuilds it wholesale from the iCloud copy. Disabling keeps the
+    /// iCloud files in place; re-enabling merges again.
     func setLocation(_ newLocation: VaultLocation) async throws {
         if newLocation == location { return }
         stopWatching()
@@ -160,15 +167,29 @@ final class VaultStore {
                 startWatchingIfNeeded()
                 throw VaultLocationError.iCloudDriveUnavailable
             }
-            try mergeVaults(local: localRoot(), iCloud: iCloudRoot)
+            try await mergeVaults(local: localRoot(), iCloud: iCloudRoot)
         } else if let iCloudRoot = Self.iCloudDriveRoot() {
-            try mergeVaults(local: localRoot(), iCloud: iCloudRoot)
+            try await mergeVaults(local: localRoot(), iCloud: iCloudRoot)
         }
         location = newLocation
         vaultURL = root(for: newLocation)
         // A successful switch means the requested root is usable.
         locationWarning = nil
         await loadAll()
+        // The local vault unit was fully reconciled into iCloud by the merge
+        // above (deletion tombstones included) - keep no dormant snapshot:
+        // it would only fall behind. Switching back rebuilds it wholesale
+        // from the iCloud copy (the merge handles a missing side).
+        if newLocation == .iCloud,
+            let localVault = localRoot()?.appendingPathComponent("vault", isDirectory: true),
+            FileManager.default.fileExists(atPath: localVault.path)
+        {
+            do {
+                try FileManager.default.removeItem(at: localVault)
+            } catch {
+                AppLogger.warn("Failed to remove the local vault unit: \(error)", category: "Vault")
+            }
+        }
         startWatchingIfNeeded()
     }
 
@@ -434,6 +455,7 @@ final class VaultStore {
         let workspaceName = workspaces.first { $0.id == id }?.name ?? "workspace"
         do {
             try await FileStore.delete(at: file)
+            await recordVaultDeletionIfPossible(for: file)
         } catch {
             noteDeleteFailure(kind: "workspace", id: id.uuidString, subject: workspaceName, error)
         }
@@ -507,6 +529,7 @@ final class VaultStore {
         let collectionName = collections.first { $0.id == id }?.name ?? "collection"
         do {
             try await FileStore.delete(at: file)
+            await recordVaultDeletionIfPossible(for: file)
         } catch {
             noteDeleteFailure(kind: "collection", id: id.uuidString, subject: collectionName, error)
         }
@@ -561,6 +584,7 @@ final class VaultStore {
         let environmentName = environments.first { $0.id == id }?.name ?? "environment"
         do {
             try await FileStore.delete(at: file)
+            await recordVaultDeletionIfPossible(for: file)
         } catch {
             noteDeleteFailure(kind: "environment", id: id.uuidString, subject: environmentName, error)
         }
@@ -840,24 +864,85 @@ final class VaultStore {
 
     // MARK: - Location merge
 
-    /// Merges the local and iCloud vaults file-by-file, newer-wins, in both
-    /// directions, so switching locations never drops either side's files.
-    /// `preferLocalOnTie` names the side the user currently sees (the old
-    /// location): equal-mtime files with genuinely different content resolve
-    /// toward it instead of diverging forever. Runs synchronously on small
-    /// JSON files; both roots may be absent on a first run (nothing to merge).
-    private func mergeVaults(local: URL?, iCloud: URL) throws {
-        // Ties resolve toward what is on screen: the current location. Both
-        // roots carry the same `vault/` unit inside (see `vaultDirectory`).
+    /// Records this device's deletion of one vault-unit file (a tombstone):
+    /// without it, the dormant location's copy would resurrect the deleted
+    /// entity at the next location-switch merge. Best-effort - a lost
+    /// tombstone costs a resurrected file, never a lost one.
+    private func recordVaultDeletionIfPossible(for file: URL) async {
+        guard let relative = vaultRelativePath(for: file),
+            let database = await localStore()
+        else { return }
+        do {
+            try await database.recordVaultDeletion(relative)
+        } catch {
+            AppLogger.error("Failed to record vault deletion: \(error)", category: "Vault")
+        }
+    }
+
+    /// The vault-unit-relative path of an entity file
+    /// (`collections/<id>.json`) - the key tombstones are recorded by.
+    private func vaultRelativePath(for file: URL) -> String? {
+        guard let vault = vaultDirectory, file.path.hasPrefix(vault.path) else { return nil }
+        return String(file.path.dropFirst(vault.path.count))
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    }
+
+    /// Per-switch merge state: which side is active and this device's
+    /// deletion tombstones (consumed entries are removed by the caller).
+    private struct MergeContext {
+        let activeIsFirst: Bool
+        var tombstones: [String: Date]
+        var consumed: Set<String>
+
+        /// Drops a tombstone the merge has settled (deletion propagated,
+        /// file restored, or deletion superseded by a re-created file).
+        mutating func consume(_ relative: String) {
+            tombstones[relative] = nil
+            consumed.insert(relative)
+        }
+    }
+
+    private func loadVaultDeletionTombstones() async throws -> [String: Date] {
+        guard let database = await localStore() else { return [:] }
+        do {
+            return try await database.loadVaultDeletions()
+        } catch {
+            AppLogger.error("Failed to load deletion tombstones: \(error)", category: "Vault")
+            // Failing safe toward restore: without tombstones the merge
+            // behaves like the old resurrection-prone reconciliation.
+            return [:]
+        }
+    }
+
+    /// Merges the local and iCloud vault units file-by-file, newer-wins, in
+    /// both directions, so switching locations never drops either side's
+    /// files - with one exception: files this device deleted are recorded as
+    /// tombstones, and the merge propagates those deletions to the dormant
+    /// side instead of resurrecting the copy. `preferLocalOnTie` names the
+    /// side the user currently sees (the old location): equal-mtime files
+    /// with genuinely different content resolve toward it instead of
+    /// diverging forever. Runs synchronously on small JSON files; both roots
+    /// may be absent on a first run (nothing to merge).
+    private func mergeVaults(local: URL?, iCloud: URL) async throws {
         let preferLocalOnTie = location == .local
+        // The ACTIVE side is the one the user is switching away from - it
+        // was the only one written to since the last switch, so its absence
+        // of a file means a deletion (tombstone willing).
+        let activeIsFirst = location == .local
         let localVault = local?.appendingPathComponent("vault", isDirectory: true)
         let iCloudVault = iCloud.appendingPathComponent("vault", isDirectory: true)
+        var context = MergeContext(
+            activeIsFirst: activeIsFirst,
+            tombstones: try await loadVaultDeletionTombstones(),
+            consumed: [])
         for subdir in ["workspaces", "collections", "environments"] {
             if let localVault {
                 try mergeDirectory(
                     localVault.appendingPathComponent(subdir, isDirectory: true),
                     iCloudVault.appendingPathComponent(subdir, isDirectory: true),
-                    preferFirstOnTie: preferLocalOnTie)
+                    preferFirstOnTie: preferLocalOnTie,
+                    relativePrefix: "\(subdir)/",
+                    context: &context)
             } else {
                 try FileManager.default.createDirectory(
                     at: iCloudVault.appendingPathComponent(subdir, isDirectory: true),
@@ -869,10 +954,23 @@ final class VaultStore {
                 localVault.appendingPathComponent("vault.json"),
                 iCloudVault.appendingPathComponent("vault.json"),
                 preferFirstOnTie: preferLocalOnTie)
+            // vault.json is never deleted - drop any stale tombstone.
+            context.consume("vault.json")
+        }
+        if !context.consumed.isEmpty {
+            guard let database = await localStore() else { return }
+            do {
+                try await database.removeVaultDeletions(context.consumed)
+            } catch {
+                AppLogger.error("Failed to prune deletion tombstones: \(error)", category: "Vault")
+            }
         }
     }
 
-    private func mergeDirectory(_ first: URL, _ second: URL, preferFirstOnTie: Bool) throws {
+    private func mergeDirectory(
+        _ first: URL, _ second: URL, preferFirstOnTie: Bool,
+        relativePrefix: String, context: inout MergeContext
+    ) throws {
         let manager = FileManager.default
         try manager.createDirectory(at: first, withIntermediateDirectories: true)
         try manager.createDirectory(at: second, withIntermediateDirectories: true)
@@ -881,9 +979,36 @@ final class VaultStore {
         // Sorted: set iteration order is nondeterministic, and the merge
         // logs ties - keep the log order stable across runs.
         for name in firstNames.union(secondNames).sorted() where name.hasSuffix(".json") {
-            try mergeFile(
-                first.appendingPathComponent(name), second.appendingPathComponent(name),
-                preferFirstOnTie: preferFirstOnTie)
+            let relative = relativePrefix + name
+            let firstFile = first.appendingPathComponent(name)
+            let secondFile = second.appendingPathComponent(name)
+            switch (firstNames.contains(name), secondNames.contains(name)) {
+            case (true, true):
+                // Both sides carry it: newest wins, and any deletion intent
+                // is superseded by the re-created file.
+                try mergeFile(firstFile, secondFile, preferFirstOnTie: preferFirstOnTie)
+                context.consume(relative)
+            case (true, false), (false, true):
+                // Present on one side only. When that one side is the DORMANT
+                // location, the active side's missing file is this device's
+                // deletion if a tombstone newer than the dormant copy
+                // recorded it - propagate instead of resurrecting. Otherwise
+                // the file was added (or re-created) elsewhere: restore it.
+                let dormantFile = firstNames.contains(name) ? secondFile : firstFile
+                let fileMissingOnActive = firstNames.contains(name) != context.activeIsFirst
+                if fileMissingOnActive,
+                    let deletedAt = context.tombstones[relative],
+                    deletedAt.timeIntervalSince1970
+                        >= (modificationDate(of: dormantFile)?.timeIntervalSince1970 ?? 0)
+                {
+                    try manager.removeItem(at: dormantFile)
+                } else {
+                    try mergeFile(firstFile, secondFile, preferFirstOnTie: preferFirstOnTie)
+                }
+                context.consume(relative)
+            case (false, false):
+                break
+            }
         }
     }
 
