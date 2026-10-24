@@ -1392,6 +1392,12 @@ struct ResponseViewerView: View {
                         .padding(AppSpacing.medium)
                 }
             }
+            // A line longer than the pane gets cut at the scroll's edge
+            // while panning; not wrapping, that cut sits flush on the pane
+            // edge and the body's spacing disappears from read. The outer
+            // margin keeps a visible border while panning (wrapped rows
+            // fill the pane edge by design and stay flush).
+            .padding(.trailing, wordWrap ? 0 : AppSpacing.medium)
         }
     }
 
