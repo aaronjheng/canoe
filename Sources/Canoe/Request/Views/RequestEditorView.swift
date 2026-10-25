@@ -1599,7 +1599,14 @@ struct RequestEditorView: View {
                 ? "Runs before the request is sent (pm.variables.set, pm.request.headers.add, ...)"
                 : "Runs after the response arrives (pm.expect, pm.environment.set, pm.test)",
             syntax: .javascript,
-            usesScriptFormatter: true,
+            formatHandler: { source in
+                do {
+                    return try ScriptFormatter.format(source)
+                } catch let error as ScriptFormatter.ScriptFormatError {
+                    throw TextFormatError(message: error.message)
+                }
+            },
+            formatActionName: "Format Script",
             onFormatError: showInvalidScriptNote
         )
         // Explicit specialization: no programmatic focus wiring.
@@ -1615,7 +1622,8 @@ struct RequestEditorView: View {
                     .padding(.vertical, AppSpacing.xSmall)
                     .background(
                         Capsule(style: .continuous)
-                            .fill(AppColor.error.opacity(AppOpacity.errorBackground)))
+                            .fill(AppColor.error.opacity(AppOpacity.errorBackground))
+                    )
                     .padding(.bottom, AppSpacing.comfortable)
             }
         }

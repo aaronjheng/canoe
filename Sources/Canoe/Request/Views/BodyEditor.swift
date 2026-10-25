@@ -6,6 +6,9 @@ import SwiftUI
 struct BodyEditor: View {
     @Binding var request: Request
     @Environment(AppStore.self) private var store
+    /// The raw body formatter's diagnostic, shown in the editor's bottom
+    /// capsule (see `showBodyFormatNote`).
+    @State private var invalidBodyNote: String?
 
     /// Merged variable scope for `{{placeholder}}` highlighting.
     private var resolvedVariables: [String: String] {
@@ -137,13 +140,44 @@ struct BodyEditor: View {
                 isSingleLine: false,
                 fillsContainer: true,
                 font: .monoBody,
-                syntax: rawSyntax
+                syntax: rawSyntax,
+                formatHandler: { source in
+                    try BodyFormatter.format(source, kind: self.request.rawBodyKind)
+                },
+                formatActionName: "Format Body",
+                onFormatError: { showBodyFormatNote($0) }
             )
             .background(AppColor.codeBackground)
             // Same gutter as the key/value body types (see KeyValueEditor):
             // switching Body type must not shift the content's left edge.
             .padding(.horizontal, AppSpacing.medium)
             .padding(.bottom, AppSpacing.medium)
+            .overlay(alignment: .bottom) {
+                if let invalidBodyNote {
+                    Text(invalidBodyNote)
+                        .font(AppFont.small)
+                        .foregroundStyle(AppColor.error)
+                        .padding(.horizontal, AppSpacing.small)
+                        .padding(.vertical, AppSpacing.xSmall)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(AppColor.error.opacity(AppOpacity.errorBackground))
+                        )
+                        .padding(.bottom, AppSpacing.comfortable)
+                }
+            }
+        }
+    }
+
+    /// Surfaces the body formatter's diagnostic and retires it after a
+    /// beat; a newer note (another ⌘⇧F meanwhile) outlives this timer.
+    private func showBodyFormatNote(_ message: String) {
+        invalidBodyNote = message
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.5))
+            if invalidBodyNote == message {
+                invalidBodyNote = nil
+            }
         }
     }
 }

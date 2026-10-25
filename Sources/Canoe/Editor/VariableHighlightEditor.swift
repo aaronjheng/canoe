@@ -1,6 +1,13 @@
 import AppKit
 import SwiftUI
 
+/// The ⌘⇧F failure shape: format handlers throw it with the exact note
+/// text the container surfaces (the Scripts pane and the raw body show
+/// it in a transient bottom capsule).
+struct TextFormatError: Error, Sendable {
+    var message: String
+}
+
 /// Font tokens for the AppKit-backed variable editors: `NSFont` for the text
 /// views, SwiftUI `Font` for the placeholder overlay. Sizes mirror the
 /// `AppFont` monospaced tokens (small 12, body 13, URL bar 12).
@@ -119,13 +126,18 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
     /// body): JSON/XML token colors under the `{{variable}}` background
     /// tints. Single-line editors always stay plain.
     var syntax: BodySyntax = .plain
-    /// Multi-line only (the Scripts tab): while this editor holds keyboard
-    /// focus, ⌘⇧F formats its text through `ScriptFormatter` as one
-    /// undoable step. Off for every other editor (the raw body and co).
-    var usesScriptFormatter = false
-    /// Multi-line only (the Scripts tab): receives the `ScriptFormatter`
-    /// diagnostic when focus-⌘⇧F hits a script that does not parse, so the
-    /// caller can surface it (the Scripts pane's transient bottom note).
+    /// Multi-line only (the Scripts tab and the raw body): while this
+    /// editor holds keyboard focus, ⌘⇧F runs its text through this handler
+    /// as one undoable step. The handler returns the formatted text, `nil`
+    /// when the text is already formatted, or throws the diagnostic. Read
+    /// fresh on every invocation, so a caller can rebuild it per render
+    /// (the raw body's JSON/XML dispatch follows the format picker).
+    var formatHandler: ((String) throws -> String?)?
+    /// Undo-menu label for the ⌘⇧F step ("Format Script", "Format Body").
+    var formatActionName: String = "Format"
+    /// Multi-line only: receives a format handler's diagnostic when ⌘⇧F
+    /// hits text that does not parse, so the caller can surface it (the
+    /// transient bottom note of the Scripts pane and the raw body).
     var onFormatError: ((String) -> Void)?
     /// Called when the user presses Return with no completion popup open
     /// (multi-line editors insert a line break instead).
@@ -189,7 +201,8 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         incomingCaretLocation: Int? = nil,
         urlSuggestions: [URLSuggestion] = [],
         onPasteRawText: ((String) -> Bool)? = nil,
-        usesScriptFormatter: Bool = false,
+        formatHandler: ((String) throws -> String?)? = nil,
+        formatActionName: String = "Format",
         onFormatError: ((String) -> Void)? = nil
     ) {
         self._text = text
@@ -216,7 +229,8 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         self.incomingCaretLocation = incomingCaretLocation
         self.urlSuggestions = urlSuggestions
         self.onPasteRawText = onPasteRawText
-        self.usesScriptFormatter = usesScriptFormatter
+        self.formatHandler = formatHandler
+        self.formatActionName = formatActionName
         self.onFormatError = onFormatError
     }
 
@@ -320,7 +334,8 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
             onContentHeightChange: fillsContainer ? nil : { contentHeight = $0 },
             syntax: syntax,
             incomingCaretLocation: incomingCaretLocation,
-            usesScriptFormatter: usesScriptFormatter,
+            formatHandler: formatHandler,
+            formatActionName: formatActionName,
             onFormatError: onFormatError
         )
     }
@@ -1209,17 +1224,21 @@ private struct WrappingURLField<FocusValue: Hashable>: NSViewRepresentable {
 /// fall through untouched; without a handler (any other multi-line editor)
 /// the view behaves exactly like a plain `NSTextView`.
 private final class FormatKeyTextView: NSTextView {
-    var formatHandler: (() -> Void)?
+    /// Returns whether the key was handled: `true` consumes ⌘⇧F (the
+    /// format ran, or its diagnostic was surfaced); `false` falls back to
+    /// the text view's own handling (editors without a handler never see
+    /// the key at all - it is not installed).
+    var formatHandler: (() -> Bool)?
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let isFormatKey = modifiers == [.command, .shift]
+        let isFormatKey =
+            modifiers == [.command, .shift]
             && (event.keyCode == 0x03 || event.charactersIgnoringModifiers?.lowercased() == "f")
         guard isFormatKey, window?.firstResponder === self, let formatHandler else {
             return super.performKeyEquivalent(with: event)
         }
-        formatHandler()
-        return true
+        return formatHandler() ? true : super.performKeyEquivalent(with: event)
     }
 }
 
@@ -1236,7 +1255,10 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
     let onContentHeightChange: ((CGFloat) -> Void)?
     var syntax: BodySyntax = .plain
     let incomingCaretLocation: Int?
-    var usesScriptFormatter = false
+    /// Installed when the caller supplies a format handler; the bridge
+    /// re-reads the handler through the coordinator on every invocation.
+    let formatHandler: ((String) throws -> String?)?
+    let formatActionName: String
     let onFormatError: ((String) -> Void)?
 
     func makeCoordinator() -> Coordinator {
@@ -1279,13 +1301,13 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
             VariablePlaceholderStyling.attributed(text, font: font, variables: variables, syntax: syntax)
         )
         textView.delegate = coordinator
-        if usesScriptFormatter {
-            // ⌘⇧F lives on the focused editor itself - no menu item, no
-            // global shortcut; the raw body editor never offers it.
-            textView.formatHandler = { [weak coordinator, weak textView] in
-                guard let coordinator, let textView else { return }
-                coordinator.applyFormat(textView)
-            }
+        // ⌘⇧F lives on the focused editor itself - no menu item, no global
+        // shortcut. Unconditional bridge: whether a handler exists is
+        // re-checked per invocation inside `applyFormat`, so caller-side
+        // dispatch (the raw body's format picker) applies live.
+        textView.formatHandler = { [weak coordinator, weak textView] in
+            guard let coordinator, let textView else { return false }
+            return coordinator.applyFormat(textView)
         }
 
         let scrollView = LayoutObservingScrollView()
@@ -1413,15 +1435,16 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
             focus.wrappedValue = nil
         }
 
-        /// The Scripts editor's ⌘⇧F (wired through `FormatKeyTextView`,
-        /// fired only while the field holds keyboard focus): formats this
-        /// view's text as one undoable step (⌘Z restores the script). A nil
-        /// result (empty or already formatted) leaves text and undo stack
-        /// untouched; a parse failure reports the diagnostic through
+        /// The focus-⌘⇧F step (fired only while the field holds keyboard
+        /// focus): runs the caller's handler over this view's text as one
+        /// undoable step (⌘Z restores it). Reports `false` when no handler
+        /// is installed - the key falls through - and `true` otherwise,
+        /// including "no change needed" and diagnostics surfaced through
         /// `onFormatError` instead of replacing anything.
-        func applyFormat(_ textView: NSTextView) {
+        func applyFormat(_ textView: NSTextView) -> Bool {
+            guard let formatHandler = parent.formatHandler else { return false }
             do {
-                guard let formatted = try ScriptFormatter.format(textView.string) else { return }
+                guard let formatted = try formatHandler(textView.string) else { return true }
                 let caret = textView.selectedRange().location
                 let sourceRange = NSRange(location: 0, length: (textView.string as NSString).length)
                 // Registers the undo entry over the full replace, then the
@@ -1435,11 +1458,14 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
                 textView.didChangeText()
                 let formattedLength = (formatted as NSString).length
                 textView.setSelectedRange(NSRange(location: min(caret, formattedLength), length: 0))
-                textView.undoManager?.setActionName("Format Script")
-            } catch let error as ScriptFormatter.ScriptFormatError {
+                textView.undoManager?.setActionName(parent.formatActionName)
+                return true
+            } catch let error as TextFormatError {
                 parent.onFormatError?(error.message)
+                return true
             } catch {
-                parent.onFormatError?("Invalid JavaScript")
+                parent.onFormatError?("Unexpected token")
+                return true
             }
         }
 

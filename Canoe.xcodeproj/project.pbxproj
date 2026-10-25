@@ -621,6 +621,17 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>C0DEC00000000000000000D6</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>BodyFormatter.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>C0DEC00000000000000000B7</key>
 		<dict>
 			<key>isa</key>
@@ -2196,6 +2207,13 @@
 			<key>fileRef</key>
 			<string>C0DEC00000000000000000D4</string>
 		</dict>
+		<key>C0DEC00000000000000000D7</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>C0DEC00000000000000000D6</string>
+		</dict>
 		<key>C0DEC00000000000000000C8</key>
 		<dict>
 			<key>isa</key>
@@ -2616,6 +2634,7 @@
 				<string>206E63282E786D9E22FA9BDD</string>
 				<string>C0A5E1000000000000000D30</string>
 				<string>C0A5E1000000000000000D60</string>
+				<string>C0DEC00000000000000000D6</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -2650,6 +2669,7 @@
 				<string>C0DEC00000000000000000C6</string>
 				<string>C0DEC00000000000000000C7</string>
 				<string>C0DEC00000000000000000D5</string>
+				<string>C0DEC00000000000000000D7</string>
 				<string>C0DEC00000000000000000C8</string>
 				<string>C0A5E1000000000000000002</string>
 				<string>C0A5E1000000000000000004</string>
