@@ -22,6 +22,10 @@ struct RequestEditorView: View {
     @State private var section: RequestSection = .params
     /// Which script the Scripts tab edits (Postman's sidebar order).
     @State private var scriptColumn: ScriptColumn = .beforeRequest
+    /// The `ScriptFormatter` diagnostic shown under the focused Scripts
+    /// editor when focus-⌘⇧F hits a script that does not parse;
+    /// `showInvalidScriptNote` retires it after a beat.
+    @State private var invalidScriptNote: String?
 
     /// Path-variable keys in URL order, deduped: the path variables table
     /// derives its rows from the URL's `:segment` path parameters (Postman's
@@ -1556,6 +1560,19 @@ struct RequestEditorView: View {
         }
     }
 
+    /// Surfaces the `ScriptFormatter` diagnostic and retires it after a
+    /// beat; a newer note (another ⌘⇧F meanwhile) outlives this timer.
+    /// Rendered by the Scripts editor's bottom overlay.
+    private func showInvalidScriptNote(_ message: String) {
+        invalidScriptNote = message
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.5))
+            if invalidScriptNote == message {
+                invalidScriptNote = nil
+            }
+        }
+    }
+
     /// The editor side of the Scripts tab: full height, bound to whichever
     /// phase the sidebar picked.
     private var scriptEditorFill: some View {
@@ -1581,12 +1598,27 @@ struct RequestEditorView: View {
             placeholder: scriptColumn == .beforeRequest
                 ? "Runs before the request is sent (pm.variables.set, pm.request.headers.add, ...)"
                 : "Runs after the response arrives (pm.expect, pm.environment.set, pm.test)",
-            syntax: .javascript
+            syntax: .javascript,
+            usesScriptFormatter: true,
+            onFormatError: showInvalidScriptNote
         )
         // Explicit specialization: no programmatic focus wiring.
         .padding(.horizontal, AppSpacing.medium)
         .padding(.top, AppSpacing.small)
         .padding(.bottom, AppSpacing.small)
+        .overlay(alignment: .bottom) {
+            if let invalidScriptNote {
+                Text("Invalid JavaScript - \(invalidScriptNote)")
+                    .font(AppFont.small)
+                    .foregroundStyle(AppColor.error)
+                    .padding(.horizontal, AppSpacing.small)
+                    .padding(.vertical, AppSpacing.xSmall)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(AppColor.error.opacity(AppOpacity.errorBackground)))
+                    .padding(.bottom, AppSpacing.comfortable)
+            }
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AppColor.controlBackground)
     }

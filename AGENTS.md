@@ -11,6 +11,7 @@ Canoe is a native macOS API client (a lightweight Postman alternative) written i
 - **UI Framework**: SwiftUI + AppKit (hybrid as needed)
 - **Storage**: File-based vault (one JSON file per workspace / collection / environment) under `~/Library/Application Support/Canoe/`
 - **Networking**: URLSession with async/await
+- **Vendored engines**: `Vendor/` holds local SwiftPM packages - `QuickJS` (the Scripts tab's JavaScript runtime, compiled sources) and `Oxfmt` (the Scripts tab's native JavaScript formatter: the oxc project's `oxfmt` backend as a statically linked Rust archive behind a C-ABI shim; shim sources in-repo as a standalone Cargo crate with git-pinned oxc dependencies, built by `just build` on demand via `Vendor/Oxfmt/build.sh` (manual `sh` rerun after shim changes) - Rust/Cargo required; the produced xcframework is git-ignored under `Vendor/Oxfmt/lib/`)
 - **Code Formatting**: swift-format
 - **Code Linting**: SwiftLint
 
@@ -30,6 +31,7 @@ Area folders:
 - Feature areas, each holding whichever of `Models/` / `State/` / `Views/` / `Services/` it needs: `Workspace` (window chrome, sidebar, tabs, workspace screens), `Collection` (collections, folders), `Request` (request editor, auth/body editors, code snippets), `Response` (response viewer, history entries), `Environment` (environments), `Variables` (variables inspector, `{{...}}` resolution + scope models), `Settings` (Settings… window: sidebar, panes, appearance store)
 - Backends: `HTTP/` (URLSession client, multipart encoding), `Session/` split into `State/` (one `AppStore` coordinator + one `AppStore+<Domain>.swift` extension per domain: Navigation, Workspace, Collection, Request, Environment, Variables, Sending, OAuth (send-path token supply)) and `Persistence/` (`VaultStore` file persistence, `VaultDrafts` unsaved edits, `FileStore` atomic JSON primitive, `VaultConfig`, `LossyDecoding` (per-element tolerant decoding for vault files))
 - Shared toolkit: `Components/` (one file per group: badges, buttons, fields, inspector chrome, states, panel modifiers, plus `KeyValueEditor` and the `HTTPMethod+Presentation` color mapping), `Editor/` (variable-highlighting text fields, completion popup, JSON syntax highlighting), `Theme/` (color/font/metrics tokens + light/dark switching)
+- Vendored engines under `Vendor/` (local SwiftPM packages, no committed binaries): `Vendor/QuickJS` (Scripts-tab JavaScript engine, compiled sources) and `Vendor/Oxfmt` (Scripts-tab native JavaScript formatter - the oxc `oxfmt` backend statically linked behind a C-ABI shim; shim crate sources in `Vendor/Oxfmt/shim/` as a standalone Cargo project with git-pinned oxc dependencies, built by `just build` on demand via `build.sh` into the git-ignored `Vendor/Oxfmt/lib/libcanoe_oxfmt.xcframework`, pin + notes in `Vendor/Oxfmt/BUILD-INFO.md`; Swift binds the shim's two exports directly - `@_silgen_name` in `ScriptFormatter.swift`, no C target)
 
 Naming rule (for the main program under `Sources/Canoe/` only): no bucket names (`Utilities`, `Core`, `DesignSystem`, `Infrastructure`, …). If a folder needs "and misc" to describe it, split it instead.
 
@@ -41,6 +43,7 @@ Outer layers may use inner layers, never the reverse:
 - `Session/` and persistence may use `Models/`, `HTTP/`.
 - `Models/`, `HTTP/` must never `import SwiftUI`. Presentation mapping for a model type lives in a `Type+Presentation.swift` next to the views that need it (e.g. `Components/HTTPMethod+Presentation.swift`).
 - `HTTP/` never references views, `AppStore`, or area `State/` - but it may use area `Models/` value types (`Request`, `Authorization`, `ResponseModel`, `VariableScope`, `VariableResolver`) to send requests. Shared `Components/` / `Editor/` may likewise use `Models/` value types.
+- Shared `Editor/` may call one leaf area `Services/` type when the capability is editor-owned: `ScriptFormatter` (`Scripts/Services/` - a plain FFI enum over the vendored Oxfmt archive, no Models/State coupling, no cycle). Anything beyond that goes through `Models/` and `Session/` coordination like everywhere else.
 - Areas never reference each other's `State/`; cross-area sharing goes through `Models/` value types and `Session/` coordination.
 
 ## Terminology

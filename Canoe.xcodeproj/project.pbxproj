@@ -569,6 +569,7 @@
 			<array>
 				<string>C0DEC00000000000000000B5</string>
 				<string>C0DEC00000000000000000B6</string>
+				<string>C0DEC00000000000000000D4</string>
 				<string>C0DEC00000000000000000B7</string>
 			</array>
 			<key>sourceTree</key>
@@ -606,6 +607,17 @@
 			<string>sourcecode.swift</string>
 			<key>path</key>
 			<string>ScriptEngine.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>C0DEC00000000000000000D4</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>ScriptFormatter.swift</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
@@ -2126,6 +2138,29 @@
 			<key>productRef</key>
 			<string>C0DEC00000000000000000A2</string>
 		</dict>
+		<key>C0DEC00000000000000000D0</key>
+		<dict>
+			<key>isa</key>
+			<string>XCLocalSwiftPackageReference</string>
+			<key>relativePath</key>
+			<string>Vendor/Oxfmt</string>
+		</dict>
+		<key>C0DEC00000000000000000D1</key>
+		<dict>
+			<key>isa</key>
+			<string>XCSwiftPackageProductDependency</string>
+			<key>package</key>
+			<string>C0DEC00000000000000000D0</string>
+			<key>productName</key>
+			<string>Oxfmt</string>
+		</dict>
+		<key>C0DEC00000000000000000D2</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>productRef</key>
+			<string>C0DEC00000000000000000D1</string>
+		</dict>
 		<key>C0DEC00000000000000000C4</key>
 		<dict>
 			<key>isa</key>
@@ -2153,6 +2188,13 @@
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>C0DEC00000000000000000B7</string>
+		</dict>
+		<key>C0DEC00000000000000000D5</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>C0DEC00000000000000000D4</string>
 		</dict>
 		<key>C0DEC00000000000000000C8</key>
 		<dict>
@@ -2607,6 +2649,7 @@
 				<string>C0DEC00000000000000000C5</string>
 				<string>C0DEC00000000000000000C6</string>
 				<string>C0DEC00000000000000000C7</string>
+				<string>C0DEC00000000000000000D5</string>
 				<string>C0DEC00000000000000000C8</string>
 				<string>C0A5E1000000000000000002</string>
 				<string>C0A5E1000000000000000004</string>
@@ -2729,6 +2772,7 @@
 				<string>F00DCAFE1234567890ABC03</string>
 				<string>F00DCAFE1234567890ABC06</string>
 				<string>C0DEC00000000000000000A3</string>
+				<string>C0DEC00000000000000000D2</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>
@@ -3139,6 +3183,7 @@
 				<string>F00DCAFE1234567890ABC02</string>
 				<string>F00DCAFE1234567890ABC05</string>
 				<string>C0DEC00000000000000000A2</string>
+				<string>C0DEC00000000000000000D1</string>
 			</array>
 			<key>productName</key>
 			<string>Canoe</string>
@@ -3178,6 +3223,7 @@
 				<string>F00DCAFE1234567890ABC01</string>
 				<string>F00DCAFE1234567890ABC04</string>
 				<string>C0DEC00000000000000000A1</string>
+				<string>C0DEC00000000000000000D0</string>
 			</array>
 			<key>productRefGroup</key>
 			<string>DB1220D8A260A6C1FF20221A</string>

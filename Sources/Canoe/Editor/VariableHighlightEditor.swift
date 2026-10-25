@@ -119,6 +119,14 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
     /// body): JSON/XML token colors under the `{{variable}}` background
     /// tints. Single-line editors always stay plain.
     var syntax: BodySyntax = .plain
+    /// Multi-line only (the Scripts tab): while this editor holds keyboard
+    /// focus, ⌘⇧F formats its text through `ScriptFormatter` as one
+    /// undoable step. Off for every other editor (the raw body and co).
+    var usesScriptFormatter = false
+    /// Multi-line only (the Scripts tab): receives the `ScriptFormatter`
+    /// diagnostic when focus-⌘⇧F hits a script that does not parse, so the
+    /// caller can surface it (the Scripts pane's transient bottom note).
+    var onFormatError: ((String) -> Void)?
     /// Called when the user presses Return with no completion popup open
     /// (multi-line editors insert a line break instead).
     var onCommit: (() -> Void)?
@@ -180,7 +188,9 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         onCaretChange: ((Int) -> Void)? = nil,
         incomingCaretLocation: Int? = nil,
         urlSuggestions: [URLSuggestion] = [],
-        onPasteRawText: ((String) -> Bool)? = nil
+        onPasteRawText: ((String) -> Bool)? = nil,
+        usesScriptFormatter: Bool = false,
+        onFormatError: ((String) -> Void)? = nil
     ) {
         self._text = text
         self.variables = variables
@@ -206,6 +216,8 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         self.incomingCaretLocation = incomingCaretLocation
         self.urlSuggestions = urlSuggestions
         self.onPasteRawText = onPasteRawText
+        self.usesScriptFormatter = usesScriptFormatter
+        self.onFormatError = onFormatError
     }
 
     var body: some View {
@@ -307,7 +319,9 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
             onCommit: onCommit,
             onContentHeightChange: fillsContainer ? nil : { contentHeight = $0 },
             syntax: syntax,
-            incomingCaretLocation: incomingCaretLocation
+            incomingCaretLocation: incomingCaretLocation,
+            usesScriptFormatter: usesScriptFormatter,
+            onFormatError: onFormatError
         )
     }
 
@@ -1190,6 +1204,25 @@ private struct WrappingURLField<FocusValue: Hashable>: NSViewRepresentable {
 /// NSTextView-backed multi-line editor: text in a scroll view, `{{variable}}`
 /// runs tinted like the single-line field, content height reported for
 /// auto-grow, and `{{` completion driven by the text view itself.
+/// The Scripts tab's multi-line text view: while it holds keyboard focus,
+/// ⌘⇧F runs the format handler the Scripts editor installed. Other keys
+/// fall through untouched; without a handler (any other multi-line editor)
+/// the view behaves exactly like a plain `NSTextView`.
+private final class FormatKeyTextView: NSTextView {
+    var formatHandler: (() -> Void)?
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let isFormatKey = modifiers == [.command, .shift]
+            && (event.keyCode == 0x03 || event.charactersIgnoringModifiers?.lowercased() == "f")
+        guard isFormatKey, window?.firstResponder === self, let formatHandler else {
+            return super.performKeyEquivalent(with: event)
+        }
+        formatHandler()
+        return true
+    }
+}
+
 private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
     @Binding var text: String
     let variables: [String: String]
@@ -1203,6 +1236,8 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
     let onContentHeightChange: ((CGFloat) -> Void)?
     var syntax: BodySyntax = .plain
     let incomingCaretLocation: Int?
+    var usesScriptFormatter = false
+    let onFormatError: ((String) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -1214,7 +1249,7 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
         coordinator.lastVariables = variables
         coordinator.lastSyntax = syntax
 
-        let textView = NSTextView()
+        let textView = FormatKeyTextView()
         textView.focusRingType = .none
         textView.isRichText = false
         textView.importsGraphics = false
@@ -1244,6 +1279,14 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
             VariablePlaceholderStyling.attributed(text, font: font, variables: variables, syntax: syntax)
         )
         textView.delegate = coordinator
+        if usesScriptFormatter {
+            // ⌘⇧F lives on the focused editor itself - no menu item, no
+            // global shortcut; the raw body editor never offers it.
+            textView.formatHandler = { [weak coordinator, weak textView] in
+                guard let coordinator, let textView else { return }
+                coordinator.applyFormat(textView)
+            }
+        }
 
         let scrollView = LayoutObservingScrollView()
         scrollView.documentView = textView
@@ -1368,6 +1411,36 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
                 focus.wrappedValue == focusValue
             else { return }
             focus.wrappedValue = nil
+        }
+
+        /// The Scripts editor's ⌘⇧F (wired through `FormatKeyTextView`,
+        /// fired only while the field holds keyboard focus): formats this
+        /// view's text as one undoable step (⌘Z restores the script). A nil
+        /// result (empty or already formatted) leaves text and undo stack
+        /// untouched; a parse failure reports the diagnostic through
+        /// `onFormatError` instead of replacing anything.
+        func applyFormat(_ textView: NSTextView) {
+            do {
+                guard let formatted = try ScriptFormatter.format(textView.string) else { return }
+                let caret = textView.selectedRange().location
+                let sourceRange = NSRange(location: 0, length: (textView.string as NSString).length)
+                // Registers the undo entry over the full replace, then the
+                // storage turns it into styled text and `didChangeText` runs
+                // the same funnel as typing (binding, re-tint, height).
+                textView.shouldChangeText(in: sourceRange, replacementString: formatted)
+                textView.textStorage?.setAttributedString(
+                    VariablePlaceholderStyling.attributed(
+                        formatted, font: parent.font, variables: parent.variables, syntax: parent.syntax)
+                )
+                textView.didChangeText()
+                let formattedLength = (formatted as NSString).length
+                textView.setSelectedRange(NSRange(location: min(caret, formattedLength), length: 0))
+                textView.undoManager?.setActionName("Format Script")
+            } catch let error as ScriptFormatter.ScriptFormatError {
+                parent.onFormatError?(error.message)
+            } catch {
+                parent.onFormatError?("Invalid JavaScript")
+            }
         }
 
         /// Re-tint the `{{variable}}` runs in place - rebuilding the storage
