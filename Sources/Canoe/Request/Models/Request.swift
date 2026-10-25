@@ -15,7 +15,7 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
     var urlString: String = ""
     var bodyText: String = ""
     var bodyContentType: String = "application/json"
-    var bodyType: String = RequestBodyType.raw.rawValue
+    var bodyType: String = RequestBodyType.none.rawValue
     var bodyRawKind: String = RawBodyKind.json.rawValue
     var formFields: [FormField] = []
     var urlEncodedFields: [FormField] = []
@@ -154,7 +154,7 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
         bodyText = try container.decodeIfPresent(String.self, forKey: .bodyText) ?? ""
         bodyContentType =
             try container.decodeIfPresent(String.self, forKey: .bodyContentType) ?? "application/json"
-        bodyType = try container.decodeIfPresent(String.self, forKey: .bodyType) ?? RequestBodyType.raw.rawValue
+        bodyType = try container.decodeIfPresent(String.self, forKey: .bodyType) ?? RequestBodyType.none.rawValue
         bodyRawKind = try container.decodeIfPresent(String.self, forKey: .bodyRawKind) ?? RawBodyKind.json.rawValue
         formFields = try container.decodeLossyArray(forKey: .formFields)
         urlEncodedFields = try container.decodeLossyArray(forKey: .urlEncodedFields)
@@ -231,7 +231,7 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
     }
 
     var requestBodyType: RequestBodyType {
-        get { RequestBodyType(rawValue: bodyType) ?? .raw }
+        get { RequestBodyType(rawValue: bodyType) ?? .none }
         set { bodyType = newValue.rawValue }
     }
 
