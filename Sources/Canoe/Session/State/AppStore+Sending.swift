@@ -183,28 +183,32 @@ extension AppStore {
                     if let change = outcome.bodyChange { preBodyChange = change }
                     prePhaseRan = true
                 }
-                // The request's own Pre-request script.
-                let outcome = try await runScript(
-                    .preRequest, script: request.preRequestScript, of: request,
-                    variables: scriptVariables, resetsCarriedState: !prePhaseRan)
-                preRequestLogs += outcome.logs
-                preResults += outcome.results
-                if !outcome.scopeSets.isEmpty || !outcome.scopeUnsets.isEmpty {
-                    scriptScopeOutcome = outcome
+                // The request's own Pre-request script. The switch skips a
+                // disabled script exactly like an empty one - the source
+                // stays, nothing runs (and nothing counts as a ran phase).
+                if request.preRequestScriptEnabled {
+                    let outcome = try await runScript(
+                        .preRequest, script: request.preRequestScript, of: request,
+                        variables: scriptVariables, resetsCarriedState: !prePhaseRan)
+                    preRequestLogs += outcome.logs
+                    preResults += outcome.results
+                    if !outcome.scopeSets.isEmpty || !outcome.scopeUnsets.isEmpty {
+                        scriptScopeOutcome = outcome
+                    }
+                    if let error = outcome.error {
+                        errorsByTab[tab] = "Pre-request script error: \(error)"
+                        return
+                    }
+                    // The engine already applied script writes and tier
+                    // fallback - adopt its variable map for the outgoing
+                    // request's placeholder resolution.
+                    if let final = outcome.finalVariables {
+                        variables = final
+                    }
+                    preHeaderChanges += outcome.headerChanges
+                    if let change = outcome.bodyChange { preBodyChange = change }
+                    prePhaseRan = prePhaseRan || !request.preRequestScript.isEmpty
                 }
-                if let error = outcome.error {
-                    errorsByTab[tab] = "Pre-request script error: \(error)"
-                    return
-                }
-                // The engine already applied script writes and tier
-                // fallback - adopt its variable map for the outgoing
-                // request's placeholder resolution.
-                if let final = outcome.finalVariables {
-                    variables = final
-                }
-                preHeaderChanges += outcome.headerChanges
-                if let change = outcome.bodyChange { preBodyChange = change }
-                prePhaseRan = prePhaseRan || !request.preRequestScript.isEmpty
             } catch {
                 errorsByTab[tab] = "Pre-request script failed: \(scriptFailureText(error))"
                 return
@@ -270,26 +274,32 @@ extension AppStore {
                 var responseWithScripts = response
                 let collection = collectionForRequest(request)
                 let collectionHasPost = !(collection?.postResponseScript.isEmpty ?? true)
-                if !request.postResponseScript.isEmpty || collectionHasPost {
+                let requestHasPost =
+                    request.postResponseScriptEnabled && !request.postResponseScript.isEmpty
+                if requestHasPost || collectionHasPost {
                     var results = preResults
                     var logs = preRequestLogs
                     // The request's own Tests script. Carries this send's
                     // pre-request writes (resets only when no pre phase ran).
-                    let requestPost: ScriptPhaseOutcome
-                    do {
-                        requestPost = try await runScript(
-                            .postResponse, script: request.postResponseScript, of: request,
-                            variables: scriptVariables, resetsCarriedState: !prePhaseRan,
-                            response: response)
-                    } catch {
-                        // Engine-level failure: a failed row, the response
-                        // survives (scriptFailureText keeps the JS message).
-                        requestPost = ScriptPhaseOutcome(
-                            results: [
-                                ScriptTestResult(
-                                    name: "Script engine", status: .failed,
-                                    message: scriptFailureText(error))
-                            ])
+                    // The switch skips a disabled script exactly like an
+                    // empty one - the source stays, nothing runs.
+                    var requestPost = ScriptPhaseOutcome()
+                    if requestHasPost {
+                        do {
+                            requestPost = try await runScript(
+                                .postResponse, script: request.postResponseScript, of: request,
+                                variables: scriptVariables, resetsCarriedState: !prePhaseRan,
+                                response: response)
+                        } catch {
+                            // Engine-level failure: a failed row, the response
+                            // survives (scriptFailureText keeps the JS message).
+                            requestPost = ScriptPhaseOutcome(
+                                results: [
+                                    ScriptTestResult(
+                                        name: "Script engine", status: .failed,
+                                        message: scriptFailureText(error))
+                                ])
+                        }
                     }
                     results += requestPost.results
                     logs += requestPost.logs

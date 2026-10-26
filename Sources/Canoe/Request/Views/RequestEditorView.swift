@@ -1451,7 +1451,10 @@ struct RequestEditorView: View {
                 ForEach(inheritedScripts, id: \.label) { inherited in
                     inheritedScriptBlock(inherited.label, script: inherited.script)
                 }
+                // A switched-off script keeps editing, but the dimmed editor
+                // says it will not run.
                 scriptEditorFill
+                    .opacity(isScriptEnabled(scriptColumn) ? 1 : AppOpacity.disabled)
             }
         }
     }
@@ -1525,34 +1528,47 @@ struct RequestEditorView: View {
         .background(AppColor.controlBackground)
     }
 
-    /// One sidebar row of the Scripts tab: the phase label, the green
+    /// One sidebar row of the Scripts tab: the enable checkbox (the same
+    /// disable language as header/param rows), the phase label, the green
     /// content dot right after it (nothing but the dot between script and
-    /// no script), the light pill when selected.
+    /// no script), the light pill when selected. An unchecked script keeps
+    /// its source but is skipped at send time.
     private func scriptColumnRow(_ column: ScriptColumn) -> some View {
-        Button {
-            scriptColumn = column
-        } label: {
-            HStack(spacing: AppSpacing.xSmall) {
-                Text(column.rawValue)
-                    .font(AppFont.rowTitle)
-                    .foregroundStyle(AppColor.textPrimary)
-                if hasScriptContent(column) {
-                    Circle()
-                        .fill(AppColor.success)
-                        .frame(width: AppSize.contentDot, height: AppSize.contentDot)
+        HStack(spacing: AppSpacing.xSmall) {
+            Toggle("", isOn: scriptEnabledBinding(for: column))
+                .labelsHidden()
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
+                .focusEffectDisabled()
+                .help(isScriptEnabled(column) ? "Disable script" : "Enable script")
+            Button {
+                scriptColumn = column
+            } label: {
+                HStack(spacing: AppSpacing.xSmall) {
+                    Text(column.rawValue)
+                        .font(AppFont.rowTitle)
+                        .foregroundStyle(
+                            isScriptEnabled(column)
+                                ? AppColor.textPrimary : AppColor.textSecondary)
+                    if hasScriptContent(column) {
+                        Circle()
+                            .fill(AppColor.success)
+                            .frame(width: AppSize.contentDot, height: AppSize.contentDot)
+                    }
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
+                .opacity(isScriptEnabled(column) ? 1 : AppOpacity.disabled)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, AppSpacing.small)
-            .padding(.vertical, AppSpacing.compact)
-            .background(
-                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                    .fill(scriptColumn == column ? AppColor.subtleBackground : .clear)
-            )
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .clickCursor()
         }
-        .buttonStyle(.plain)
-        .clickCursor()
+        .padding(.horizontal, AppSpacing.small)
+        .padding(.vertical, AppSpacing.compact)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                .fill(scriptColumn == column ? AppColor.subtleBackground : .clear)
+        )
         .padding(.horizontal, AppSpacing.compact)
     }
 
@@ -1560,6 +1576,20 @@ struct RequestEditorView: View {
         switch column {
         case .beforeRequest: !draft.preRequestScript.isEmpty
         case .afterResponse: !draft.postResponseScript.isEmpty
+        }
+    }
+
+    private func isScriptEnabled(_ column: ScriptColumn) -> Bool {
+        switch column {
+        case .beforeRequest: draft.preRequestScriptEnabled
+        case .afterResponse: draft.postResponseScriptEnabled
+        }
+    }
+
+    private func scriptEnabledBinding(for column: ScriptColumn) -> Binding<Bool> {
+        switch column {
+        case .beforeRequest: $draft.preRequestScriptEnabled
+        case .afterResponse: $draft.postResponseScriptEnabled
         }
     }
 

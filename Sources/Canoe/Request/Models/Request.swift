@@ -63,6 +63,10 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
     /// no script; editing saves with ⌘S like everything else.
     var preRequestScript: String = ""
     var postResponseScript: String = ""
+    /// Per-script switches: an off script keeps its source but is skipped
+    /// at send time exactly like an empty one (Postman's disabled script).
+    var preRequestScriptEnabled: Bool = true
+    var postResponseScriptEnabled: Bool = true
     /// Per-request send settings (Postman's request-level Settings tab):
     /// whether 3xx responses are followed (and how many at most), the idle
     /// timeout in seconds (0 = the app default of 30), cookie-jar
@@ -135,6 +139,7 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
         case authOAuthTokens, authOAuthSelectedTokenID
         case requestDescription
         case preRequestScript, postResponseScript
+        case preRequestScriptEnabled, postResponseScriptEnabled
         case followRedirects, timeoutSeconds, maxRedirects, followAuthorizationHeader
         case useCookieJar, verifySSLCertificate
         case orderIndex, folderID, createdAt, updatedAt, headers, params
@@ -190,6 +195,10 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
             try container.decodeIfPresent(String.self, forKey: .preRequestScript) ?? ""
         postResponseScript =
             try container.decodeIfPresent(String.self, forKey: .postResponseScript) ?? ""
+        preRequestScriptEnabled =
+            try container.decodeIfPresent(Bool.self, forKey: .preRequestScriptEnabled) ?? true
+        postResponseScriptEnabled =
+            try container.decodeIfPresent(Bool.self, forKey: .postResponseScriptEnabled) ?? true
         followRedirects = try container.decodeIfPresent(Bool.self, forKey: .followRedirects) ?? true
         timeoutSeconds = try container.decodeIfPresent(Double.self, forKey: .timeoutSeconds) ?? 0
         followAuthorizationHeader =
@@ -290,6 +299,8 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
             && requestDescription == other.requestDescription
             && preRequestScript == other.preRequestScript
             && postResponseScript == other.postResponseScript
+            && preRequestScriptEnabled == other.preRequestScriptEnabled
+            && postResponseScriptEnabled == other.postResponseScriptEnabled
             && followRedirects == other.followRedirects
             && timeoutSeconds == other.timeoutSeconds
             && followAuthorizationHeader == other.followAuthorizationHeader
