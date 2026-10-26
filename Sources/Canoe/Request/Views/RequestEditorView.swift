@@ -337,9 +337,11 @@ struct RequestEditorView: View {
     @State private var isNameHovered = false
     /// Name at focus time; Esc restores it (commit happens on blur/Enter).
     @State private var nameEditBaseline = ""
-    /// The name field's frame in window coordinates - the click-away
-    /// monitor needs it to spare clicks inside the field.
-    @State private var nameFieldFrame: CGRect = .zero
+    /// The name field's frame in window-base coordinates (bottom-left
+    /// origin), measured by the background `WindowFrameReader` in the exact
+    /// space `NSEvent.locationInWindow` reports - the click-away monitor
+    /// compares clicks against it directly, with no coordinate conversion.
+    @State private var nameFieldWindowFrame: CGRect = .zero
     /// Local left-mouse-down monitor that ends name editing when a click
     /// lands outside the field. Installed while the editor is on screen.
     @State private var nameDismissMonitor: Any?
@@ -574,7 +576,6 @@ struct RequestEditorView: View {
         // SwiftUI tap gesture: a root gesture delays primary mouse events
         // and races the field editor's mouseDown, which makes clicking into
         // the name field itself fail most of the time.
-        .onPreferenceChange(RequestNameFrameKey.self) { nameFieldFrame = $0 }
         .onChange(of: draft) { _, newDraft in
             // Adopt-before-push for the same-frame renewal case (see
             // `pushedOAuthRevision`): the revision observer below would
@@ -893,10 +894,10 @@ struct RequestEditorView: View {
         }
         .onHover { isNameHovered = $0 }
         .background(
-            GeometryReader { geo in
-                Color.clear.preference(
-                    key: RequestNameFrameKey.self,
-                    value: geo.frame(in: .global))
+            WindowFrameReader { frame in
+                if nameFieldWindowFrame != frame {
+                    nameFieldWindowFrame = frame
+                }
             }
         )
         .onChange(of: isNameFieldFocused) { _, focused in
@@ -950,13 +951,15 @@ struct RequestEditorView: View {
         guard nameDismissMonitor == nil else { return }
         nameDismissMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
             MainActor.assumeIsolated {
-                guard isNameFieldFocused, let window = event.window else { return }
-                // Window-base (bottom-left origin) -> window-top-left, the
-                // space SwiftUI .global frames report on macOS.
-                let point = CGPoint(
-                    x: event.locationInWindow.x,
-                    y: window.frame.height - event.locationInWindow.y)
-                if !nameFieldFrame.contains(point) {
+                guard isNameFieldFocused else { return }
+                // Hit test in window-base coordinates on both sides: the
+                // frame comes from the background `WindowFrameReader` NSView
+                // (`convert(_:to: nil)`) in exactly the space
+                // `locationInWindow` reports, so no SwiftUI<->AppKit
+                // conversion can skew the test. (The old `.global` +
+                // window-top round-trip mis-measured this field: clicks
+                // inside it read as outside, so the second click blurred.)
+                if !nameFieldWindowFrame.contains(event.locationInWindow) {
                     isNameFieldFocused = false
                 }
             }
@@ -1847,12 +1850,54 @@ struct MethodMenuAnchorKey: PreferenceKey {
     }
 }
 
-/// Tracks the inline request-name field's frame so the editor's spatial
-/// tap-to-dismiss can spare clicks inside the field.
-private struct RequestNameFrameKey: PreferenceKey {
-    static let defaultValue: CGRect = .zero
-    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
-        value = nextValue()
+/// A clear background that reports its frame in window-base coordinates
+/// (bottom-left origin) - the exact space `NSEvent.locationInWindow` uses -
+/// whenever AppKit lays it out. The name field's click-away monitor compares
+/// click points against this frame directly, so no SwiftUI<->AppKit
+/// coordinate conversion can skew the test (the old `.global` + window-top
+/// round-trip did: clicks inside the field read as outside and the second
+/// click blurred it).
+private struct WindowFrameReader: NSViewRepresentable {
+    var onChange: (CGRect) -> Void
+
+    func makeNSView(context: Context) -> FrameView {
+        FrameView(onChange: onChange)
+    }
+
+    func updateNSView(_ view: FrameView, context: Context) {
+        view.onChange = onChange
+    }
+
+    final class FrameView: NSView {
+        var onChange: (CGRect) -> Void
+
+        init(onChange: @escaping (CGRect) -> Void) {
+            self.onChange = onChange
+            super.init(frame: .zero)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            fatalError("WindowFrameReader is created in code only")
+        }
+
+        override func layout() {
+            super.layout()
+            report()
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            report()
+        }
+
+        private func report() {
+            // `convert(_:to: nil)` yields window-base coordinates (bottom-
+            // left origin), the space `NSEvent.locationInWindow` reports.
+            // With no window yet no click can land here either; the empty
+            // rect reads as "everywhere outside", like the old unset frame.
+            onChange(window == nil ? .zero : convert(bounds, to: nil))
+        }
     }
 }
 
