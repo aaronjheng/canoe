@@ -44,6 +44,30 @@ struct MethodTag: View {
     }
 }
 
+/// The protocol tag leading a request row: the HTTP method's colored tag,
+/// or the WS chip for WebSocket requests (which have no method).
+struct RequestTypeTag: View {
+    let requestType: RequestType
+    let method: HTTPMethod
+
+    var body: some View {
+        switch requestType {
+        case .http: MethodTag(method: method)
+        case .websocket: WebSocketTag()
+        }
+    }
+}
+
+/// The compact WS chip (sidebar rows, the request name bar): Postman marks
+/// WebSocket requests with a WS tag instead of an HTTP method.
+struct WebSocketTag: View {
+    var body: some View {
+        Text(RequestType.websocket.shortLabel)
+            .font(AppFont.methodTag)
+            .foregroundStyle(AppColor.methodWS)
+    }
+}
+
 /// Postman-style protocol badge leading the breadcrumb row ("HTTP" today;
 /// more protocol types may be added later). Distinct from `MethodTag`, which
 /// shows the HTTP method.

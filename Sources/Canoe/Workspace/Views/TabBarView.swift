@@ -188,12 +188,22 @@ struct TabBarView: View {
                         // last tab (inside the scroll area) instead of
                         // camping on the trailing controls. No separator
                         // before it - the hairline read as clutter next to
-                        // the button.
+                        // the button. A right-click offers New WebSocket
+                        // (Postman's New > WebSocket); the plain click
+                        // stays a new HTTP request.
                         Button("New Request Tab", systemImage: "plus") {
                             store.addRequest()
                         }
                         .buttonStyle(ToolbarButtonStyle())
-                        .help("New Request (⌘N)")
+                        .help("New Request (⌘N) · right-click for New WebSocket")
+                        .contextMenu {
+                            Button("New HTTP Request") {
+                                store.addRequest()
+                            }
+                            Button("New WebSocket Request") {
+                                store.addWebSocketRequest()
+                            }
+                        }
                         .onGeometryChange(for: CGRect.self) { proxy in
                             proxy.frame(in: .global)
                         } action: { frame in
@@ -1147,7 +1157,10 @@ private struct TabItemIcon: View {
         switch tab {
         case .request(let id, _):
             if let request = store.request(withID: id) {
-                MethodTag(method: request.httpMethod)
+                // The method tag for HTTP requests, the WS chip for
+                // WebSocket ones (a WS request has no method - its default
+                // GET must not leak into the tab strip).
+                RequestTypeTag(requestType: request.requestType, method: request.httpMethod)
             } else {
                 Image(systemName: "doc.text")
                     .foregroundStyle(AppColor.textSecondary)

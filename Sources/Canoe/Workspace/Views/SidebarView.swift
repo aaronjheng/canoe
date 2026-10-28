@@ -822,12 +822,25 @@ private struct CollectionTree: View {
         store.setSidebarNodeExpanded(collection.id, true)
     }
 
+    /// Adds a WebSocket request to the collection (Postman's Add Request /
+    /// Add WebSocket split) and reveals it.
+    private func addWebSocketRequest() {
+        store.addWebSocketRequest(in: collection.id)
+        store.setSidebarNodeExpanded(collection.id, true)
+    }
+
     /// "Add Request" is pinned as its own hover button, so the overflow menu
     /// carries everything else. The context menu renders this same list after
     /// its own Add Request entry, which is what keeps the two entry points
     /// from drifting apart.
     private var collectionActionsRows: [DropdownRow] {
         [
+            DropdownRow.action("Add Request", systemImage: "plus") {
+                addRequest()
+            },
+            DropdownRow.action("Add WebSocket Request", systemImage: "dot.radiowaves.left.and.right") {
+                addWebSocketRequest()
+            },
             DropdownRow.action("Add Folder", systemImage: "folder.badge.plus") {
                 store.addFolder(in: collection.id, parentFolderID: nil)
                 store.setSidebarNodeExpanded(collection.id, true)
@@ -986,8 +999,13 @@ private struct CollectionTree: View {
                 )
                 .contextMenu {
                     DropdownMenuContent(
-                        rows: [DropdownRow.action("Add Request", systemImage: "plus") { addRequest() }]
-                            + collectionActionsRows
+                        rows: [
+                            DropdownRow.action("Add Request", systemImage: "plus") { addRequest() },
+                            DropdownRow.action(
+                                "Add WebSocket Request",
+                                systemImage: "dot.radiowaves.left.and.right"
+                            ) { addWebSocketRequest() },
+                        ] + collectionActionsRows
                     )
                 }
                 .overlay(alignment: .trailing) { hoverActions }
@@ -1119,6 +1137,10 @@ private struct FolderTree: View {
         [
             DropdownRow.action("Add Subfolder", systemImage: "folder.badge.plus") {
                 store.addFolder(in: collection.id, parentFolderID: folder.id)
+                store.setSidebarNodeExpanded(folder.id, true)
+            },
+            DropdownRow.action("Add WebSocket Request", systemImage: "dot.radiowaves.left.and.right") {
+                store.addWebSocketRequest(in: collection.id, folderID: folder.id)
                 store.setSidebarNodeExpanded(folder.id, true)
             },
             DropdownRow.action("Duplicate") {
@@ -1346,7 +1368,7 @@ private struct RequestRow: View {
             Color.clear
                 .frame(width: AppSize.treeBaseIndent + AppSize.treeExpanderColumn + AppSize.treeIndent * CGFloat(depth))
             HStack(spacing: AppSpacing.xSmall) {
-                MethodTag(method: request.httpMethod)
+                RequestTypeTag(requestType: request.requestType, method: request.httpMethod)
                 InlineRenameField(
                     initialName: request.name,
                     onCommit: { name in
@@ -1436,7 +1458,7 @@ private struct RequestRow: View {
                         Color.clear
                             .frame(width: AppSize.treeBaseIndent + AppSize.treeExpanderColumn + AppSize.treeIndent * CGFloat(depth))
                         HStack(spacing: AppSpacing.xSmall) {
-                            MethodTag(method: request.httpMethod)
+                            RequestTypeTag(requestType: request.requestType, method: request.httpMethod)
                             sidebarRowLabel(request.name, filter: store.sidebarFilter)
                                 .font(AppFont.sidebarRow)
                                 .lineLimit(1)
@@ -1477,7 +1499,7 @@ private struct RequestRow: View {
                     return NSItemProvider(object: "request-\(request.id.uuidString)" as NSString)
                 } preview: {
                     HStack(spacing: AppSpacing.xSmall) {
-                        MethodTag(method: request.httpMethod)
+                        RequestTypeTag(requestType: request.requestType, method: request.httpMethod)
                         Text(request.name)
                             .font(AppFont.sidebarRow)
                             .lineLimit(1)

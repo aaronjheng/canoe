@@ -63,6 +63,10 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
     /// no script; editing saves with ⌘S like everything else.
     var preRequestScript: String = ""
     var postResponseScript: String = ""
+    /// WebSocket requests: messages saved with the request (Postman's Saved
+    /// messages), loaded back into the editor and resent later. The composed
+    /// message itself is in-memory session state (AppStore), not persisted.
+    var wsSavedMessages: [WebSocketSavedMessage] = []
     /// Per-script switches: an off script keeps its source but is skipped
     /// at send time exactly like an empty one (Postman's disabled script).
     var preRequestScriptEnabled: Bool = true
@@ -140,6 +144,7 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
         case requestDescription
         case preRequestScript, postResponseScript
         case preRequestScriptEnabled, postResponseScriptEnabled
+        case wsSavedMessages
         case followRedirects, timeoutSeconds, maxRedirects, followAuthorizationHeader
         case useCookieJar, verifySSLCertificate
         case orderIndex, folderID, createdAt, updatedAt, headers, params
@@ -199,6 +204,7 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
             try container.decodeIfPresent(Bool.self, forKey: .preRequestScriptEnabled) ?? true
         postResponseScriptEnabled =
             try container.decodeIfPresent(Bool.self, forKey: .postResponseScriptEnabled) ?? true
+        wsSavedMessages = try container.decodeLossyArray(forKey: .wsSavedMessages)
         followRedirects = try container.decodeIfPresent(Bool.self, forKey: .followRedirects) ?? true
         timeoutSeconds = try container.decodeIfPresent(Double.self, forKey: .timeoutSeconds) ?? 0
         followAuthorizationHeader =
@@ -301,6 +307,7 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
             && postResponseScript == other.postResponseScript
             && preRequestScriptEnabled == other.preRequestScriptEnabled
             && postResponseScriptEnabled == other.postResponseScriptEnabled
+            && wsSavedMessages == other.wsSavedMessages
             && followRedirects == other.followRedirects
             && timeoutSeconds == other.timeoutSeconds
             && followAuthorizationHeader == other.followAuthorizationHeader

@@ -176,6 +176,39 @@ final class AppStore {
     var lastRightInspectorPanel: RightInspectorPanel = .variables
     var sendingTabs: Set<OpenTab> = []
 
+    // MARK: - WebSocket sessions
+
+    /// Per-request WebSocket connection state (keyed by request id), read
+    /// by the editor's Connect/Disconnect button and the message pane's
+    /// status badge.
+    var webSocketStates: [UUID: WebSocketConnectionState] = [:]
+    /// In-memory message logs per request id (oldest first, newest
+    /// appended): sent/received frames plus connection/error system lines.
+    /// Never persisted - the log dies with the app session.
+    var webSocketMessages: [UUID: [WebSocketLogEntry]] = [:]
+    /// Live connections per request id. Not observable: the UI reads the
+    /// connection state through `webSocketStates`, and connections are
+    /// torn down through the same paths that update it.
+    @ObservationIgnored var webSocketConnections: [UUID: WebSocketConnection] = [:]
+    /// In-flight connect tasks (handshake awaits) per request id, so a
+    /// fast disconnect can await/preempt the pending handshake.
+    @ObservationIgnored var webSocketConnectTasks: [UUID: Task<Void, Never>] = [:]
+    /// Composed message drafts (text + format) per request id - in-memory
+    /// session state, like the message logs. Survives tab switches, not
+    /// relaunches.
+    var webSocketDrafts: [UUID: WebSocketMessageDraft] = [:]
+    /// One bump per saved-messages change made through the store path (the
+    /// message pane's Save/delete). The request editor watches it and
+    /// adopts the fresh list into its draft - the same pattern as the
+    /// OAuth token revisions - so its whole-draft pushes never revert the
+    /// message pane's changes.
+    var webSocketRevisions: [UUID: UUID] = [:]
+    /// When each request's handshake completed (the `.open` moment). Books
+    /// the Disconnect misfire guard: a disconnect landing within the
+    /// quiescence window of the connect is the button swapping under a
+    /// double-click, not intent (see AppStore+WebSocket).
+    @ObservationIgnored var webSocketConnectAt: [UUID: Date] = [:]
+
     /// Per-device, in-memory request history (most recent first).
     var history: [HistoryEntry] = []
 

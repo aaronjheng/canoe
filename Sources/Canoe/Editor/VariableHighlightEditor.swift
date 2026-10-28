@@ -1118,11 +1118,22 @@ private struct WrappingURLField<FocusValue: Hashable>: NSViewRepresentable {
             parent.text = value
             restyle(textView)
             // The two suggestion panels are mutually exclusive: typing `{{`
-            // opens the variable completion, which takes over the arrow
-            // keys - the URL history panel stands down until the next
-            // plain-text edit.
+            // opens the variable completion (which takes over the arrow
+            // keys) and stands the URL history panel down; plain-text edits
+            // drive the history panel again. `completion.textChanged` is
+            // what OPENS the variable session - the selection hook only
+            // tracks an already-open popup, so without this call the URL
+            // bar never shows `{{` completions at all.
+            let completionWasVisible = completion.isVisible
+            completion.textChanged(textView)
             if completion.isVisible {
                 urlCompletion.hide()
+            } else if completionWasVisible {
+                // The variable session just ended (accepted, or the caret
+                // left the placeholder): stand the history panel down for
+                // this edit so the accepted `{{name}}` does not instantly
+                // pop the history open.
+                suppressURLRefilter = true
             } else if suppressURLRefilter {
                 suppressURLRefilter = false
             } else {

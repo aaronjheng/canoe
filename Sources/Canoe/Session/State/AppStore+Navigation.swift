@@ -299,6 +299,12 @@ extension AppStore {
                 selectedTab = openTabs[0]
             }
         }
+        // Closing the request's LAST tab ends its WebSocket session (Postman
+        // closes the socket with the tab); the in-memory log stays, so a
+        // reopened request still shows what happened.
+        if let requestID = tab.requestID {
+            webSocketTabDidClose(requestID: requestID)
+        }
         persistOpenTabs()
     }
 

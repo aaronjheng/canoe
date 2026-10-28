@@ -13,7 +13,7 @@ struct RequestSaveContext: Identifiable {
 extension AppStore {
     // MARK: - Requests
 
-    func addRequest(in collectionID: UUID? = nil, folderID: UUID? = nil) {
+    func addRequest(in collectionID: UUID? = nil, folderID: UUID? = nil, requestType: RequestType = .http) {
         // Same active-workspace rule as addCollection: no silent first-
         // workspace fallback that would land requests where nobody looks.
         guard let workspaceID = activeWorkspace?.id else { return }
@@ -22,7 +22,7 @@ extension AppStore {
         // save (Save Request sheet) instead of silently landing in the first
         // collection or a synthesized "My Collection".
         guard collectionID != nil || folderID != nil else {
-            addUnfiledRequest()
+            addUnfiledRequest(requestType: requestType)
             return
         }
         var collection: Collection
@@ -55,6 +55,7 @@ extension AppStore {
             folderID.flatMap { fid in collection.folders.contains(where: { $0.id == fid }) ? fid : nil }
 
         var request = Request(method: .get, urlString: "", folderID: resolvedFolderID)
+        request.requestType = requestType
         // Max + 1 among siblings, not count (see addEnvironment).
         request.orderIndex = (collection.requests.filter { $0.folderID == resolvedFolderID }.map(\.orderIndex).max() ?? -1) + 1
         collection.requests.append(request)
@@ -90,12 +91,19 @@ extension AppStore {
     /// `unfiledRequests` map (plus its draft mirror) until the user
     /// saves it somewhere explicit. Dirty from birth - no baseline exists,
     /// so closing or quitting treats it as unsaved work.
-    private func addUnfiledRequest() {
-        let request = Request(method: .get, urlString: "")
+    private func addUnfiledRequest(requestType: RequestType = .http) {
+        var request = Request(method: .get, urlString: "")
+        request.requestType = requestType
         unfiledRequests[request.id] = request
         pendingRequestSnapshots[request.id] = request
         scheduleDraftPersistence()
         openRequest(request.id)
+    }
+
+    /// New > WebSocket (Postman): an untitled WebSocket request tab, filed
+    /// or scratch exactly like an HTTP request.
+    func addWebSocketRequest(in collectionID: UUID? = nil, folderID: UUID? = nil) {
+        addRequest(in: collectionID, folderID: folderID, requestType: .websocket)
     }
 
     /// Lands an imported cURL request (Postman's Import > Raw text): into
@@ -194,8 +202,10 @@ extension AppStore {
         pendingRequestSnapshots[id] = nil
         persistedRequestBaselines[id] = nil
         // Deleting the request ends its response history too (tab close no
-        // longer drops it - it must only end here or on a workspace delete).
+        // longer drops it - it must only end here or on a workspace delete),
+        // and its WebSocket session (disconnect + drop the in-memory log).
         purgeResponseHistory(for: id)
+        purgeWebSocketSession(for: id)
         for collection in vault.collections where collection.requests.contains(where: { $0.id == id }) {
             var updated = collection
             updated.requests.removeAll { $0.id == id }

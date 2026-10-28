@@ -89,6 +89,12 @@ struct RequestEditorView: View {
     }
 
     private var generatedHeaders: [KeyValueReadOnlyItem] {
+        isWebSocket ? generatedWebSocketHeaders : generatedHTTPHeaders
+    }
+
+    /// Auto-generated headers the HTTP send path sets (or URLSession
+    /// manages). The user can withhold the ones Canoe sets itself.
+    private var generatedHTTPHeaders: [KeyValueReadOnlyItem] {
         let userHeaderNames = Set(
             draft.headers
                 .filter(\.isEnabled)
@@ -129,6 +135,37 @@ struct RequestEditorView: View {
         if let apiKey = generatedAPIKeyHeader {
             append(apiKey, String(repeating: "•", count: 8), isMuted: true, isToggleable: false)
         }
+        return headers
+    }
+
+    /// The WebSocket handshake's generated headers: URLSession owns the
+    /// upgrade fields (Connection/Upgrade/Sec-WebSocket-*), Canoe sets
+    /// User-Agent, and the auth helper may add Authorization. Values the
+    /// transport computes are placeholders, like Host's.
+    private var generatedWebSocketHeaders: [KeyValueReadOnlyItem] {
+        var headers: [KeyValueReadOnlyItem] = []
+        func append(_ key: String, _ value: String, isMuted: Bool = false, isToggleable: Bool = true) {
+            let normalizedKey = key.lowercased()
+            headers.append(
+                KeyValueReadOnlyItem(
+                    id: normalizedKey,
+                    key: key,
+                    value: value,
+                    isMuted: isMuted,
+                    isToggleable: isToggleable
+                )
+            )
+        }
+
+        if generatedAuthorization != nil {
+            append("Authorization", String(repeating: "•", count: 8), isMuted: true, isToggleable: false)
+        }
+        append("Host", "<calculated when request is sent>")
+        append("Upgrade", "websocket")
+        append("Connection", "Upgrade")
+        append("Sec-WebSocket-Version", "13")
+        append("Sec-WebSocket-Key", "<generated at connect time>")
+        append("User-Agent", HTTPClient.userAgent)
         return headers
     }
 
@@ -282,6 +319,19 @@ struct RequestEditorView: View {
             && draft.params.filter { $0.isEnabled && !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.isEmpty
     }
 
+    /// Whether this editor drives a WebSocket request: Connect/Disconnect
+    /// replaces Send, the method picker goes away, and the Body/Scripts
+    /// sections do not apply (Postman's WebSocket request chrome).
+    private var isWebSocket: Bool {
+        draft.requestType == .websocket
+    }
+
+    /// Whether Connect is disabled: nothing to open a connection to (the
+    /// scheme is optional - a bare host connects as ws://).
+    private var isConnectDisabled: Bool {
+        draft.urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     /// Merged variable scope for `{{placeholder}}` highlighting in every
     /// editable request field (Postman-style green/red highlighting).
     private var resolvedVariables: [String: String] {
@@ -381,6 +431,11 @@ struct RequestEditorView: View {
     /// keystroke (including a manual token edit in the Available Tokens
     /// list) leaves the revision unchanged and adopts nothing.
     @State private var pushedOAuthRevision: UUID?
+    /// The saved-messages revision the pushed draft's list corresponds to
+    /// (the WebSocket twin of `pushedOAuthRevision`): the message pane's
+    /// Save/delete bumps the store's revision, and this editor adopts the
+    /// fresh list before pushing so its whole-draft pushes never revert it.
+    @State private var pushedWebSocketRevision: UUID?
 
     /// The URL bar text: the stored base URL plus the query rendered from the
     /// params table (the table is the source of truth for the query; the
@@ -408,10 +463,14 @@ struct RequestEditorView: View {
     /// percent-decodes, so a raw `&` inside a value would come back as
     /// phantom rows, a raw `#` would land in the fragment, and a raw `%`
     /// could decode into different characters. `urlQueryAllowed` still
-    /// admits `&`, `=`, and `#`, so those are reserved explicitly.
+    /// admits `&`, `=`, and `#`, so those are reserved explicitly. Braces
+    /// are admitted on purpose: `{{variable}}` placeholders stay readable
+    /// (and highlighted) in the bar - the send path re-encodes whatever the
+    /// variables resolve to.
     private func urlQueryEncoded(_ raw: String) -> String {
         var allowed = CharacterSet.urlQueryAllowed
         allowed.remove(charactersIn: "&=#")
+        allowed.insert(charactersIn: "{}")
         return raw.addingPercentEncoding(withAllowedCharacters: allowed) ?? raw
     }
 
@@ -557,6 +616,17 @@ struct RequestEditorView: View {
         draft.authOAuthSelectedTokenID = fresh.selectedID
     }
 
+    /// Pulls a message-pane saved-messages change (AppStore+WebSocket)
+    /// into the draft - only the list field, for the same reason as the
+    /// token adoption above.
+    private func adoptWebSocketSavedMessages() {
+        guard
+            let fresh = store.liveWebSocketSavedMessages(forOwner: draft.id),
+            fresh != draft.wsSavedMessages
+        else { return }
+        draft.wsSavedMessages = fresh
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             nameBar
@@ -587,6 +657,13 @@ struct RequestEditorView: View {
                 pushed.authOAuthSelectedTokenID = fresh.selectedID
             }
             pushedOAuthRevision = revision
+            // Same guard for the message pane's saved-messages changes (the
+            // WebSocket twin - see `pushedWebSocketRevision`).
+            let wsRevision = store.webSocketRevision(forOwner: newDraft.id)
+            if wsRevision != pushedWebSocketRevision, let fresh = store.liveWebSocketSavedMessages(forOwner: newDraft.id) {
+                pushed.wsSavedMessages = fresh
+            }
+            pushedWebSocketRevision = wsRevision
             store.updateRequest(pushed)
             // Params-table edits (and request switches) re-compose the URL
             // bar text - unless the user is typing in the URL bar itself. The
@@ -603,6 +680,7 @@ struct RequestEditorView: View {
             section = .params
             showGeneratedHeaders = false
             pushedOAuthRevision = store.oauthTokenRevision(forOwner: request.id)
+            pushedWebSocketRevision = store.webSocketRevision(forOwner: request.id)
         }
         .onChange(of: request.folderID) { _, newFolderID in
             // Vault-side folder moves (deleteFolder) must reach the local
@@ -629,6 +707,10 @@ struct RequestEditorView: View {
             // Record the consumed revision so the next ordinary keystroke
             // push does not re-adopt (and cannot regress) this rotation.
             pushedOAuthRevision = store.oauthTokenRevision(forOwner: draft.id)
+        }
+        .onChange(of: store.webSocketRevision(forOwner: draft.id)) { _, _ in
+            adoptWebSocketSavedMessages()
+            pushedWebSocketRevision = store.webSocketRevision(forOwner: draft.id)
         }
         .onChange(of: store.urlFocusToken) { _, _ in
             // View ▸ Jump to Request URL (⌘L, Postman "Jump to request URL"):
@@ -669,6 +751,8 @@ struct RequestEditorView: View {
         .onAppear {
             draft = request
             urlText = composedURLText(base: draft.urlString, params: draft.params)
+            pushedOAuthRevision = store.oauthTokenRevision(forOwner: request.id)
+            pushedWebSocketRevision = store.webSocketRevision(forOwner: request.id)
             installNameDismissMonitor()
             installCrumbDismissMonitor()
         }
@@ -708,8 +792,13 @@ struct RequestEditorView: View {
                     .foregroundStyle(AppColor.tertiaryText)
             }
             // The HTTP method joins the editable name, mirroring the sidebar
-            // rows (`GET New Request`); it is changed from the URL bar.
-            MethodTag(method: draft.httpMethod)
+            // rows (`GET New Request`) - the method is not shown anywhere else
+            // in the bar. WebSocket requests carry no method, and the leading
+            // badge already names the protocol, so the name follows the
+            // crumbs directly.
+            if !isWebSocket {
+                RequestTypeTag(requestType: draft.requestType, method: draft.httpMethod)
+            }
             requestNameField
             Spacer(minLength: AppSpacing.medium)
             saveButton
@@ -1021,45 +1110,65 @@ struct RequestEditorView: View {
     private var urlBar: some View {
         VStack(spacing: AppSpacing.xSmall) {
             HStack(spacing: AppSpacing.small) {
-                HStack(spacing: 0) {
-                    MethodPicker(
-                        selection: $draft.httpMethod,
-                        isExpanded: $isMethodMenuVisible,
-                        onToggle: {
-                            urlFieldFocused = nil
-                            isNameFieldFocused = false
-                        }
-                    )
-                    // Hairline divider between the two halves. The container
-                    // supplies the rest outline; each half draws only its own
-                    // focus accent, so focus targets just one side.
-                    Rectangle()
-                        .fill(AppColor.border)
-                        .frame(width: AppLine.hairline, height: AppSize.pickerDividerHeight)
-                        .allowsHitTesting(false)
+                if isWebSocket {
+                    // WebSocket requests have no method to pick: the URL
+                    // field runs the full width (Postman's WS request bar).
                     Color.clear
                         .frame(height: 30)
                         .overlay(alignment: .topLeading) {
                             urlEditor
                         }
                         .zIndex(1)
-                }
-                // Continuous rest outline (Postman-style): one border spans
-                // the spliced bar and retreats behind the half that owns
-                // focus (see SplicedBarRestOutline).
-                .modifier(
-                    SplicedBarRestOutline(
-                        methodMenuExpanded: isMethodMenuVisible,
-                        urlFieldFocused: urlFieldFocused == .url
+                        .modifier(
+                            SplicedBarRestOutline(
+                                methodMenuExpanded: false,
+                                urlFieldFocused: urlFieldFocused == .url,
+                                leadingInset: 0
+                            ))
+                } else {
+                    HStack(spacing: 0) {
+                        MethodPicker(
+                            selection: $draft.httpMethod,
+                            isExpanded: $isMethodMenuVisible,
+                            onToggle: {
+                                urlFieldFocused = nil
+                                isNameFieldFocused = false
+                            }
+                        )
+                        // Hairline divider between the two halves. The container
+                        // supplies the rest outline; each half draws only its own
+                        // focus accent, so focus targets just one side.
+                        Rectangle()
+                            .fill(AppColor.border)
+                            .frame(width: AppLine.hairline, height: AppSize.pickerDividerHeight)
+                            .allowsHitTesting(false)
+                        Color.clear
+                            .frame(height: 30)
+                            .overlay(alignment: .topLeading) {
+                                urlEditor
+                            }
+                            .zIndex(1)
+                    }
+                    // Continuous rest outline (Postman-style): one border spans
+                    // the spliced bar and retreats behind the half that owns
+                    // focus (see SplicedBarRestOutline).
+                    .modifier(
+                        SplicedBarRestOutline(
+                            methodMenuExpanded: isMethodMenuVisible,
+                            urlFieldFocused: urlFieldFocused == .url
+                        )
                     )
-                )
+                }
 
                 // One morphing slot: Send becomes Cancel while a response is
                 // pending. A click meant for Cancel can land on the freshly
                 // swapped-in Send (same position, double-click habit) - the
                 // store drops Sends that immediately follow a cancel, so the
-                // misfire never fires a brand-new request.
-                if store.isSending {
+                // misfire never fires a brand-new request. WebSocket requests
+                // swap the whole slot for Connect/Disconnect instead.
+                if isWebSocket {
+                    webSocketConnectButton
+                } else if store.isSending {
                     Button {
                         urlFieldFocused = nil
                         store.cancelSend()
@@ -1108,10 +1217,61 @@ struct RequestEditorView: View {
         .padding(.vertical, AppSpacing.small)
     }
 
+    /// The URL bar's right slot for WebSocket requests: Connect opens the
+    /// handshake (the primary action, ⌘↩), Disconnect/abort replaces it
+    /// once a connection exists. "Disconnecting…" is shown disabled while
+    /// the close handshake settles. Disconnect deliberately owns NO ⌘↩:
+    /// the shortcut is muscle memory for "send", so once connected it must
+    /// reach the message pane's Send - a second ⌘↩ here would tear the
+    /// session down the user just opened.
+    @ViewBuilder
+    private var webSocketConnectButton: some View {
+        let state = store.webSocketState(for: draft.id)
+        switch state {
+        case .idle, .disconnected:
+            Button {
+                urlFieldFocused = nil
+                store.connectWebSocket(draft)
+            } label: {
+                Text("Connect")
+                    .frame(minHeight: 22)
+            }
+            .buttonStyle(SendButtonStyle())
+            .disabled(isConnectDisabled)
+            .keyboardShortcut(.return, modifiers: [.command])
+            .help("Connect (⌘↩)")
+        case .connecting:
+            // The handshake is in flight: a disabled placeholder, NOT an
+            // active Disconnect - a double-click's second press (or a stray
+            // ⌘↩) would otherwise land on the freshly swapped button and
+            // abort the connection it just opened. Localhost handshakes
+            // finish in milliseconds; a stuck one ends via the timeout.
+            Button {
+            } label: {
+                Text("Connecting…")
+                    .frame(minHeight: 22)
+            }
+            .buttonStyle(SecondaryButtonStyle())
+            .disabled(true)
+            .help("Connecting…")
+        case .connected, .disconnecting:
+            Button {
+                urlFieldFocused = nil
+                store.disconnectWebSocket(draft)
+            } label: {
+                Text(state == .disconnecting ? "Disconnecting…" : "Disconnect")
+                    .frame(minHeight: 22)
+            }
+            .buttonStyle(SecondaryButtonStyle(isDestructive: true))
+            .disabled(state == .disconnecting)
+            .help("Disconnect")
+        }
+    }
+
     private var urlEditor: some View {
         let shape = UnevenRoundedRectangle(
-            topLeadingRadius: 0,
-            bottomLeadingRadius: 0,
+            topLeadingRadius: isWebSocket ? AppRadius.medium : 0,
+            bottomLeadingRadius: isWebSocket ? AppRadius.medium : 0,
             bottomTrailingRadius: AppRadius.medium,
             topTrailingRadius: AppRadius.medium
         )
@@ -1283,29 +1443,33 @@ struct RequestEditorView: View {
                     section = .headers
                 }
             )
-            UnderlineTab(
-                title: RequestSection.body.rawValue,
-                count: bodyRowCount,
-                // Any non-none body type counts as content, filled or not.
-                hasContent: draft.requestBodyType != .none,
-                labelInset: 0,
-                isSelected: section == .body,
-                action: {
-                    urlFieldFocused = nil
-                    section = .body
-                }
-            )
-            UnderlineTab(
-                title: RequestSection.scripts.rawValue,
-                count: nil,
-                hasContent: hasScriptsContent,
-                labelInset: 0,
-                isSelected: section == .scripts,
-                action: {
-                    urlFieldFocused = nil
-                    section = .scripts
-                }
-            )
+            // WebSocket requests have no body and (for now) no scripts:
+            // the message editor lives in the message pane below.
+            if !isWebSocket {
+                UnderlineTab(
+                    title: RequestSection.body.rawValue,
+                    count: bodyRowCount,
+                    // Any non-none body type counts as content, filled or not.
+                    hasContent: draft.requestBodyType != .none,
+                    labelInset: 0,
+                    isSelected: section == .body,
+                    action: {
+                        urlFieldFocused = nil
+                        section = .body
+                    }
+                )
+                UnderlineTab(
+                    title: RequestSection.scripts.rawValue,
+                    count: nil,
+                    hasContent: hasScriptsContent,
+                    labelInset: 0,
+                    isSelected: section == .scripts,
+                    action: {
+                        urlFieldFocused = nil
+                        section = .scripts
+                    }
+                )
+            }
             UnderlineTab(
                 title: RequestSection.settings.rawValue,
                 count: nil,
@@ -1672,19 +1836,24 @@ struct RequestEditorView: View {
     private var settingsPane: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppSpacing.xLarge) {
-                settingsToggleRow(
-                    title: "Automatically follow redirects",
-                    description: "Follow HTTP 3xx responses as redirects.",
-                    isOn: $draft.followRedirects
-                )
-                settingsMaxRedirectsRow
-                settingsToggleRow(
-                    title: "Follow Authorization header",
-                    description:
-                        "Send the Authorization header to redirected hosts, including HTTPS → HTTP"
-                        + " downgrades. Off strips it, so helper credentials never reach a third party.",
-                    isOn: $draft.followAuthorizationHeader
-                )
+                // WebSocket sessions have no redirects and no response-side
+                // Authorization leak; the handshake timeout reuses the
+                // request timeout field.
+                if !isWebSocket {
+                    settingsToggleRow(
+                        title: "Automatically follow redirects",
+                        description: "Follow HTTP 3xx responses as redirects.",
+                        isOn: $draft.followRedirects
+                    )
+                    settingsMaxRedirectsRow
+                    settingsToggleRow(
+                        title: "Follow Authorization header",
+                        description:
+                            "Send the Authorization header to redirected hosts, including HTTPS → HTTP"
+                            + " downgrades. Off strips it, so helper credentials never reach a third party.",
+                        isOn: $draft.followAuthorizationHeader
+                    )
+                }
                 settingsTimeoutRow
                 settingsToggleRow(
                     title: "Use cookie jar",
@@ -1737,12 +1906,15 @@ struct RequestEditorView: View {
     }
 
     /// The timeout row: same left column shape, a right-aligned seconds
-    /// field instead of a switch. Empty uses the app default (30s).
+    /// field instead of a switch. Empty uses the app default (30s). For
+    /// WebSocket requests the same value bounds the handshake instead.
     private var settingsTimeoutRow: some View {
         settingsNumberRow(
-            title: "Timeout (seconds)",
+            title: isWebSocket ? "Handshake timeout (seconds)" : "Timeout (seconds)",
             description:
-                "Maximum idle time between data arrivals before the request gives up. Empty uses the app default (30s).",
+                isWebSocket
+                ? "How long to wait for the server to complete the WebSocket handshake. Empty uses the app default (30s)."
+                : "Maximum idle time between data arrivals before the request gives up. Empty uses the app default (30s).",
             placeholder: "30",
             text: timeoutBinding,
             chrome: SettingsFieldChrome(
@@ -1842,6 +2014,10 @@ private struct SplicedBarRestOutline: ViewModifier {
     let methodMenuExpanded: Bool
     /// URL field focused - keep the method picker's segment.
     let urlFieldFocused: Bool
+    /// Width of the leading half (the method picker). WebSocket requests
+    /// have no leading half: 0 makes the focused mask empty, so the rest
+    /// outline disappears entirely behind the URL field's own accent.
+    var leadingInset: CGFloat = AppSize.methodPickerWidth
 
     private var outline: some View {
         RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
@@ -1854,13 +2030,13 @@ private struct SplicedBarRestOutline: ViewModifier {
                 // Everything right of the divider: the container's right
                 // corners and the top/bottom edges over the URL half.
                 outline.mask {
-                    Rectangle().padding(.leading, AppSize.methodPickerWidth + AppLine.hairline)
+                    Rectangle().padding(.leading, leadingInset + AppLine.hairline)
                 }
             } else if urlFieldFocused {
                 // Everything left of the divider: the container's left corners
                 // and the top/bottom edges over the picker.
                 outline.mask(alignment: .leading) {
-                    Rectangle().frame(width: AppSize.methodPickerWidth)
+                    Rectangle().frame(width: leadingInset)
                 }
             } else {
                 outline

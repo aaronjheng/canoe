@@ -27,6 +27,7 @@ struct KeyboardShortcutsView: View {
             shortcuts: [
                 Shortcut(action: "New Tab", keys: "⌘T"),
                 Shortcut(action: "New Request", keys: "⌘N"),
+                Shortcut(action: "New WebSocket Request", keys: "⌥⌘N"),
                 Shortcut(action: "New Collection", keys: "⇧⌘N"),
                 Shortcut(action: "New Environment", keys: "⌘E"),
                 Shortcut(action: "Duplicate Request", keys: "⌘D"),

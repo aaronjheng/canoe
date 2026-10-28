@@ -29,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // File-menu items that only make sense with an active workspace; their
     // enabled state tracks the store (see refreshWorkspaceMenuItems).
     private var newRequestMenuItem: NSMenuItem?
+    private var newWebSocketMenuItem: NSMenuItem?
     private var newCollectionMenuItem: NSMenuItem?
     private var newEnvironmentMenuItem: NSMenuItem?
     private var saveMenuItem: NSMenuItem?
@@ -133,6 +134,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc func newRequest() {
         guard !isSettingsWindowKey else { return }
         appStore.addRequest()
+    }
+
+    /// ⇧⌘N: New > WebSocket (Postman). Same workspace rule as New Request.
+    @objc func newWebSocket() {
+        guard !isSettingsWindowKey else { return }
+        appStore.addWebSocketRequest()
     }
 
     /// ⌘T: a new tab is a new request in Canoe, exactly what Postman opens
@@ -578,6 +585,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func refreshWorkspaceMenuItems() {
         let enabled = appStore.activeWorkspace != nil
         newRequestMenuItem?.isEnabled = enabled
+        newWebSocketMenuItem?.isEnabled = enabled
         newTabMenuItem?.isEnabled = enabled
         newCollectionMenuItem?.isEnabled = enabled
         newEnvironmentMenuItem?.isEnabled = enabled
@@ -682,6 +690,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             keyEquivalent: "n")
         newRequestMenuItem = newRequestItem
         fileMenu.addItem(newRequestItem)
+        let newWebSocketItem = NSMenuItem(
+            title: "New WebSocket Request",
+            action: #selector(newWebSocket),
+            keyEquivalent: "n")
+        newWebSocketItem.keyEquivalentModifierMask = [.command, .option]
+        newWebSocketMenuItem = newWebSocketItem
+        fileMenu.addItem(newWebSocketItem)
         let newTabItem = NSMenuItem(
             title: "New Tab",
             action: #selector(newTab),

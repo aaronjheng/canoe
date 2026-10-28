@@ -504,9 +504,10 @@ struct ContentView: View {
 }
 
 /// Splits the detail area into a request editor (top) and response viewer
-/// (bottom), like the classic Postman layout. The console is NOT here - it
-/// is docked below this whole pane (see ContentView), so it survives any
-/// change of context.
+/// (bottom), like the classic Postman layout. WebSocket requests swap the
+/// bottom pane for the message workspace (log + message editor). The
+/// console is NOT here - it is docked below this whole pane (see
+/// ContentView), so it survives any change of context.
 struct RequestWorkspaceView: View {
     @Environment(AppStore.self) private var store
     let request: Request
@@ -523,8 +524,13 @@ struct RequestWorkspaceView: View {
                 pendingMethodPick: $pendingMethodPick
             )
             .frame(minHeight: AppSize.requestEditorMinHeight)
-            ResponseViewerView(request: request)
-                .frame(minHeight: AppSize.responseViewerMinHeight)
+            if request.requestType == .websocket {
+                WebSocketWorkspaceView(request: request)
+                    .frame(minHeight: AppSize.responseViewerMinHeight)
+            } else {
+                ResponseViewerView(request: request)
+                    .frame(minHeight: AppSize.responseViewerMinHeight)
+            }
         }
         // VSplitView otherwise collapses to its panes' ideal heights, and a
         // section switch to fixed-height content (e.g. the GET "No Body"

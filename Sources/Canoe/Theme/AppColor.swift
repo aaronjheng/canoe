@@ -205,6 +205,8 @@ enum AppColor {
     static let methodPATCH = dynamic(light: RGB(red: 101, green: 70, blue: 171), dark: RGB(red: 193, green: 169, blue: 238))
     static let methodDELETE = dynamic(light: RGB(red: 159, green: 47, blue: 34), dark: RGB(red: 249, green: 169, blue: 154))
     static let methodOPTIONS = dynamic(light: RGB(red: 185, green: 59, blue: 133), dark: RGB(red: 235, green: 121, blue: 183))
+    /// WebSocket protocol tag (teal) - distinct from every HTTP method hue.
+    static let methodWS = dynamic(light: RGB(red: 26, green: 124, blue: 130), dark: RGB(red: 76, green: 198, blue: 207))
 
     /// Border/hairline tokens for cards, tables, and popups. `border` and
     /// `borderStrong` track Postman's border scale exactly: default grey-20

@@ -243,6 +243,7 @@
 				<string>6DE890FBB28F858FB1B09379</string>
 				<string>1232A794FBF7BE9E017CD850</string>
 				<string>EC31A07460A5811F51326D6E</string>
+				<string>C0A5E30000000000000000E1</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -414,6 +415,76 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>C0A5E30000000000000000E1</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>children</key>
+			<array>
+				<string>C0A5E30000000000000000E2</string>
+			</array>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+			<key>path</key>
+			<string>WebSocket</string>
+		</dict>
+		<key>C0A5E30000000000000000E2</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>children</key>
+			<array>
+				<string>C0A5E1000000000000000E04</string>
+			</array>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+			<key>path</key>
+			<string>Views</string>
+		</dict>
+		<key>C0A5E1000000000000000E01</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>WebSocketMessage.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>C0A5E1000000000000000E02</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>WebSocketClient.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>C0A5E1000000000000000E03</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>AppStore+WebSocket.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>C0A5E1000000000000000E04</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>WebSocketWorkspaceView.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>C0A5E1000000000000000D50</key>
 		<dict>
 			<key>isa</key>
@@ -513,6 +584,7 @@
 				<string>6CDD662ED592481CB9DCDBBB</string>
 				<string>C0A5E1000000000000000D10</string>
 				<string>C0A5E1000000000000000D50</string>
+				<string>C0A5E1000000000000000E02</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -1047,6 +1119,7 @@
 				<string>B2B1149AAB3CDC5D66E60537</string>
 				<string>3E666DA28791FF1C4703D750</string>
 				<string>8D6B6F365B1C2C249387978F</string>
+				<string>C0A5E1000000000000000E01</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -1644,6 +1717,34 @@
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>C0A5E1000000000000000D10</string>
+		</dict>
+		<key>C0A5E2000000000000000E01</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>C0A5E1000000000000000E01</string>
+		</dict>
+		<key>C0A5E2000000000000000E02</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>C0A5E1000000000000000E02</string>
+		</dict>
+		<key>C0A5E2000000000000000E03</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>C0A5E1000000000000000E03</string>
+		</dict>
+		<key>C0A5E2000000000000000E04</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>C0A5E1000000000000000E04</string>
 		</dict>
 		<key>C0A5E2000000000000000D50</key>
 		<dict>
@@ -2600,6 +2701,7 @@
 				<string>3E60A11D752CC0777B78944C</string>
 				<string>BE4F8D01A2C3D4E5F6070808</string>
 				<string>C0DEC00000000000000000B8</string>
+				<string>C0A5E1000000000000000E03</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -2699,6 +2801,10 @@
 				<string>C0A5E2000000000000000D30</string>
 				<string>C0A5E2000000000000000D40</string>
 				<string>C0A5E2000000000000000D60</string>
+				<string>C0A5E2000000000000000E01</string>
+				<string>C0A5E2000000000000000E02</string>
+				<string>C0A5E2000000000000000E03</string>
+				<string>C0A5E2000000000000000E04</string>
 				<string>F1BDCFDFDAA772F69D6EC2DE</string>
 				<string>F8DCA2A85AB92C26CA1D4B16</string>
 				<string>CBDEA718EADA8A9CA7A50165</string>

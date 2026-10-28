@@ -27,7 +27,11 @@ struct CodeSnippetSidebarView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            if store.selectedRequest != nil {
+            if let selected = store.selectedRequest, selected.requestType == .websocket {
+                // WebSocket requests have no HTTP code snippets yet: say so
+                // instead of rendering a misleading cURL/HTTP translation.
+                websocketEmptyState
+            } else if store.selectedRequest != nil {
                 pickerBar
                 codeArea
             } else {
@@ -37,6 +41,17 @@ struct CodeSnippetSidebarView: View {
         // Greedy in both dimensions so the panel fills the inspector pane.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(AppColor.primaryBackground)
+    }
+
+    /// The WebSocket variant of the empty state: the snippet generators
+    /// speak HTTP, so a WS request has nothing correct to show.
+    private var websocketEmptyState: some View {
+        ContentUnavailableView(
+            "No Snippet for WebSocket",
+            systemImage: "dot.radiowaves.left.and.right",
+            description: Text("Code snippets are generated for HTTP requests. Copy a WebSocket message instead from the message pane.")
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Header
