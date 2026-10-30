@@ -62,8 +62,10 @@ struct RequestEditorView: View {
 
     /// The tabs a WebSocket request shows (Postman's WebSocket editor):
     /// Message replaces Body, and Scripts are not wired for WS yet.
+    /// Authorization is not a WebSocket concept - WebSocket requests carry
+    /// no Authorization tab.
     private var webSocketSections: [RequestSection] {
-        [.docs, .message, .params, .headers, .auth, .settings]
+        [.docs, .message, .params, .headers, .settings]
     }
 
     /// The tabs an HTTP request shows (Postman's tab order).
@@ -320,12 +322,21 @@ struct RequestEditorView: View {
 
     /// Whether any request setting differs from its default (Postman's
     /// Settings tab dot): drives the tab's green content marker, so a
-    /// request at defaults reads as unmodified. Defaults: follow redirects,
-    /// no idle timeout, don't follow Authorization to redirected hosts,
-    /// cookie jar on, certificate verification on, unlimited redirects.
+    /// request at defaults reads as unmodified.
+    /// Defaults: follow redirects, no idle timeout, don't follow
+    /// Authorization to redirected hosts, cookie jar on, certificate
+    /// verification on, unlimited redirects.
     /// Keep in sync with the defaults when adding settings rows.
     private var isSettingsChangedFromDefault: Bool {
-        !draft.followRedirects
+        if isWebSocket {
+            return draft.timeoutSeconds > 0
+                || !draft.useCookieJar
+                || !draft.verifySSLCertificate
+                || draft.wsReconnectionAttempts > 0
+                || draft.wsReconnectionInterval > 0
+                || draft.wsMaxMessageSize > 0
+        }
+        return !draft.followRedirects
             || draft.timeoutSeconds > 0
             || draft.followAuthorizationHeader
             || !draft.useCookieJar
@@ -444,6 +455,13 @@ struct RequestEditorView: View {
     @State private var isTimeoutHovered = false
     @State private var isMaxRedirectsFocused = false
     @State private var isMaxRedirectsHovered = false
+    /// WebSocket settings tab numeric fields' focus/hover mirrors.
+    @State private var isReconnectionAttemptsFocused = false
+    @State private var isReconnectionAttemptsHovered = false
+    @State private var isReconnectionIntervalFocused = false
+    @State private var isReconnectionIntervalHovered = false
+    @State private var isMaxMessageSizeFocused = false
+    @State private var isMaxMessageSizeHovered = false
     /// The OAuth token revision the pushed draft's managed token fields
     /// correspond to. A send-path renewal bumps the store's revision; when
     /// that lands in the SAME SwiftUI update as a keystroke, this handler
@@ -1835,6 +1853,44 @@ struct RequestEditorView: View {
                     )
                 }
                 settingsTimeoutRow
+                // WebSocket-only settings (Postman's WebSocket Settings tab):
+                // reconnection attempts, reconnection interval, and max
+                // message size.
+                if isWebSocket {
+                    settingsNumberRow(
+                        title: "Reconnection attempts",
+                        description:
+                            "Maximum number of reconnection attempts before disconnecting"
+                            + " (0 = unlimited).",
+                        placeholder: "0",
+                        text: wsReconnectionAttemptsBinding,
+                        chrome: SettingsFieldChrome(
+                            isFocused: $isReconnectionAttemptsFocused,
+                            isHovered: $isReconnectionAttemptsHovered)
+                    )
+                    settingsNumberRow(
+                        title: "Reconnection interval",
+                        description:
+                            "Time in milliseconds between reconnection attempts"
+                            + " (0 = no automatic reconnection).",
+                        placeholder: "0",
+                        text: wsReconnectionIntervalBinding,
+                        chrome: SettingsFieldChrome(
+                            isFocused: $isReconnectionIntervalFocused,
+                            isHovered: $isReconnectionIntervalHovered)
+                    )
+                    settingsNumberRow(
+                        title: "Maximum message size",
+                        description:
+                            "Maximum allowed message size in megabytes"
+                            + " (0 = unlimited).",
+                        placeholder: "0",
+                        text: wsMaxMessageSizeBinding,
+                        chrome: SettingsFieldChrome(
+                            isFocused: $isMaxMessageSizeFocused,
+                            isHovered: $isMaxMessageSizeHovered)
+                    )
+                }
                 settingsToggleRow(
                     title: "Use cookie jar",
                     description:
@@ -1978,6 +2034,31 @@ struct RequestEditorView: View {
         Binding(
             get: { draft.maxRedirects > 0 ? String(draft.maxRedirects) : "" },
             set: { draft.maxRedirects = max(0, Int($0.trimmingCharacters(in: .whitespaces)) ?? 0) }
+        )
+    }
+
+    /// WebSocket reconnection attempts: whole count, empty while 0.
+    private var wsReconnectionAttemptsBinding: Binding<String> {
+        Binding(
+            get: { draft.wsReconnectionAttempts > 0 ? String(draft.wsReconnectionAttempts) : "" },
+            set: { draft.wsReconnectionAttempts = max(0, Int($0.trimmingCharacters(in: .whitespaces)) ?? 0) }
+        )
+    }
+
+    /// WebSocket reconnection interval (milliseconds): whole count, empty
+    /// while 0.
+    private var wsReconnectionIntervalBinding: Binding<String> {
+        Binding(
+            get: { draft.wsReconnectionInterval > 0 ? String(draft.wsReconnectionInterval) : "" },
+            set: { draft.wsReconnectionInterval = max(0, Int($0.trimmingCharacters(in: .whitespaces)) ?? 0) }
+        )
+    }
+
+    /// WebSocket maximum message size (MB): whole count, empty while 0.
+    private var wsMaxMessageSizeBinding: Binding<String> {
+        Binding(
+            get: { draft.wsMaxMessageSize > 0 ? String(draft.wsMaxMessageSize) : "" },
+            set: { draft.wsMaxMessageSize = max(0, Int($0.trimmingCharacters(in: .whitespaces)) ?? 0) }
         )
     }
 }

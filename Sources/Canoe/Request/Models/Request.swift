@@ -95,6 +95,15 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
     /// Follow at most this many redirects; the last 3xx response is
     /// returned as-is once the limit is hit. 0 = unlimited.
     var maxRedirects: Int = 0
+    /// WebSocket requests: maximum number of reconnection attempts before
+    /// disconnecting (0 = no automatic reconnection).
+    var wsReconnectionAttempts: Int = 0
+    /// WebSocket requests: time in milliseconds between reconnection
+    /// attempts (0 = no automatic reconnection).
+    var wsReconnectionInterval: Int = 0
+    /// WebSocket requests: maximum allowed message size in megabytes
+    /// (0 = unlimited).
+    var wsMaxMessageSize: Int = 0
     var orderIndex: Int = 0
     var folderID: UUID?
     /// Path variables (Postman's colon syntax): rows for the path segments
@@ -147,6 +156,7 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
         case wsSavedMessages
         case followRedirects, timeoutSeconds, maxRedirects, followAuthorizationHeader
         case useCookieJar, verifySSLCertificate
+        case wsReconnectionAttempts, wsReconnectionInterval, wsMaxMessageSize
         case orderIndex, folderID, createdAt, updatedAt, headers, params
         case pathVariables
         case disabledGeneratedHeaders
@@ -213,6 +223,12 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
         verifySSLCertificate =
             try container.decodeIfPresent(Bool.self, forKey: .verifySSLCertificate) ?? true
         maxRedirects = try container.decodeIfPresent(Int.self, forKey: .maxRedirects) ?? 0
+        wsReconnectionAttempts =
+            try container.decodeIfPresent(Int.self, forKey: .wsReconnectionAttempts) ?? 0
+        wsReconnectionInterval =
+            try container.decodeIfPresent(Int.self, forKey: .wsReconnectionInterval) ?? 0
+        wsMaxMessageSize =
+            try container.decodeIfPresent(Int.self, forKey: .wsMaxMessageSize) ?? 0
         orderIndex = try container.decodeIfPresent(Int.self, forKey: .orderIndex) ?? 0
         folderID = try container.decodeIfPresent(UUID.self, forKey: .folderID)
         // Dual-format tolerance: `pathVariables` was briefly written as a
@@ -314,6 +330,9 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
             && useCookieJar == other.useCookieJar
             && verifySSLCertificate == other.verifySSLCertificate
             && maxRedirects == other.maxRedirects
+            && wsReconnectionAttempts == other.wsReconnectionAttempts
+            && wsReconnectionInterval == other.wsReconnectionInterval
+            && wsMaxMessageSize == other.wsMaxMessageSize
             && orderIndex == other.orderIndex
             && folderID == other.folderID
             && pathVariables == other.pathVariables
