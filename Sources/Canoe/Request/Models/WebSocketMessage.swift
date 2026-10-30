@@ -102,6 +102,41 @@ enum WebSocketMessageFormat: String, Codable, CaseIterable, Identifiable, Sendab
 struct WebSocketMessageDraft: Equatable, Sendable {
     var text: String = ""
     var format: WebSocketMessageFormat = .text
+    /// The saved message the editor is bound to (Postman binds the editor
+    /// to the selected saved message: Save updates that entry instead of
+    /// appending a duplicate). Session state, like the rest of the draft.
+    var linkedSavedID: UUID?
+}
+
+/// Standard hexdump rendering (`hexdump -C` layout) for the message detail's
+/// Show Hexdump mode: 16 bytes per row, offset column, hex pairs, ASCII
+/// gutter.
+enum WebSocketHexDump {
+    static func string(for data: Data, byteLimit: Int = 4_096) -> String {
+        let bytes = data.prefix(byteLimit)
+        var lines: [String] = []
+        var rowStart = bytes.startIndex
+        while rowStart < bytes.endIndex {
+            let rowEnd =
+                bytes.index(rowStart, offsetBy: 16, limitedBy: bytes.endIndex)
+                ?? bytes.endIndex
+            var hex = ""
+            var ascii = ""
+            for (offset, byte) in bytes[rowStart..<rowEnd].enumerated() {
+                if offset == 8 { hex += " " }
+                hex += String(format: "%02x ", byte)
+                ascii += (0x20...0x7E).contains(byte) ? String(UnicodeScalar(byte)) : "."
+            }
+            let byteOffset = bytes.distance(from: bytes.startIndex, to: rowStart)
+            let hexColumnWidth = 16 * 3 + 1
+            lines.append(String(format: "%08x  %-\(hexColumnWidth)s |\(ascii)|", byteOffset, hex))
+            rowStart = rowEnd
+        }
+        if data.count > byteLimit {
+            lines.append("… \(data.count - byteLimit) more bytes")
+        }
+        return lines.joined(separator: "\n")
+    }
 }
 
 // MARK: - Saved message

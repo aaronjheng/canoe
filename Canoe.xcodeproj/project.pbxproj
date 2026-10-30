@@ -435,11 +435,30 @@
 			<key>children</key>
 			<array>
 				<string>C0A5E1000000000000000E04</string>
+				<string>C0A5E1000000000000000E05</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 			<key>path</key>
 			<string>Views</string>
+		</dict>
+		<key>C0A5E1000000000000000E05</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>WebSocketMessageEditorView.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>C0A5E2000000000000000E05</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>C0A5E1000000000000000E05</string>
 		</dict>
 		<key>C0A5E1000000000000000E01</key>
 		<dict>
@@ -2805,6 +2824,7 @@
 				<string>C0A5E2000000000000000E02</string>
 				<string>C0A5E2000000000000000E03</string>
 				<string>C0A5E2000000000000000E04</string>
+				<string>C0A5E2000000000000000E05</string>
 				<string>F1BDCFDFDAA772F69D6EC2DE</string>
 				<string>F8DCA2A85AB92C26CA1D4B16</string>
 				<string>CBDEA718EADA8A9CA7A50165</string>

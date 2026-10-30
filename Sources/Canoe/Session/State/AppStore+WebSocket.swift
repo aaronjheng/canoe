@@ -391,14 +391,68 @@ extension AppStore {
     /// Saves the composed message with the request (Postman's Save in the
     /// message editor): appends a named entry and bumps the revision so
     /// open editors adopt the new list.
+    /// Saves the composed message with the request (Postman's Save): when
+    /// the editor is bound to a saved message this updates that entry, so
+    /// repeated saves never pile up duplicates; otherwise it appends a new
+    /// one and binds the editor to it.
     func saveWebSocketMessage(_ requestID: UUID, text: String, format: WebSocketMessageFormat) {
-        applyWebSocketSavedMessagesEdit(requestID) { list in
-            let entry = WebSocketSavedMessage(
-                name: "Message \(list.count + 1)",
-                format: format.rawValue,
-                text: text)
-            list.append(entry)
+        if let linkedID = webSocketDraft(for: requestID).linkedSavedID {
+            var updatedInPlace = false
+            applyWebSocketSavedMessagesEdit(requestID) { list in
+                guard let index = list.firstIndex(where: { $0.id == linkedID }) else { return }
+                list[index].text = text
+                list[index].format = format.rawValue
+                updatedInPlace = true
+            }
+            if updatedInPlace { return }
+            // The bound entry vanished (deleted from the pane): fall through
+            // and append a fresh one.
         }
+        let count = request(withID: requestID)?.wsSavedMessages.count ?? 0
+        let createdID = appendWebSocketSavedMessage(
+            requestID, text: text, format: format, name: "Message \(count + 1)")
+        selectWebSocketSavedMessage(requestID, id: createdID)
+    }
+
+    /// Adds a blank saved message, loads it into the editor, and binds the
+    /// draft to it (Postman's "Add message").
+    func addWebSocketSavedMessage(_ requestID: UUID) {
+        let count = request(withID: requestID)?.wsSavedMessages.count ?? 0
+        let createdID = appendWebSocketSavedMessage(
+            requestID, text: "", format: .text, name: "Message \(count + 1)")
+        selectWebSocketSavedMessage(requestID, id: createdID)
+    }
+
+    /// Loads a saved message into the editor and binds the draft to it, so
+    /// Save updates that entry. `nil` unbinds without touching the text.
+    func selectWebSocketSavedMessage(_ requestID: UUID, id: UUID?) {
+        var draft = webSocketDraft(for: requestID)
+        let message = id.flatMap { wanted in
+            request(withID: requestID)?.wsSavedMessages.first { $0.id == wanted }
+        }
+        if let id, let message {
+            draft.text = message.text
+            draft.format = message.formatKind
+            draft.linkedSavedID = id
+        } else {
+            draft.linkedSavedID = nil
+        }
+        webSocketDrafts[requestID] = draft
+    }
+
+    /// Appends one saved message and returns its id (nil when the request
+    /// vanished mid-edit).
+    @discardableResult
+    private func appendWebSocketSavedMessage(
+        _ requestID: UUID, text: String, format: WebSocketMessageFormat, name: String
+    ) -> UUID? {
+        var createdID: UUID?
+        applyWebSocketSavedMessagesEdit(requestID) { list in
+            let entry = WebSocketSavedMessage(name: name, format: format.rawValue, text: text)
+            list.append(entry)
+            createdID = entry.id
+        }
+        return createdID
     }
 
     /// Saves a received/sent frame from the message log into the saved
@@ -423,6 +477,10 @@ extension AppStore {
     func deleteWebSocketSavedMessage(_ requestID: UUID, id: UUID) {
         applyWebSocketSavedMessagesEdit(requestID) { list in
             list.removeAll { $0.id == id }
+        }
+        // An editor bound to the deleted entry is unbound (its text stays).
+        if webSocketDraft(for: requestID).linkedSavedID == id {
+            selectWebSocketSavedMessage(requestID, id: nil)
         }
     }
 

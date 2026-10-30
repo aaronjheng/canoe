@@ -1,20 +1,45 @@
 import AppKit
 import SwiftUI
 
-/// The bottom pane of a WebSocket request tab (Postman's WebSocket
-/// workspace): the message log on top (sent/received frames plus
-/// connection system lines) and the message editor below (format picker,
-/// Beautify, saved messages, Ping, Send). The connection itself is driven
-/// from the editor's URL bar above.
+/// The pane under a WebSocket request editor: the message log (Postman's
+/// Response pane for WebSocket requests) - every frame sent and received
+/// plus the connection's own system lines (connected, closed, error), with
+/// search, direction filter, a time-difference readout, and per-message
+/// copy / save / inspect. The message EDITOR is the request editor's Message
+/// tab (`WebSocketMessageEditorView`).
 struct WebSocketWorkspaceView: View {
     @Environment(AppStore.self) private var store
     let request: Request
 
     /// The request's freshest definition (the editor's pending edits
-    /// included) - the send path resolves variables against it.
+    /// included).
     private var liveRequest: Request {
         store.request(withID: request.id) ?? request
     }
+
+    /// The direction filter (Postman's All Messages control).
+    enum MessageFilter: String, CaseIterable, Identifiable {
+        case all = "All Messages"
+        case sent = "Sent"
+        case received = "Received"
+
+        var id: String { rawValue }
+    }
+
+    @State private var search = ""
+    @State private var filter: MessageFilter = .all
+    /// Rows expanded to their full payload (one at a time).
+    @State private var expandedEntryID: UUID?
+    /// Rows checked for the time-difference readout.
+    @State private var diffSelection: Set<UUID> = []
+    /// The row under the pointer: reveals its checkbox and actions.
+    @State private var hoveredEntryID: UUID?
+    /// Per-row display-format override for the expanded payload.
+    @State private var detailFormats: [UUID: WebSocketMessageFormat] = [:]
+    @State private var detailWrapsLines = true
+    @State private var detailShowsHexdump = false
+    /// Whether the list is scrolled to the bottom, so new traffic follows.
+    @State private var isAtBottom = true
 
     private var connectionState: WebSocketConnectionState {
         store.webSocketState(for: request.id)
@@ -24,112 +49,106 @@ struct WebSocketWorkspaceView: View {
         store.webSocketLog(for: request.id)
     }
 
-    private var draft: WebSocketMessageDraft {
-        store.webSocketDraft(for: request.id)
+    /// The rows on screen: direction filter first, then the search terms
+    /// against the preview and the payload text.
+    private var visibleEntries: [WebSocketLogEntry] {
+        var entries = log
+        switch filter {
+        case .all: break
+        case .sent: entries = entries.filter { $0.direction == .sent }
+        case .received: entries = entries.filter { $0.direction == .received }
+        }
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return entries }
+        return entries.filter { entry in
+            entry.preview.localizedCaseInsensitiveContains(query)
+                || entry.text?.localizedCaseInsensitiveContains(query) == true
+        }
     }
-
-    /// Merged variable scope for `{{placeholder}}` highlighting.
-    private var resolvedVariables: [String: String] {
-        store.variablesForRequest(liveRequest)
-    }
-
-    /// Completion candidates with scope metadata for `{{` auto-completion.
-    private var requestSuggestions: [VariableSuggestion] {
-        VariableSuggestion.suggestions(from: store.variableScopesForRequest(liveRequest))
-    }
-
-    // MARK: - Local state
-
-    /// Which log row is expanded (nil = none). One at a time, like the
-    /// response viewer's single focus.
-    @State private var expandedEntryID: UUID?
-    /// The saved-messages pane's open state.
-    @State private var isSavedPanelOpen = false
-    /// The message formatter's diagnostic, shown in the editor's bottom
-    /// capsule for a beat (same language as the body editor's).
-    @State private var invalidMessageNote: String?
-    /// Whether the log's scroll view sits near the bottom: new messages
-    /// auto-scroll only when the user has not scrolled up to read.
-    @State private var isLogAtBottom = true
 
     var body: some View {
-        VSplitView {
-            messagesPane
-                .frame(minHeight: AppSize.responseViewerMinHeight)
-            messageEditorPane
-                .frame(minHeight: 160, idealHeight: 220)
-        }
-        // A tab switch reuses this view for the next request: drop the
-        // per-request local state so nothing leaks across requests.
-        .onChange(of: request.id) { _, _ in
-            expandedEntryID = nil
-            isSavedPanelOpen = false
-            invalidMessageNote = nil
-            isLogAtBottom = true
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    // MARK: - Message log
-
-    private var messagesPane: some View {
         VStack(spacing: 0) {
-            messagesToolbar
+            toolbar
             Divider()
-            if log.isEmpty {
-                emptyLog
-            } else {
-                logList
-            }
+            content
         }
         .background(AppColor.controlBackground)
+        .onChange(of: request.id) { _, _ in
+            search = ""
+            filter = .all
+            expandedEntryID = nil
+            diffSelection = []
+            hoveredEntryID = nil
+            detailFormats = [:]
+            detailShowsHexdump = false
+            detailWrapsLines = true
+        }
     }
 
-    /// Connection status badge (Postman's connection details badge) plus
-    /// the pane's Clear action.
-    private var messagesToolbar: some View {
+    // MARK: - Toolbar
+
+    private var toolbar: some View {
         HStack(spacing: AppSpacing.small) {
             connectionBadge
+            diffReadout
             Spacer(minLength: 0)
             if !log.isEmpty {
-                Text("\(log.count) \(log.count == 1 ? "message" : "messages")")
+                Text(countLabel)
                     .font(AppFont.small)
                     .foregroundStyle(AppColor.tertiaryText)
                     .monospacedDigit()
-                Button {
-                    store.clearWebSocketMessages(request.id)
-                    expandedEntryID = nil
-                } label: {
-                    Image(systemName: "trash")
-                        .font(AppFont.small)
-                        .foregroundStyle(AppColor.textSecondary)
-                }
-                .buttonStyle(.plain)
-                .clickCursor()
-                .help("Clear Messages")
             }
+            FilterField(text: $search, placeholder: "Search in messages")
+                .frame(width: 180)
+            DropdownFieldButton(
+                id: "ws.filter.\(request.id)",
+                label: filter.rawValue,
+                width: 128
+            ) {
+                MessageFilter.allCases.map { option in
+                    DropdownRow.action(option.rawValue, isSelected: option == filter) {
+                        filter = option
+                    }
+                }
+            }
+            .help("Filter by direction")
+            Button {
+                store.clearWebSocketMessages(request.id)
+                expandedEntryID = nil
+                diffSelection = []
+            } label: {
+                Image(systemName: "trash")
+                    .font(AppFont.small)
+                    .foregroundStyle(AppColor.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .clickCursor()
+            .disabled(log.isEmpty)
+            .help("Clear Messages")
         }
         .padding(.horizontal, AppSpacing.medium)
         .padding(.vertical, AppSpacing.small)
     }
 
-    @ViewBuilder
+    private var countLabel: String {
+        visibleEntries.count == log.count
+            ? "\(log.count) \(log.count == 1 ? "message" : "messages")"
+            : "\(visibleEntries.count) of \(log.count)"
+    }
+
+    /// Connection status badge (Postman's connection-details badge): the
+    /// dot plus the state, with the endpoint or close reason on hover.
     private var connectionBadge: some View {
         let (color, label): (Color, String) = {
             switch connectionState {
-            case .idle:
-                (AppColor.tertiaryText, "Disconnected")
-            case .connecting:
-                (AppColor.warning, "Connecting…")
-            case .connected:
-                (AppColor.success, "Connected")
-            case .disconnecting:
-                (AppColor.warning, "Disconnecting…")
-            case .disconnected:
-                (AppColor.tertiaryText, "Disconnected")
+            case .idle: (AppColor.tertiaryText, "Disconnected")
+            case .connecting: (AppColor.warning, "Connecting…")
+            case .connected: (AppColor.success, "Connected")
+            case .disconnecting: (AppColor.warning, "Disconnecting…")
+            case .disconnected: (AppColor.tertiaryText, "Disconnected")
             }
         }()
-        HStack(spacing: AppSpacing.xSmall) {
+        return HStack(spacing: AppSpacing.xSmall) {
             Circle()
                 .fill(color)
                 .frame(width: AppSize.contentDot, height: AppSize.contentDot)
@@ -139,15 +158,10 @@ struct WebSocketWorkspaceView: View {
         }
         .padding(.horizontal, AppSpacing.small)
         .padding(.vertical, AppSpacing.xxSmall)
-        .background(
-            Capsule(style: .continuous)
-                .fill(AppColor.subtleBackground)
-        )
+        .background(Capsule(style: .continuous).fill(AppColor.subtleBackground))
         .help(connectionDetails)
     }
 
-    /// The badge's hover text: where the session stands, with the close
-    /// reason (or error) spelled out once the connection ended.
     private var connectionDetails: String {
         switch connectionState {
         case .idle:
@@ -156,9 +170,7 @@ struct WebSocketWorkspaceView: View {
             return "Opening \(liveRequest.urlString)…"
         case .connected(_, let subprotocol):
             var details = "Connected to \(liveRequest.urlString)"
-            if let subprotocol, !subprotocol.isEmpty {
-                details += " · subprotocol: \(subprotocol)"
-            }
+            if let subprotocol, !subprotocol.isEmpty { details += " · \(subprotocol)" }
             return details
         case .disconnecting:
             return "Closing the connection…"
@@ -167,33 +179,83 @@ struct WebSocketWorkspaceView: View {
         }
     }
 
-    private var emptyLog: some View {
+    /// Checked rows' time difference (Postman's compare): one row asks for a
+    /// second, two or more show the span between the earliest and latest.
+    @ViewBuilder
+    private var diffReadout: some View {
+        let times = log.filter { diffSelection.contains($0.id) }.map(\.date).sorted()
+        if !diffSelection.isEmpty {
+            HStack(spacing: AppSpacing.xSmall) {
+                Image(systemName: "timelapse").font(AppFont.small)
+                if times.count == 1 {
+                    Text("Check another message to see the gap").font(AppFont.small)
+                } else if let first = times.first, let last = times.last {
+                    Text("Δ \(last.timeIntervalSince(first).formattedDuration)")
+                        .font(AppFont.small.weight(.medium))
+                        .monospacedDigit()
+                }
+                Button {
+                    diffSelection = []
+                } label: {
+                    Image(systemName: "xmark").font(AppFont.small)
+                }
+                .buttonStyle(.plain)
+                .clickCursor()
+                .help("Deselect")
+            }
+            .foregroundStyle(AppColor.textPrimary)
+            .padding(.horizontal, AppSpacing.small)
+            .padding(.vertical, AppSpacing.xxSmall)
+            .background(Capsule(style: .continuous).fill(AppColor.subtleBackground))
+        }
+    }
+
+    // MARK: - List
+
+    @ViewBuilder
+    private var content: some View {
+        if log.isEmpty {
+            emptyState
+        } else if visibleEntries.isEmpty {
+            ContentUnavailableView(
+                "No Matching Messages",
+                systemImage: "magnifyingglass",
+                description: Text("Try different search terms or clear the direction filter."))
+        } else {
+            messageList
+        }
+    }
+
+    private var emptyState: some View {
         VStack(spacing: AppSpacing.small) {
             Image(systemName: "arrow.left.arrow.right.circle")
                 .font(.system(size: 28, weight: .light))
                 .foregroundStyle(AppColor.tertiaryText)
             Text("No Messages Yet")
                 .font(AppFont.featureHeadline)
-            Text("Connect to the server, then compose and send a message below. Everything sent and received shows up here.")
-                .font(AppFont.emptyStateBody)
-                .foregroundStyle(AppColor.textSecondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 380)
+            Text(
+                "Connect to the server, then compose a message in the Message tab. "
+                    + "Everything sent and received shows up here."
+            )
+            .font(AppFont.emptyStateBody)
+            .foregroundStyle(AppColor.textSecondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: 380)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var logList: some View {
+    private var messageList: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(log) { entry in
-                        logRow(entry)
+                    ForEach(visibleEntries) { entry in
+                        row(entry)
                         Divider().padding(.leading, AppSpacing.medium)
                     }
                     Color.clear
                         .frame(height: 1)
-                        .id("ws-log-bottom-\(request.id)")
+                        .id(bottomID)
                 }
                 .padding(.bottom, AppSpacing.small)
             }
@@ -201,45 +263,94 @@ struct WebSocketWorkspaceView: View {
                 let bottom = geometry.contentOffset.y + geometry.containerSize.height
                 return bottom >= geometry.contentSize.height - 48
             } action: { _, atBottom in
-                isLogAtBottom = atBottom
+                isAtBottom = atBottom
             }
             .onChange(of: log.count) { _, _ in
                 // Follow the traffic only while the reader is already at the
                 // bottom; scrolling up to inspect keeps the view put.
-                guard isLogAtBottom else { return }
-                withAnimation(AppMotion.quick) {
-                    proxy.scrollTo("ws-log-bottom-\(request.id)", anchor: .bottom)
-                }
+                guard isAtBottom else { return }
+                withAnimation(AppMotion.quick) { proxy.scrollTo(bottomID, anchor: .bottom) }
             }
         }
     }
 
-    @ViewBuilder
-    private func logRow(_ entry: WebSocketLogEntry) -> some View {
+    private var bottomID: String { "ws-bottom-\(request.id)" }
+
+    private func row(_ entry: WebSocketLogEntry) -> some View {
         let isExpanded = expandedEntryID == entry.id
-        VStack(alignment: .leading, spacing: 0) {
-            if entry.isExpandable {
+        let isChecked = diffSelection.contains(entry.id)
+        let isHovered = hoveredEntryID == entry.id
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: AppSpacing.xSmall) {
+                // Checkbox for the time-difference readout (Postman shows it
+                // on hover, or while checked).
                 Button {
-                    withAnimation(AppMotion.quick) {
-                        expandedEntryID = isExpanded ? nil : entry.id
-                    }
+                    if isChecked { diffSelection.remove(entry.id) } else { diffSelection.insert(entry.id) }
                 } label: {
-                    logRowContent(entry, isExpanded: isExpanded)
+                    Image(systemName: isChecked ? "checkmark.square.fill" : "square")
+                        .font(AppFont.small)
+                        .foregroundStyle(isChecked ? AppColor.accent : AppColor.tertiaryText)
                 }
                 .buttonStyle(.plain)
                 .clickCursor()
-            } else {
-                logRowContent(entry, isExpanded: isExpanded)
+                .opacity(isChecked || isHovered ? 1 : 0)
+                .help("Compare time difference")
+
+                if entry.isExpandable {
+                    Button {
+                        withAnimation(AppMotion.quick) {
+                            if isExpanded {
+                                expandedEntryID = nil
+                            } else {
+                                expandedEntryID = entry.id
+                                detailShowsHexdump = false
+                                detailWrapsLines = true
+                            }
+                        }
+                    } label: {
+                        summary(entry, isExpanded: isExpanded)
+                    }
+                    .buttonStyle(.plain)
+                    .clickCursor()
+                } else {
+                    summary(entry, isExpanded: isExpanded)
+                }
+
+                if isHovered || isExpanded {
+                    CopyMessageButton(text: entry.copyText)
+                    Button {
+                        store.saveWebSocketLogEntry(request.id, entry: entry)
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(AppFont.small)
+                            .foregroundStyle(AppColor.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                    .clickCursor()
+                    .help("Save with the request")
+                }
             }
+            .padding(.horizontal, AppSpacing.medium)
+            .padding(.vertical, AppSpacing.xSmall)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                if hovering {
+                    hoveredEntryID = entry.id
+                } else if hoveredEntryID == entry.id {
+                    hoveredEntryID = nil
+                }
+            }
+
             if isExpanded, entry.isExpandable {
-                logRowDetail(entry)
+                detail(entry)
             }
         }
     }
 
-    /// One collapsed log row: direction glyph, payload preview (or the
-    /// system line), time on the right, byte size for frames.
-    private func logRowContent(_ entry: WebSocketLogEntry, isExpanded: Bool) -> some View {
+    /// The collapsed row: direction glyph, payload preview (or the system
+    /// line), byte size, local timestamp. Hovering shows size, MIME type and
+    /// time (Postman's info popover).
+    private func summary(_ entry: WebSocketLogEntry, isExpanded: Bool) -> some View {
         HStack(spacing: AppSpacing.small) {
             Image(systemName: entry.systemImage)
                 .font(AppFont.small)
@@ -275,366 +386,120 @@ struct WebSocketWorkspaceView: View {
                 .rotationEffect(.degrees(isExpanded ? 90 : 0))
                 .opacity(entry.isExpandable ? 1 : 0)
         }
-        .padding(.horizontal, AppSpacing.medium)
-        .padding(.vertical, AppSpacing.xSmall)
-        .contentShape(Rectangle())
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .help(entry.infoTooltip)
     }
 
-    /// The expanded frame: full payload with the sniffed syntax colors, a
-    /// copy action, and (for frames) a save-into-saved-messages action.
-    private func logRowDetail(_ entry: WebSocketLogEntry) -> some View {
-        let detail = entry.detailText
+    /// The expanded payload (Postman's expanded message): display format,
+    /// Wrap Line, and Show Hexdump / Show Message.
+    private func detail(_ entry: WebSocketLogEntry) -> some View {
+        let showsHexdump = detailShowsHexdump
+        let scrollsHorizontally = showsHexdump || !detailWrapsLines
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: AppSpacing.small) {
                 Text(entry.detailLabel)
                     .font(AppFont.small)
                     .foregroundStyle(AppColor.tertiaryText)
                 Spacer(minLength: 0)
-                CopyActionButton(text: entry.copyText)
+                if entry.kind == .text {
+                    DropdownFieldButton(
+                        id: "ws.detail.\(entry.id)",
+                        label: detailFormats[entry.id]?.label ?? "Auto",
+                        width: 96
+                    ) {
+                        detailFormatRows(for: entry)
+                    }
+                    .help("Display format")
+                }
                 Button {
-                    store.saveWebSocketLogEntry(request.id, entry: entry)
+                    detailWrapsLines.toggle()
                 } label: {
-                    Image(systemName: "square.and.arrow.down")
+                    Image(systemName: "arrow.into.view")
+                        .font(AppFont.small)
+                        .foregroundStyle(detailWrapsLines ? AppColor.accent : AppColor.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .clickCursor()
+                .help(detailWrapsLines ? "Wrap Line" : "Unwrap Line")
+                Button {
+                    detailShowsHexdump.toggle()
+                } label: {
+                    Text(showsHexdump ? "Show Message" : "Show Hexdump")
                         .font(AppFont.small)
                         .foregroundStyle(AppColor.textSecondary)
                 }
                 .buttonStyle(.plain)
                 .clickCursor()
-                .help("Save message with the request")
             }
             .padding(.horizontal, AppSpacing.medium)
             .padding(.bottom, AppSpacing.xSmall)
-            ScrollView {
-                SyntaxHighlight.highlightedText(detail, syntax: entry.detailSyntax)
-                    .font(AppFont.monoSubheadline)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, AppSpacing.medium)
-                    .padding(.bottom, AppSpacing.small)
-                    .textSelection(.enabled)
+
+            ScrollView(showsIndicators: false) {
+                Group {
+                    if showsHexdump, let data = entry.wireData {
+                        Text(WebSocketHexDump.string(for: data))
+                            .font(AppFont.monoSubheadline)
+                    } else {
+                        SyntaxHighlight.highlightedText(detailText(entry), syntax: detailSyntax(entry))
+                            .font(AppFont.monoSubheadline)
+                    }
+                }
+                .textSelection(.enabled)
+                .fixedSize(horizontal: scrollsHorizontally, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, AppSpacing.medium)
+                .padding(.bottom, AppSpacing.small)
             }
             .frame(maxHeight: 260)
             .background(AppColor.subtleBackground)
         }
-        .padding(.leading, AppSpacing.medium + 16 + AppSpacing.small)
+        .padding(.leading, AppSpacing.medium + 16 + AppSpacing.xSmall + 16 + AppSpacing.xSmall)
         .padding(.trailing, AppSpacing.medium)
         .padding(.bottom, AppSpacing.small)
     }
 
-    // MARK: - Message editor
-
-    private var messageEditorPane: some View {
-        VStack(spacing: 0) {
-            editorToolbar
-            Divider()
-            editorBody
-            if let invalidMessageNote {
-                editorNote(invalidMessageNote)
+    private func detailFormatRows(for entry: WebSocketLogEntry) -> [DropdownRow] {
+        var rows: [DropdownRow] = [
+            .action("Auto", isSelected: detailFormats[entry.id] == nil) {
+                detailFormats[entry.id] = nil
             }
-        }
-        .background(AppColor.controlBackground)
-    }
-
-    private var editorToolbar: some View {
-        HStack(spacing: AppSpacing.small) {
-            DropdownFieldButton(
-                id: "ws.messageFormat.\(request.id)",
-                label: draft.format.isBinary ? "Binary · \(draft.format.label)" : draft.format.label,
-                width: 148
-            ) {
-                formatRows
+        ]
+        rows += [WebSocketMessageFormat.text, .json, .xml, .html].map { format in
+            .action(format.label, isSelected: detailFormats[entry.id] == format) {
+                detailFormats[entry.id] = format
             }
-            .help("Message format (sets the wire encoding)")
-
-            if let beautify = beautifyHandler {
-                Button {
-                    doFormat(beautify)
-                } label: {
-                    Image(systemName: "wand.and.stars")
-                        .font(AppFont.small)
-                        .foregroundStyle(AppColor.textSecondary)
-                }
-                .buttonStyle(.plain)
-                .clickCursor()
-                .help("Beautify (⌘⇧F)")
-            }
-
-            Button {
-                store.pingWebSocket(liveRequest)
-            } label: {
-                Image(systemName: "waveform")
-                    .font(AppFont.small)
-                    .foregroundStyle(AppColor.textSecondary)
-            }
-            .buttonStyle(.plain)
-            .clickCursor()
-            .disabled(!connectionState.isConnected)
-            .help("Ping")
-
-            Button {
-                isSavedPanelOpen.toggle()
-            } label: {
-                HStack(spacing: AppSpacing.xSmall) {
-                    Image(systemName: "tray.full")
-                        .font(AppFont.small)
-                    Text("Saved (\(liveRequest.wsSavedMessages.count))")
-                        .font(AppFont.small)
-                }
-                .foregroundStyle(isSavedPanelOpen ? AppColor.textPrimary : AppColor.textSecondary)
-            }
-            .buttonStyle(.plain)
-            .clickCursor()
-            .disabled(liveRequest.wsSavedMessages.isEmpty && draft.text.isEmpty)
-            .help("Saved messages")
-            .popover(isPresented: $isSavedPanelOpen, arrowEdge: .bottom) {
-                savedMessagesPanel
-            }
-
-            Spacer(minLength: 0)
-
-            // ⌘↩ is registered only while connected: disconnected it maps to
-            // the URL bar's Connect, connected it means "send the message" -
-            // one enabled owner of the shortcut at any moment.
-            if connectionState.isConnected {
-                sendButton.keyboardShortcut(.return, modifiers: [.command])
-            } else {
-                sendButton
-            }
-        }
-        .padding(.horizontal, AppSpacing.medium)
-        .padding(.vertical, AppSpacing.small)
-        .overlay(alignment: .top) {
-            if isSavedPanelOpen {
-                savedMessagesPanel
-            }
-        }
-    }
-
-    private var formatRows: [DropdownRow] {
-        var rows: [DropdownRow] = []
-        for format in WebSocketMessageFormat.allCases where !format.isBinary {
-            rows.append(
-                .action(format.label, isSelected: format == draft.format) {
-                    store.updateWebSocketMessageDraft(request.id, format: format)
-                })
-        }
-        rows.append(.divider())
-        for format in WebSocketMessageFormat.allCases where format.isBinary {
-            rows.append(
-                .action(format.label, isSelected: format == draft.format) {
-                    store.updateWebSocketMessageDraft(request.id, format: format)
-                })
         }
         return rows
     }
 
-    private var editorBody: some View {
-        // Explicit specialization: no programmatic focus wiring.
-        VariableHighlightEditor<Bool>(
-            text: messageTextBinding,
-            variables: resolvedVariables,
-            suggestions: requestSuggestions,
-            isSingleLine: false,
-            fillsContainer: true,
-            font: .monoSubheadline,
-            placeholder: "Compose a message… ({{variables}} resolve at send time)",
-            placeholderLeadingPadding: AppSpacing.compact,
-            syntax: draft.format.syntax,
-            formatHandler: beautifyHandler,
-            formatActionName: "Beautify Message",
-            onFormatError: showInvalidMessageNote
-        )
-        .padding(.horizontal, AppSpacing.compact)
-        .padding(.top, AppSpacing.xSmall)
-        .padding(.bottom, AppSpacing.small)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    /// Whether Send is live: a connection on the wire and something
-    /// composed to send.
-    private var isSendEnabled: Bool {
-        connectionState.isConnected && !draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    /// The message Send button, split out so the toolbar can attach the
-    /// ⌘↩ shortcut only while a connection is up (see `editorToolbar`).
-    private var sendButton: some View {
-        Button {
-            sendCurrentMessage()
-        } label: {
-            Text("Send")
-                .frame(minHeight: 22)
+    /// The payload as text: re-encoded through the chosen display format, or
+    /// the sniffed default (binary shows as Base64).
+    private func detailText(_ entry: WebSocketLogEntry) -> String {
+        if let format = detailFormats[entry.id], let data = entry.wireData {
+            return format.editorText(fromWireData: data)
         }
-        .buttonStyle(SendButtonStyle())
-        .disabled(!isSendEnabled)
-        .help(isSendEnabled ? "Send Message (⌘↩)" : "Connect first, then send")
+        return entry.detailText
     }
 
-    /// The editor's text, bound through the store's session draft (the
-    /// request editor never owns this field, so no draft conflicts).
-    private var messageTextBinding: Binding<String> {
-        Binding(
-            get: { store.webSocketDraft(for: request.id).text },
-            set: { store.updateWebSocketMessageDraft(request.id, text: $0) }
-        )
-    }
-
-    /// The format's beautifier (nil for text/binary, which have no
-    /// format step): the same native token rebuilders the body editor uses.
-    private var beautifyHandler: ((String) throws -> String?)? {
-        switch draft.format {
-        case .json:
-            return { try BodyFormatter.format($0, kind: .json) }
-        case .xml:
-            return { try BodyFormatter.format($0, kind: .xml) }
-        case .text, .html, .binaryBase64, .binaryHex:
-            return nil
-        }
-    }
-
-    private func doFormat(_ handler: (String) throws -> String?) {
-        do {
-            if let formatted = try handler(draft.text) {
-                store.updateWebSocketMessageDraft(request.id, text: formatted)
-            }
-        } catch let error as TextFormatError {
-            showInvalidMessageNote(error.message)
-        } catch {
-            showInvalidMessageNote("Unexpected token")
-        }
-    }
-
-    /// Surfaces the beautifier's diagnostic and retires it after a beat
-    /// (the same device as the Scripts tab's invalid-script note).
-    private func showInvalidMessageNote(_ message: String) {
-        invalidMessageNote = message
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(2.5))
-            if invalidMessageNote == message {
-                invalidMessageNote = nil
-            }
-        }
-    }
-
-    private func editorNote(_ message: String) -> some View {
-        Text(message)
-            .font(AppFont.small)
-            .foregroundStyle(AppColor.error)
-            .padding(.horizontal, AppSpacing.small)
-            .padding(.vertical, AppSpacing.xSmall)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(AppColor.error.opacity(AppOpacity.errorBackground))
-            )
-            .padding(.bottom, AppSpacing.small)
-    }
-
-    private func sendCurrentMessage() {
-        guard isSendEnabled else { return }
-        store.sendWebSocketMessage(liveRequest, text: draft.text, format: draft.format)
-    }
-
-    // MARK: - Saved messages
-
-    /// The saved-messages pane (a popover dropped from the Saved button):
-    /// click a row to load it into the editor, hover to delete.
-    private var savedMessagesPanel: some View {
-        let saved = liveRequest.wsSavedMessages
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Saved Messages")
-                    .font(AppFont.small.weight(.semibold))
-                    .foregroundStyle(AppColor.textPrimary)
-                Spacer(minLength: 0)
-                Button {
-                    store.saveWebSocketMessage(
-                        request.id, text: draft.text, format: draft.format)
-                } label: {
-                    Label("Save Current", systemImage: "plus")
-                        .font(AppFont.small)
-                }
-                .buttonStyle(.plain)
-                .clickCursor()
-                .disabled(draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .help("Save the composed message with the request")
-            }
-            .padding(.horizontal, AppSpacing.small)
-            .padding(.vertical, AppSpacing.xSmall)
-            Divider()
-            if saved.isEmpty {
-                Text("Compose a message, then save it here to load and resend it later.")
-                    .font(AppFont.small)
-                    .foregroundStyle(AppColor.textSecondary)
-                    .padding(AppSpacing.small)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                ForEach(saved) { message in
-                    savedMessageRow(message)
-                    Divider().padding(.leading, AppSpacing.small)
-                }
-            }
-        }
-        .frame(width: 320)
-        .padding(.vertical, AppSpacing.xSmall)
-    }
-
-    private func savedMessageRow(_ message: WebSocketSavedMessage) -> some View {
-        HStack(spacing: AppSpacing.small) {
-            Button {
-                store.updateWebSocketMessageDraft(
-                    request.id, text: message.text, format: message.formatKind)
-                isSavedPanelOpen = false
-            } label: {
-                HStack(spacing: AppSpacing.xSmall) {
-                    Text(message.displayName)
-                        .font(AppFont.small)
-                        .foregroundStyle(AppColor.textPrimary)
-                        .lineLimit(1)
-                    Text(message.formatKind.isBinary ? "Binary" : message.formatKind.label)
-                        .font(AppFont.countBadge)
-                        .foregroundStyle(AppColor.tertiaryText)
-                    Spacer(minLength: 0)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .clickCursor()
-            Button {
-                store.deleteWebSocketSavedMessage(request.id, id: message.id)
-            } label: {
-                Image(systemName: "trash")
-                    .font(AppFont.small)
-                    .foregroundStyle(AppColor.textSecondary)
-            }
-            .buttonStyle(.plain)
-            .clickCursor()
-            .help("Delete saved message")
-        }
-        .padding(.horizontal, AppSpacing.small)
-        .padding(.vertical, AppSpacing.xSmall)
+    private func detailSyntax(_ entry: WebSocketLogEntry) -> BodySyntax {
+        detailFormats[entry.id]?.syntax ?? entry.detailSyntax
     }
 }
 
-// MARK: - Entry presentation
+// MARK: - Log entry presentation
 
 extension WebSocketLogEntry {
+    /// Direction/kind glyph for the row.
     var systemImage: String {
         switch (direction, kind) {
-        case (.sent, .text), (.sent, .binary):
-            "arrow.up.circle"
-        case (.received, .text), (.received, .binary):
-            "arrow.down.circle"
-        case (.sent, .ping):
-            "arrow.up.circle.dotted"
-        case (.received, .pong):
-            "arrow.down.circle.dotted"
-        case (.system, .connected):
-            "link"
-        case (.system, .disconnected):
-            "xmark.circle"
-        case (.system, .error):
-            "exclamationmark.triangle"
-        default:
-            "info.circle"
+        case (.sent, .text), (.sent, .binary): "arrow.up.circle"
+        case (.received, .text), (.received, .binary): "arrow.down.circle"
+        case (.sent, .ping): "arrow.up.circle.dotted"
+        case (.received, .pong): "arrow.down.circle.dotted"
+        case (.system, .connected): "link"
+        case (.system, .disconnected): "xmark.circle"
+        case (.system, .error): "exclamationmark.triangle"
+        default: "info.circle"
         }
     }
 
@@ -646,13 +511,17 @@ extension WebSocketLogEntry {
         }
     }
 
-    /// The expanded row's detail text: the payload as text (binary frames
-    /// shown as Base64, which is what can be copied back into the editor).
+    /// The frame's wire bytes (hexdump source): binary as-is, text as UTF-8.
+    var wireData: Data? {
+        if let data { return data }
+        return text.map { Data($0.utf8) }
+    }
+
+    /// The expanded payload as text (binary frames as Base64, which is what
+    /// can be copied back into the editor).
     var detailText: String {
         if let text { return text }
-        if let data {
-            return WebSocketMessageFormat.binaryBase64.editorText(fromWireData: data)
-        }
+        if let data { return WebSocketMessageFormat.binaryBase64.editorText(fromWireData: data) }
         return preview
     }
 
@@ -661,7 +530,9 @@ extension WebSocketLogEntry {
         case .text:
             "Text · \(payloadSize ?? 0) bytes"
         case .binary:
-            isTextPayload ? "Binary (UTF-8 text) · \(payloadSize ?? 0) bytes" : "Binary · Base64 · \(payloadSize ?? 0) bytes"
+            isTextPayload
+                ? "Binary (UTF-8 text) · \(payloadSize ?? 0) bytes"
+                : "Binary · \(payloadSize ?? 0) bytes"
         case .ping, .pong, .connected, .disconnected, .error:
             ""
         }
@@ -672,11 +543,37 @@ extension WebSocketLogEntry {
         if let data { return WebSocketMessageFormat.binaryBase64.editorText(fromWireData: data) }
         return preview
     }
+
+    /// MIME-type hint for the row's hover info.
+    var mimeTypeHint: String {
+        switch kind {
+        case .binary:
+            isTextPayload ? "text/plain" : "application/octet-stream"
+        case .text:
+            switch detailSyntax {
+            case .json: "application/json"
+            case .xml: "text/xml"
+            default: "text/plain"
+            }
+        case .ping, .pong, .connected, .disconnected, .error:
+            ""
+        }
+    }
+
+    /// Hover text: size, MIME type, and local timestamp.
+    var infoTooltip: String {
+        var parts: [String] = []
+        if kind == .ping { parts.append("Ping") }
+        if kind == .pong { parts.append("Pong") }
+        if let size = payloadSize { parts.append(Int64(size).formattedByteCount) }
+        if !mimeTypeHint.isEmpty { parts.append(mimeTypeHint) }
+        parts.append(date.formattedWebSocketTime)
+        return parts.joined(separator: " · ")
+    }
 }
 
 extension Date {
     /// Log-row timestamp: local time with milliseconds ("14:03:22.481").
-    /// One cached formatter - building one per row per render would churn.
     private static let webSocketTimeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -689,9 +586,9 @@ extension Date {
     }
 }
 
-/// The shared copy acknowledgement language (see Components): the glyph
-/// flips to a checkmark for a beat, like every other copy control.
-private struct CopyActionButton: View {
+/// Copy action using the app's shared acknowledgement language: the glyph
+/// becomes a checkmark for a beat.
+private struct CopyMessageButton: View {
     let text: String
     @State private var ack = CopyAcknowledgement()
 

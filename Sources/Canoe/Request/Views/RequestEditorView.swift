@@ -50,6 +50,7 @@ struct RequestEditorView: View {
 
     enum RequestSection: String, CaseIterable, Identifiable {
         case docs = "Docs"
+        case message = "Message"
         case params = "Params"
         case auth = "Authorization"
         case headers = "Headers"
@@ -57,6 +58,27 @@ struct RequestEditorView: View {
         case scripts = "Scripts"
         case settings = "Settings"
         var id: String { rawValue }
+    }
+
+    /// The tabs a WebSocket request shows (Postman's WebSocket editor):
+    /// Message replaces Body, and Scripts are not wired for WS yet.
+    private var webSocketSections: [RequestSection] {
+        [.docs, .message, .params, .headers, .auth, .settings]
+    }
+
+    /// The tabs an HTTP request shows (Postman's tab order).
+    private var httpSections: [RequestSection] {
+        [.docs, .params, .headers, .body, .scripts, .settings]
+    }
+
+    private var visibleSections: [RequestSection] {
+        isWebSocket ? webSocketSections : httpSections
+    }
+
+    /// Where a freshly-opened request lands: Postman opens WebSocket
+    /// requests on their message editor, HTTP requests on Params.
+    private var defaultSection: RequestSection {
+        isWebSocket ? .message : .params
     }
 
     /// Which script the Scripts tab edits (Postman's sidebar order).
@@ -677,7 +699,7 @@ struct RequestEditorView: View {
             isNameFieldFocused = false
             draft = request
             urlText = composedURLText(base: request.urlString, params: request.params)
-            section = .params
+            section = defaultSection
             showGeneratedHeaders = false
             pushedOAuthRevision = store.oauthTokenRevision(forOwner: request.id)
             pushedWebSocketRevision = store.webSocketRevision(forOwner: request.id)
@@ -751,6 +773,8 @@ struct RequestEditorView: View {
         .onAppear {
             draft = request
             urlText = composedURLText(base: draft.urlString, params: draft.params)
+            // Postman opens WebSocket requests on their message editor.
+            section = defaultSection
             pushedOAuthRevision = store.oauthTokenRevision(forOwner: request.id)
             pushedWebSocketRevision = store.webSocketRevision(forOwner: request.id)
             installNameDismissMonitor()
@@ -1395,92 +1419,19 @@ struct RequestEditorView: View {
 
     private var sectionTabs: some View {
         HStack(spacing: AppSpacing.large) {
-            // Postman order: Docs leads the request tabs; the description
-            // lives here, not in the header.
-            UnderlineTab(
-                title: RequestSection.docs.rawValue,
-                count: nil,
-                hasContent: !draft.requestDescription.isEmpty,
-                labelInset: 0,
-                isSelected: section == .docs,
-                action: {
-                    urlFieldFocused = nil
-                    section = .docs
-                }
-            )
-            UnderlineTab(
-                title: RequestSection.params.rawValue,
-                count: enabledParamCount,
-                hasContent: enabledParamCount > 0,
-                labelInset: 0,
-                isSelected: section == .params,
-                action: {
-                    urlFieldFocused = nil
-                    section = .params
-                }
-            )
-            UnderlineTab(
-                title: RequestSection.auth.rawValue,
-                count: isAuthConfigured ? 1 : nil,
-                hasContent: isAuthConfigured,
-                labelInset: 0,
-                isSelected: section == .auth,
-                action: {
-                    urlFieldFocused = nil
-                    section = .auth
-                }
-            )
-            UnderlineTab(
-                title: RequestSection.headers.rawValue,
-                count: enabledHeaderCount,
-                // Manual headers only: the generated defaults (Host,
-                // User-Agent, …) are not this section's content.
-                hasContent: enabledHeaderCount > 0,
-                labelInset: 0,
-                isSelected: section == .headers,
-                action: {
-                    urlFieldFocused = nil
-                    section = .headers
-                }
-            )
-            // WebSocket requests have no body and (for now) no scripts:
-            // the message editor lives in the message pane below.
-            if !isWebSocket {
+            ForEach(visibleSections, id: \.self) { tab in
                 UnderlineTab(
-                    title: RequestSection.body.rawValue,
-                    count: bodyRowCount,
-                    // Any non-none body type counts as content, filled or not.
-                    hasContent: draft.requestBodyType != .none,
+                    title: tab.rawValue,
+                    count: tabCount(for: tab),
+                    hasContent: tabHasContent(tab),
                     labelInset: 0,
-                    isSelected: section == .body,
+                    isSelected: section == tab,
                     action: {
                         urlFieldFocused = nil
-                        section = .body
-                    }
-                )
-                UnderlineTab(
-                    title: RequestSection.scripts.rawValue,
-                    count: nil,
-                    hasContent: hasScriptsContent,
-                    labelInset: 0,
-                    isSelected: section == .scripts,
-                    action: {
-                        urlFieldFocused = nil
-                        section = .scripts
+                        section = tab
                     }
                 )
             }
-            UnderlineTab(
-                title: RequestSection.settings.rawValue,
-                count: nil,
-                hasContent: isSettingsChangedFromDefault,
-                labelInset: 0,
-                isSelected: section == .settings,
-                action: {
-                    urlFieldFocused = nil
-                    section = .settings
-                }
-            )
             Spacer()
             // Postman-style Cookies entry: the request tab row ends with a
             // Cookies tab that opens the global cookie manager.
@@ -1501,6 +1452,32 @@ struct RequestEditorView: View {
         .padding(.horizontal, AppSpacing.medium)
     }
 
+    /// The trailing count badge for a tab (nil when the tab shows none).
+    private func tabCount(for tab: RequestSection) -> Int? {
+        switch tab {
+        case .params: enabledParamCount
+        case .headers: enabledHeaderCount
+        case .body: bodyRowCount
+        case .docs, .message, .auth, .scripts, .settings: nil
+        }
+    }
+
+    /// Whether a tab lights its green content dot.
+    private func tabHasContent(_ tab: RequestSection) -> Bool {
+        switch tab {
+        case .docs: !draft.requestDescription.isEmpty
+        case .message:
+            !store.webSocketDraft(for: draft.id).text.isEmpty
+                || !draft.wsSavedMessages.isEmpty
+        case .params: enabledParamCount > 0
+        case .headers: enabledHeaderCount > 0
+        case .auth: isAuthConfigured
+        case .body: draft.requestBodyType != .none
+        case .scripts: hasScriptsContent
+        case .settings: isSettingsChangedFromDefault
+        }
+    }
+
     // MARK: - Section content
 
     @ViewBuilder
@@ -1508,6 +1485,9 @@ struct RequestEditorView: View {
         switch section {
         case .docs:
             docsPane
+        case .message:
+            // WebSocket-only (the tab is hidden for HTTP requests).
+            WebSocketMessageEditorView(request: request)
         case .params:
             // Postman's Params tab: the query table on top, the path
             // variables table below (both titled, each self-contained), in
