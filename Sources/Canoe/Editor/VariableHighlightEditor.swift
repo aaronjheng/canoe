@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// The ⌘⇧F failure shape: format handlers throw it with the exact note
+/// The ⌥⇧F failure shape: format handlers throw it with the exact note
 /// text the container surfaces (the Scripts pane and the raw body show
 /// it in a transient bottom capsule).
 struct TextFormatError: Error, Sendable {
@@ -127,15 +127,15 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
     /// tints. Single-line editors always stay plain.
     var syntax: BodySyntax = .plain
     /// Multi-line only (the Scripts tab and the raw body): while this
-    /// editor holds keyboard focus, ⌘⇧F runs its text through this handler
+    /// editor holds keyboard focus, ⌥⇧F runs its text through this handler
     /// as one undoable step. The handler returns the formatted text, `nil`
     /// when the text is already formatted, or throws the diagnostic. Read
     /// fresh on every invocation, so a caller can rebuild it per render
     /// (the raw body's JSON/XML dispatch follows the format picker).
     var formatHandler: ((String) throws -> String?)?
-    /// Undo-menu label for the ⌘⇧F step ("Format Script", "Format Body").
+    /// Undo-menu label for the ⌥⇧F step ("Format Script", "Format Body").
     var formatActionName: String = "Format"
-    /// Multi-line only: receives a format handler's diagnostic when ⌘⇧F
+    /// Multi-line only: receives a format handler's diagnostic when ⌥⇧F
     /// hits text that does not parse, so the caller can surface it (the
     /// transient bottom note of the Scripts pane and the raw body).
     var onFormatError: ((String) -> Void)?
@@ -1231,25 +1231,33 @@ private struct WrappingURLField<FocusValue: Hashable>: NSViewRepresentable {
 /// runs tinted like the single-line field, content height reported for
 /// auto-grow, and `{{` completion driven by the text view itself.
 /// The Scripts tab's multi-line text view: while it holds keyboard focus,
-/// ⌘⇧F runs the format handler the Scripts editor installed. Other keys
+/// ⌥⇧F runs the format handler the Scripts editor installed. Other keys
 /// fall through untouched; without a handler (any other multi-line editor)
 /// the view behaves exactly like a plain `NSTextView`.
 private final class FormatKeyTextView: NSTextView {
-    /// Returns whether the key was handled: `true` consumes ⌘⇧F (the
+    /// Returns whether the key was handled: `true` consumes ⌥⇧F (the
     /// format ran, or its diagnostic was surfaced); `false` falls back to
     /// the text view's own handling (editors without a handler never see
     /// the key at all - it is not installed).
     var formatHandler: (() -> Bool)?
 
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    /// Intercepts ⌥⇧F in `keyDown`, NOT `performKeyEquivalent`: AppKit only
+    /// routes key equivalents (with `performKeyEquivalent`) for events that
+    /// carry a Command modifier, so an Option+Shift press would sail past
+    /// it and land in the text input system as the composed character ('Ï'
+    /// on US layouts). `keyDown` sees every event delivered to the focused
+    /// view, option-combos included. The modifier check masks to the four
+    /// routing modifiers so state flags (caps lock, function, numeric pad)
+    /// never break the match.
+    override func keyDown(with event: NSEvent) {
+        let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
         let isFormatKey =
-            modifiers == [.command, .shift]
+            modifiers == [.option, .shift]
             && (event.keyCode == 0x03 || event.charactersIgnoringModifiers?.lowercased() == "f")
-        guard isFormatKey, window?.firstResponder === self, let formatHandler else {
-            return super.performKeyEquivalent(with: event)
+        if isFormatKey, window?.firstResponder === self, let formatHandler, formatHandler() {
+            return
         }
-        return formatHandler() ? true : super.performKeyEquivalent(with: event)
+        super.keyDown(with: event)
     }
 }
 
@@ -1312,7 +1320,7 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
             VariablePlaceholderStyling.attributed(text, font: font, variables: variables, syntax: syntax)
         )
         textView.delegate = coordinator
-        // ⌘⇧F lives on the focused editor itself - no menu item, no global
+        // ⌥⇧F lives on the focused editor itself - no menu item, no global
         // shortcut. Unconditional bridge: whether a handler exists is
         // re-checked per invocation inside `applyFormat`, so caller-side
         // dispatch (the raw body's format picker) applies live.
@@ -1446,7 +1454,7 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
             focus.wrappedValue = nil
         }
 
-        /// The focus-⌘⇧F step (fired only while the field holds keyboard
+        /// The focus-⌥⇧F step (fired only while the field holds keyboard
         /// focus): runs the caller's handler over this view's text as one
         /// undoable step (⌘Z restores it). Reports `false` when no handler
         /// is installed - the key falls through - and `true` otherwise,

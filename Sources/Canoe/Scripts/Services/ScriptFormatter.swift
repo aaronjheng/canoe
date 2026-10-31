@@ -1,6 +1,6 @@
 import Foundation
 
-/// Native JavaScript formatting behind the Scripts editor's ⌘⇧F: the oxc
+/// Native JavaScript formatting behind the Scripts editor's ⌥⇧F: the oxc
 /// project's `oxfmt` backend, statically linked into the app from
 /// `Vendor/Oxfmt` (see BUILD-INFO.md - no JavaScript engine is involved).
 /// The shim crate exports this one C ABI pair, and the bindings below pin

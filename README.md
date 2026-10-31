@@ -13,7 +13,7 @@ Native macOS API client built with Swift and SwiftUI.
 - **History** — per-device send history with one-click reopen
 - **Import & Export** — paste a cURL command (File ▸ Import cURL…) into a parsed request, and copy any request as cURL from the sidebar's context menu
 - **Code Snippets** — export any request as HTTP, cURL, or HTTPie
-- **Scripts** — `Before Request` / `After Response` scripts with the `pm.*` API (QuickJS); format the focused script with ⌘⇧F
+- **Scripts** — `Before Request` / `After Response` scripts with the `pm.*` API (QuickJS), with one-keystroke formatting of the focused script
 - **Tabs** — requests, environments, and variable editors in tabs with dirty tracking and save (⌘S)
 - **Local Vault** — all data stored as plain JSON files on disk (Git-based sync is planned)
 

@@ -170,7 +170,7 @@ struct BodyEditor: View {
     }
 
     /// Surfaces the body formatter's diagnostic and retires it after a
-    /// beat; a newer note (another ⌘⇧F meanwhile) outlives this timer.
+    /// beat; a newer note (another ⌥⇧F meanwhile) outlives this timer.
     private func showBodyFormatNote(_ message: String) {
         invalidBodyNote = message
         Task { @MainActor in

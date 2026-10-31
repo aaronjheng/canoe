@@ -128,7 +128,7 @@ struct WebSocketMessageEditorView: View {
                 }
                 .buttonStyle(.plain)
                 .clickCursor()
-                .help("Beautify (⌘⇧F)")
+                .help("Beautify (⌥⇧F)")
             }
 
             Button {

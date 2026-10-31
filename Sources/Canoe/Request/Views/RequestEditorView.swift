@@ -23,7 +23,7 @@ struct RequestEditorView: View {
     /// Which script the Scripts tab edits (Postman's sidebar order).
     @State private var scriptColumn: ScriptColumn = .beforeRequest
     /// The `ScriptFormatter` diagnostic shown under the focused Scripts
-    /// editor when focus-⌘⇧F hits a script that does not parse;
+    /// editor when focus-⌥⇧F hits a script that does not parse;
     /// `showInvalidScriptNote` retires it after a beat.
     @State private var invalidScriptNote: String?
 
@@ -1756,7 +1756,7 @@ struct RequestEditorView: View {
     }
 
     /// Surfaces the `ScriptFormatter` diagnostic and retires it after a
-    /// beat; a newer note (another ⌘⇧F meanwhile) outlives this timer.
+    /// beat; a newer note (another ⌥⇧F meanwhile) outlives this timer.
     /// Rendered by the Scripts editor's bottom overlay.
     private func showInvalidScriptNote(_ message: String) {
         invalidScriptNote = message

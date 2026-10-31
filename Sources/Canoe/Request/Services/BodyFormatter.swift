@@ -1,4 +1,4 @@
-/// Formatting for the raw request body (⌘⇧F while the body editor holds
+/// Formatting for the raw request body (⌥⇧F while the body editor holds
 /// keyboard focus): native token rebuilders for JSON and XML that
 /// re-indent the payload without reordering object members, rewriting
 /// attribute order, or touching values, and report a parse diagnostic
