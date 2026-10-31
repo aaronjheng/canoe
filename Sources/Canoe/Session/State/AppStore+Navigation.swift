@@ -231,6 +231,19 @@ extension AppStore {
         openTab(.workspaceVariables(id))
     }
 
+    /// Selects a tab that is already open (tab pill click, tab drawer pick).
+    /// Like `openTab` minus the append, with the same persistence: a plain
+    /// click is the most common selection change there is, and without this
+    /// the persisted selection stays at whatever store-method change last
+    /// wrote it - so a relaunch opened a different tab than the one the
+    /// user left selected.
+
+    func selectOpenTab(_ tab: OpenTab) {
+        guard openTabs.contains(tab) else { return }
+        selectedTab = tab
+        persistOpenTabs()
+    }
+
     /// Duplicate Tab (Postman desktop: find it in the tab's context menu):
     /// opens a second view of the same request right next to the original.
     /// The request and its unsaved edits are shared - the response area and
@@ -645,10 +658,15 @@ extension AppStore {
     /// Drops tabs whose request/collection/workspace/environment no longer
     /// exists (deleted here or vanished via sync) and repairs the selection.
     /// Scratch (unfiled) requests never dangle: their tab is the only thing
-    /// referencing them and it keeps them alive. Skipped on a failed load:
-    /// an empty in-memory vault would wipe the restored strip (and persist
-    /// the wipe) - retryVaultLoad re-prunes after a successful reload.
+    /// referencing them and it keeps them alive. No-op until launch restore
+    /// finished (see `isSessionReady`): the tab strip mounts the moment the
+    /// vault flips ready but BEFORE the scratch-request drafts apply, and a
+    /// prune in that window would wipe the restored scratch tabs. Skipped
+    /// on a failed load: an empty in-memory vault would wipe the restored
+    /// strip (and persist the wipe) - retryVaultLoad re-prunes after a
+    /// successful reload.
     func pruneDanglingTabs() {
+        guard isSessionReady else { return }
         guard vault.loadError == nil else { return }
         let requestIDs = Set(vault.collections.flatMap(\.requests).map(\.id)).union(unfiledRequests.keys)
         let envIDs = Set(vault.environments.map(\.id))

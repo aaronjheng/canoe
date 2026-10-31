@@ -829,7 +829,7 @@ private struct TabPill: View {
 
     var body: some View {
         Button {
-            store.selectedTab = tab
+            store.selectOpenTab(tab)
         } label: {
             HStack(spacing: AppSpacing.xSmall) {
                 TabItemIcon(tab: tab)
@@ -1232,7 +1232,7 @@ struct TabDrawer: View {
     }
 
     private func pick(_ tab: OpenTab) {
-        store.selectedTab = tab
+        store.selectOpenTab(tab)
         onDismiss()
     }
 

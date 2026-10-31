@@ -176,6 +176,17 @@ final class AppStore {
     var lastRightInspectorPanel: RightInspectorPanel = .variables
     var sendingTabs: Set<OpenTab> = []
 
+    /// Whether launch restore finished: the vault loaded AND every persisted
+    /// draft (scratch requests included) is applied. Until then the model is
+    /// a half-restored snapshot - collections from disk, scratch requests
+    /// not yet re-registered - so a prune run in that window would classify
+    /// every scratch tab as dangling and wipe it (with the selection) from
+    /// the restored strip. The tab strip's onAppear/onChange prunes fire
+    /// exactly there (the strip mounts the moment the vault flips ready,
+    /// before the drafts apply), so `pruneDanglingTabs` no-ops until
+    /// `prepare` (or a successful retry) flips this.
+    @ObservationIgnored var isSessionReady = false
+
     // MARK: - WebSocket sessions
 
     /// Per-request WebSocket connection state (keyed by request id), read

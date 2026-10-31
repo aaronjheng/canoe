@@ -422,6 +422,11 @@ extension AppStore {
         pruneSidebarExpansionState()
         // Drop restored tabs whose entities no longer exist (deleted here or
         // on another device) and persist the pruned set back.
+        // Restore is complete: every persisted draft is applied, so any
+        // prune from here on (this one included, and the tab strip's
+        // onAppear/onChange calls that may fire during the awaits below)
+        // sees the fully restored model.
+        isSessionReady = true
         pruneDanglingTabs()
         // Launching into the workspaces manager (no active workspace) means
         // no tab strip is rendered: clear the restored strip so entering a
@@ -573,6 +578,7 @@ extension AppStore {
         applyFolderAuthorizationDrafts(drafts.folderAuthorizations)
         rebasePendingSnapshotsOntoLoadedVault()
         pruneSidebarExpansionState()
+        isSessionReady = true
         pruneDanglingTabs()
         await migrateRequestAuthInheritanceIfNeeded()
     }
