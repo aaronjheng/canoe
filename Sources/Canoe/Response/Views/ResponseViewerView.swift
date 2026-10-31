@@ -450,16 +450,21 @@ struct ResponseViewerView: View {
         // Preview mode renders in a player / PDF view / image view and needs
         // no text, so it skips the decode entirely.
         let key = "\(response.id)-\(bodyMode)-\(bodyLanguage)"
+        // A text/event-stream body renders as the event log (`EventStreamView`),
+        // derived straight from the body + arrival timeline - the text modes'
+        // render pipeline (decode, pretty, tree-sitter) would only be a
+        // pointless multi-megabyte pass for it.
+        let isEventStream = response.isEventStream
         let isPreview = bodyMode == .preview
         let isHex = bodyMode == .hex
         let cached = bodyRenderCache[key]
         let deferred =
-            cached == nil && !isPreview && !isHex
+            !isEventStream && cached == nil && !isPreview && !isHex
             && response.body.count > Self.syncRenderBodyBytes
         let render: (display: BodyDisplay, attributed: AttributedString)?
         if let cached {
             render = (cached.display, cached.attributed)
-        } else if isPreview || isHex || deferred {
+        } else if isPreview || isHex || deferred || isEventStream {
             render = nil
         } else {
             render = Self.computeBodyRender(
@@ -479,6 +484,8 @@ struct ResponseViewerView: View {
                 headersPane(response)
             } else if responseSection == .cookies {
                 cookiesPane(response)
+            } else if isEventStream {
+                EventStreamView(response: response)
             } else if isPreview {
                 previewContent(response, display: display)
             } else if isHex {
@@ -495,7 +502,7 @@ struct ResponseViewerView: View {
             // (the id moved on) must not land in the cache.
             guard !Task.isCancelled else { return }
             if bodyRenderCache[key] == nil {
-                if !isPreview && !isHex {
+                if !isPreview && !isHex && !isEventStream {
                     if deferred {
                         // The synchronous pipeline would stall the pane; run
                         // it off the main thread and publish when it lands.
@@ -537,12 +544,14 @@ struct ResponseViewerView: View {
                 }
             }
         }
-        .task(id: bodyMode == .hex ? response.id : nil) {
+        .task(id: bodyMode == .hex && !isEventStream ? response.id : nil) {
             // One-shot hex dump (see `responseExtras`): keyed on the mode
             // so bodies never viewed as hex never pay for the walk. Runs
-            // off the main thread - 5 MB expands to ~327k rows.
+            // off the main thread - 5 MB expands to ~327k rows. An event
+            // stream never shows hex (its Body pane is the event log), so
+            // its multi-megabyte body never gets a dump either.
             let id = response.id
-            guard response.body.count <= Self.maxHexBodyBytes,
+            guard !isEventStream, response.body.count <= Self.maxHexBodyBytes,
                 responseExtras[id]?.hexRows == nil
             else { return }
             let body = response.body

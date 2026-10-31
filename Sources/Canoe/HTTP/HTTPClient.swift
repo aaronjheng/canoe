@@ -91,6 +91,9 @@ enum HTTPClient {
         let certificate: CertificateSnapshot?
         /// Redirects this send actually followed (the Network panel's row).
         let redirects: Int
+        /// Arrival samples of an event-stream body (`ResponseModel
+        /// .sseTimeline`); empty for every other response.
+        let timeline: [SSEStreamSample]
     }
 
     /// Joins the data-task completion with `didFinishCollecting` (metrics
@@ -118,6 +121,11 @@ enum HTTPClient {
             /// Redirects already followed for this task (see
             /// `allowAnotherRedirect`).
             var redirectCount = 0
+            /// Event-stream arrival samples (see `append`): the byte count
+            /// the connection stood at when each chunk landed. Empty for
+            /// every other media type.
+            var receivedBytes = 0
+            var timeline: [SSEStreamSample] = []
         }
 
         private enum Completion {
@@ -180,9 +188,27 @@ enum HTTPClient {
         /// rest of the response still downloads (and still shows up in the
         /// Size panel, which reads the true byte counts from the task
         /// metrics) but is never retained.
-        func append(_ chunk: Data) {
+        ///
+        /// `recordsTimeline` is set for `text/event-stream` responses: each
+        /// chunk then leaves one arrival sample - the wall-clock time keyed
+        /// by the cumulative byte count - so the event pane can put every
+        /// parsed event on the stream's clock. The sample counts RECEIVED
+        /// bytes, before any UTF-8 tail is held back: the tail flushes into
+        /// the buffer later, but the bytes themselves arrived now, and the
+        /// final buffer (which the event offsets refer to) contains them
+        /// all.
+        func append(_ chunk: Data, recordsTimeline: Bool = false) {
+            let arrival =
+                recordsTimeline
+                ? Int64((Date().timeIntervalSince1970 * 1000).rounded())
+                : 0
             state.withLock { current in
                 guard !chunk.isEmpty else { return }
+                if recordsTimeline {
+                    current.receivedBytes += chunk.count
+                    current.timeline.append(
+                        SSEStreamSample(millis: arrival, bytes: current.receivedBytes))
+                }
                 let incoming = current.pendingTail.isEmpty ? chunk : current.pendingTail + chunk
                 current.pendingTail = Data()
                 let room = HTTPClient.maxResponseBytes - current.data.count
@@ -332,7 +358,8 @@ enum HTTPClient {
                         response: response,
                         metrics: current.metrics,
                         certificate: current.certificate,
-                        redirects: current.redirectCount
+                        redirects: current.redirectCount,
+                        timeline: current.timeline
                     )
                 )
             }
@@ -424,13 +451,18 @@ enum HTTPClient {
 
         /// Body chunks stream in here rather than through the task's
         /// completion handler (which yields nil as soon as a delegate claims
-        /// the data), so `RequestTelemetry` can cap what it retains.
+        /// the data), so `RequestTelemetry` can cap what it retains. An
+        /// event-stream response also leaves its arrival timeline here (the
+        /// delegate response carries the media type before any body does).
         func urlSession(
             _ session: URLSession,
             dataTask: URLSessionDataTask,
             didReceive data: Data
         ) {
-            telemetry(for: dataTask)?.append(data)
+            let recordsTimeline =
+                (dataTask.response as? HTTPURLResponse)?
+                .mimeType?.lowercased() == "text/event-stream"
+            telemetry(for: dataTask)?.append(data, recordsTimeline: recordsTimeline)
         }
 
         /// The task's end: with a data delegate in place this - not the
@@ -946,7 +978,8 @@ enum HTTPClient {
                 body: outcome.data,
                 metrics: outcome.metrics
             ),
-            timing: Self.makeTimingInfo(metrics: outcome.metrics)
+            timing: Self.makeTimingInfo(metrics: outcome.metrics),
+            sseTimeline: outcome.timeline.isEmpty ? nil : outcome.timeline
         )
     }
 

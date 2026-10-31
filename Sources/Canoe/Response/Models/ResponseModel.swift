@@ -52,6 +52,23 @@ struct TimingInfo: Sendable, Equatable, Codable {
     var download: TimeInterval?
 }
 
+/// One arrival sample of an event-stream body: where the connection's byte
+/// count stood when a body chunk arrived. A parsed event's end offset
+/// (`SSEEvent.parse`) maps to the first sample at-or-past it, which is the
+/// wall-clock time that event appeared. Milliseconds since epoch rather
+/// than `Date` because the response mirror's `.iso8601` date strategy
+/// rounds to whole seconds - and the event pane's `HH:mm:ss.SSS` column
+/// exists precisely for the sub-second spacing between events.
+struct SSEStreamSample: Sendable, Equatable, Codable {
+    let millis: Int64
+    let bytes: Int
+
+    /// The sample's arrival as a `Date`, for the pane's time formatter.
+    var date: Date {
+        Date(timeIntervalSince1970: Double(millis) / 1000)
+    }
+}
+
 /// A transient HTTP response used for display. Persisted only to the
 /// machine-local response-history mirror (never the synced vault): the
 /// identity is regenerated on every decode, so `id` is excluded from the
@@ -81,11 +98,16 @@ struct ResponseModel: Identifiable, Sendable, Codable {
     /// on responses recorded before scripts existed.
     let scriptResults: [ScriptTestResult]?
     let scriptLogs: [ScriptLog]?
+    /// Arrival samples of a `text/event-stream` body (see
+    /// `HTTPClient.RequestTelemetry`): the byte offsets the connection stood
+    /// at as chunks arrived, so each parsed event gets its wall-clock time.
+    /// Empty for every other response.
+    let sseTimeline: [SSEStreamSample]?
 
     private enum CodingKeys: String, CodingKey {
         case statusCode, headers, body, bodyTruncated, duration, timestamp
         case mimeType, requestURL, network, size, timing
-        case scriptResults, scriptLogs
+        case scriptResults, scriptLogs, sseTimeline
     }
 
     init(
@@ -100,6 +122,7 @@ struct ResponseModel: Identifiable, Sendable, Codable {
         network: NetworkInfo?,
         size: SizeInfo?,
         timing: TimingInfo?,
+        sseTimeline: [SSEStreamSample]? = nil,
         scriptResults: [ScriptTestResult]? = nil,
         scriptLogs: [ScriptLog]? = nil
     ) {
@@ -114,6 +137,7 @@ struct ResponseModel: Identifiable, Sendable, Codable {
         self.network = network
         self.size = size
         self.timing = timing
+        self.sseTimeline = sseTimeline
         self.scriptResults = scriptResults
         self.scriptLogs = scriptLogs
     }
@@ -132,6 +156,7 @@ struct ResponseModel: Identifiable, Sendable, Codable {
             network: try container.decodeIfPresent(NetworkInfo.self, forKey: .network),
             size: try container.decodeIfPresent(SizeInfo.self, forKey: .size),
             timing: try container.decodeIfPresent(TimingInfo.self, forKey: .timing),
+            sseTimeline: try container.decodeIfPresent([SSEStreamSample].self, forKey: .sseTimeline),
             scriptResults: try container.decodeIfPresent(
                 [ScriptTestResult].self, forKey: .scriptResults),
             scriptLogs: try container.decodeIfPresent([ScriptLog].self, forKey: .scriptLogs)
@@ -157,6 +182,7 @@ struct ResponseModel: Identifiable, Sendable, Codable {
             network: network,
             size: size,
             timing: timing,
+            sseTimeline: sseTimeline,
             scriptResults: results.isEmpty ? nil : results,
             scriptLogs: logs.isEmpty ? nil : logs)
     }
@@ -179,6 +205,10 @@ struct ResponseModel: Identifiable, Sendable, Codable {
     /// content (JSON object/array that parses, `<?xml`, `<!doctype html`).
     func resolvedBodyLanguage(_ language: BodyLanguage) -> BodyLanguage {
         guard language == .auto else { return language }
+        // An event stream's Body pane is the event log, never a text
+        // render: resolve without the sniff, which would otherwise decode
+        // the whole (potentially huge) body for a result nobody displays.
+        if isEventStream { return .text }
         let mime = (mimeType ?? "").lowercased()
         if mime.contains("html") { return .html }
         if mime.contains("xml") { return .xml }
@@ -202,6 +232,13 @@ struct ResponseModel: Identifiable, Sendable, Codable {
     /// `NSImage`, which covers the common bitmap formats plus SVG).
     var isImageBody: Bool {
         (mimeType ?? "").lowercased().hasPrefix("image/")
+    }
+
+    /// Whether the response is a server-sent-event stream (media type
+    /// `text/event-stream`): its Body pane renders the parsed event log
+    /// instead of the text modes (see `EventStreamView`).
+    var isEventStream: Bool {
+        (mimeType ?? "").lowercased() == "text/event-stream"
     }
 
     /// Whether the body is audio the Preview pane can play (via
