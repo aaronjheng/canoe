@@ -596,7 +596,9 @@ extension AppStore {
 
     /// Records a completed send in the history. The URL is the request's
     /// raw template exactly as entered (Postman-style) - the resolved
-    /// address is only for the console.
+    /// address is only for the console. The entry carries the request's
+    /// full configuration as a snapshot, so it reopens on click no matter
+    /// what happens to the request afterwards (saved, unsaved, deleted).
     func recordHistory(request: Request, response: ResponseModel) {
         let entry = HistoryEntry(
             requestID: request.id,
@@ -605,8 +607,8 @@ extension AppStore {
             urlString: request.urlString,
             statusCode: response.statusCode,
             duration: response.duration,
-            timestamp: Date()
-        )
+            timestamp: Date(),
+            snapshot: request)
         history.insert(entry, at: 0)
         if history.count > historyLimit { history.removeLast() }
         scheduleHistoryPersistence()
@@ -625,8 +627,8 @@ extension AppStore {
             statusCode: 0,
             duration: duration,
             timestamp: Date(),
-            errorKind: Self.errorKind(of: error)
-        )
+            errorKind: Self.errorKind(of: error),
+            snapshot: request)
         history.insert(entry, at: 0)
         if history.count > historyLimit { history.removeLast() }
         scheduleHistoryPersistence()

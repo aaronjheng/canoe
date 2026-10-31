@@ -19,6 +19,12 @@ struct HistoryEntry: Identifiable, Hashable, Codable {
     /// failed entry is distinguishable instead of collapsing into
     /// statusCode 0 / 0 ms.
     let errorKind: String?
+    /// The exact request configuration at send time (Postman: history
+    /// entries are self-contained - clicking one always reopens the
+    /// request, saved or not). Nil for entries recorded before snapshots
+    /// existed; those still display, and clicking rebuilds a minimal
+    /// request from the row's method/URL.
+    let snapshot: Request?
     let timestamp: Date
 
     /// `id` is deliberately not coded: it is a fresh per-session identity
@@ -26,7 +32,7 @@ struct HistoryEntry: Identifiable, Hashable, Codable {
     /// it keeps Codable synthesis from warning about the initial value.
     private enum CodingKeys: String, CodingKey {
         case requestID, name, method, urlString, statusCode, duration
-        case errorKind, timestamp
+        case errorKind, snapshot, timestamp
     }
 
     init(
@@ -37,7 +43,8 @@ struct HistoryEntry: Identifiable, Hashable, Codable {
         statusCode: Int,
         duration: TimeInterval,
         timestamp: Date,
-        errorKind: String? = nil
+        errorKind: String? = nil,
+        snapshot: Request? = nil
     ) {
         self.requestID = requestID
         self.name = name
@@ -47,6 +54,7 @@ struct HistoryEntry: Identifiable, Hashable, Codable {
         self.duration = duration
         self.timestamp = timestamp
         self.errorKind = errorKind
+        self.snapshot = snapshot
     }
 
     init(from decoder: any Decoder) throws {
@@ -62,6 +70,10 @@ struct HistoryEntry: Identifiable, Hashable, Codable {
         statusCode = try container.decodeIfPresent(Int.self, forKey: .statusCode) ?? 0
         duration = try container.decodeIfPresent(TimeInterval.self, forKey: .duration) ?? 0
         errorKind = try container.decodeIfPresent(String.self, forKey: .errorKind)
+        // `try?`: a snapshot a newer build wrote with an incompatible
+        // Request layout costs the snapshot (click rebuilds from the row),
+        // not the row.
+        snapshot = try? container.decodeIfPresent(Request.self, forKey: .snapshot)
         timestamp = try container.decodeIfPresent(Date.self, forKey: .timestamp) ?? Date()
     }
 }

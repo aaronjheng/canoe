@@ -1556,15 +1556,18 @@ private struct HistoryRow: View {
     let entry: HistoryEntry
     @State private var isHovering = false
 
-    private var requestExists: Bool {
-        guard let id = entry.requestID else { return false }
-        return store.vault.collections.contains { $0.requests.contains { $0.id == id } }
+    /// Whether the entry's request still lives in a collection: a saved
+    /// entry needs no Save-to-Collection affordance. Never affects
+    /// clickability - entries are self-contained snapshots (Postman), so
+    /// every row opens, saved or not.
+    private var isSaved: Bool {
+        store.historyEntryIsSaved(entry)
     }
 
     var body: some View {
         HStack(spacing: 0) {
             Button {
-                if let id = entry.requestID { store.openRequest(id) }
+                store.openHistoryEntry(entry)
             } label: {
                 HStack(spacing: AppSpacing.xSmall) {
                     // Fixed-width method column so URLs start on a shared
@@ -1590,10 +1593,21 @@ private struct HistoryRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .clickCursor(isEnabled: requestExists)
-            .disabled(!requestExists)
+            .clickCursor()
 
             if isHovering {
+                if !isSaved {
+                    Button {
+                        store.saveHistoryEntryToCollection(entry)
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(AppFont.iconRow)
+                            .foregroundStyle(AppColor.textSecondary)
+                    }
+                    .buttonStyle(IconButtonStyle(inset: 0))
+                    .accessibilityLabel("Save to Collection")
+                    .help("Save to Collection")
+                }
                 Button {
                     store.removeHistoryEntry(entry)
                 } label: {
@@ -1609,32 +1623,28 @@ private struct HistoryRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contextMenu {
-            if requestExists, let id = entry.requestID, let request = store.request(withID: id) {
-                Button("Send Again") {
-                    // Opens the request's tab, then re-sends the stored
-                    // request there (Postman's history "run again").
-                    store.openRequest(id)
-                    store.send(request)
+            Button("Send Again") {
+                // Opens the entry's request, then re-sends exactly what the
+                // entry holds (Postman's history "run again").
+                store.sendHistoryEntryAgain(entry)
+            }
+            if !isSaved {
+                Button("Save to Collection") {
+                    store.saveHistoryEntryToCollection(entry)
                 }
             }
             Button("Remove from History", role: .destructive) {
                 store.removeHistoryEntry(entry)
             }
         }
-        // A dead entry (its request was deleted) gets no hover fill either:
-        // the same rule every disabled control in the app follows.
         .background(
             RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                .fill(isHovering && requestExists ? AppColor.subtleBackground : .clear)
+                .fill(isHovering ? AppColor.subtleBackground : .clear)
         )
         .animation(AppMotion.quick, value: isHovering)
-        .foregroundStyle(requestExists ? AppColor.textPrimary : AppColor.tertiaryText)
-        .opacity(requestExists ? 1 : AppOpacity.disabled)
+        .foregroundStyle(AppColor.textPrimary)
         .onHover { isHovering = $0 }
-        .help(
-            requestExists
-                ? "\(entry.urlString) · \(entry.timestamp.formatted(date: .abbreviated, time: .shortened))" : "Original request was deleted"
-        )
+        .help("\(entry.urlString) · \(entry.timestamp.formatted(date: .abbreviated, time: .shortened))")
     }
 }
 

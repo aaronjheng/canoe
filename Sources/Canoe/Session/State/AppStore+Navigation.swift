@@ -692,6 +692,72 @@ extension AppStore {
         persistOpenTabs()
     }
 
+    // MARK: - History
+
+    /// The request a history entry opens, restoring it when it no longer
+    /// lives in a collection (Postman: history entries are self-contained
+    /// snapshots - the send-time configuration reopens no matter what
+    /// happened to the request afterwards). A still-saved request comes
+    /// back as-is, so Send Again re-runs its current form; anything else is
+    /// restored as a scratch request from the entry's snapshot (pre-snapshot
+    /// entries rebuild a minimal request from the row). Idempotent: an entry
+    /// whose scratch request already exists returns it untouched.
+    private func requestForHistoryEntry(_ entry: HistoryEntry) -> Request {
+        if let id = entry.requestID {
+            if let saved = vault.collections.flatMap(\.requests).first(where: { $0.id == id }) {
+                return saved
+            }
+            if let scratch = unfiledRequests[id] {
+                return scratch
+            }
+        }
+        var restored = entry.snapshot ?? Request(method: entry.method, urlString: entry.urlString)
+        if entry.snapshot == nil, let id = entry.requestID {
+            // Pre-snapshot entry: keep the row's request id, so whatever
+            // response history still sits under it stays attached.
+            restored.id = id
+            restored.name = entry.name
+        }
+        // A snapshot of a since-deleted filed request carries its old home;
+        // a scratch request has none.
+        restored.folderID = nil
+        unfiledRequests[restored.id] = restored
+        pendingRequestSnapshots[restored.id] = restored
+        scheduleDraftPersistence()
+        return restored
+    }
+
+    /// Clicks a history entry (Postman: "Click a request to open it again
+    /// in a new tab"): saved requests open their tab, everything else
+    /// reopens the entry's snapshot as a scratch tab.
+    func openHistoryEntry(_ entry: HistoryEntry) {
+        openRequest(requestForHistoryEntry(entry).id)
+    }
+
+    /// History "Send Again" (Postman's run again): opens the entry's
+    /// request and re-sends what the entry holds.
+    func sendHistoryEntryAgain(_ entry: HistoryEntry) {
+        let request = requestForHistoryEntry(entry)
+        openRequest(request.id)
+        send(request)
+    }
+
+    /// Whether the entry's request still lives in a collection - drives the
+    /// Save-to-Collection affordance (a saved request needs no saving).
+    func historyEntryIsSaved(_ entry: HistoryEntry) -> Bool {
+        guard let id = entry.requestID else { return false }
+        return vault.collections.contains { $0.requests.contains { $0.id == id } }
+    }
+
+    /// History "Save Request" (Postman's hover +): ensures the entry's
+    /// request exists as a scratch request, then stages the Save Request
+    /// sheet for it. Only reachable for entries whose request is not filed
+    /// - `requestForHistoryEntry` guarantees the scratch exists, which
+    /// `stageRequestSaveSheet` requires.
+    func saveHistoryEntryToCollection(_ entry: HistoryEntry) {
+        stageRequestSaveSheet(for: requestForHistoryEntry(entry).id)
+    }
+
     // MARK: - Tree helpers
 
     /// Folders directly inside a parent (or the collection root when nil).

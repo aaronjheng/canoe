@@ -43,7 +43,8 @@ actor LocalDatabase {
             status_code INTEGER NOT NULL,
             duration REAL NOT NULL,
             error_kind TEXT,
-            timestamp REAL NOT NULL
+            timestamp REAL NOT NULL,
+            snapshot BLOB
         );
         CREATE TABLE IF NOT EXISTS console (
             id TEXT PRIMARY KEY,
@@ -93,7 +94,6 @@ actor LocalDatabase {
             path TEXT PRIMARY KEY,
             deleted_at REAL NOT NULL
         );
-        PRAGMA user_version = 1;
         """
 
     struct Failure: Error, LocalizedError {
@@ -154,11 +154,53 @@ actor LocalDatabase {
             try exec("PRAGMA journal_mode=WAL")
             try exec("PRAGMA synchronous=NORMAL")
             try exec(Self.schemaSQL)
+            try migrateIfNeeded()
         } catch {
             sqlite3_close_v2(opened)
             handle = nil
             throw error
         }
+    }
+
+    /// Versioned migrations after the (idempotent) schema ran - `user_version`
+    /// is stamped here, not in `schemaSQL`, so an old store never skips a
+    /// migration step just because the schema text re-ran. v1 → v2: the
+    /// history table gains the request-snapshot column - stores created at
+    /// v1 predate it, and `CREATE TABLE IF NOT EXISTS` never widens an
+    /// existing table, so the column is added in place. Fresh stores are
+    /// born with the column and just get stamped.
+    private func migrateIfNeeded() throws {
+        guard userVersion() < 2 else { return }
+        if !columnExists(table: "history", column: "snapshot") {
+            try exec("ALTER TABLE history ADD COLUMN snapshot BLOB")
+        }
+        try exec("PRAGMA user_version = 2")
+    }
+
+    private func userVersion() -> Int32 {
+        var statement: OpaquePointer?
+        guard let handle,
+            sqlite3_prepare_v2(handle, "PRAGMA user_version", -1, &statement, nil) == SQLITE_OK,
+            let statement
+        else { return 0 }
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_step(statement) == SQLITE_ROW else { return 0 }
+        return sqlite3_column_int(statement, 0)
+    }
+
+    /// Whether `table` already carries `column` (NULL rows read the schema,
+    /// so no data is touched).
+    private func columnExists(table: String, column: String) -> Bool {
+        var statement: OpaquePointer?
+        guard let handle,
+            sqlite3_prepare_v2(handle, "PRAGMA table_info(\(table))", -1, &statement, nil) == SQLITE_OK,
+            let statement
+        else { return false }
+        defer { sqlite3_finalize(statement) }
+        while sqlite3_step(statement) == SQLITE_ROW {
+            if columnText(statement, 1) == column { return true }
+        }
+        return false
     }
 
     /// Renames the store file and its WAL sidecars aside with a timestamp,
@@ -257,7 +299,7 @@ actor LocalDatabase {
     func loadHistory(limit: Int) throws -> [HistoryEntry] {
         guard let handle else { return [] }
         let sql = """
-            SELECT request_id, name, method, url, status_code, duration, error_kind, timestamp
+            SELECT request_id, name, method, url, status_code, duration, error_kind, timestamp, snapshot
             FROM history ORDER BY position ASC LIMIT ?
             """
         var statement: OpaquePointer?
@@ -277,7 +319,8 @@ actor LocalDatabase {
                     statusCode: Int(sqlite3_column_int64(statement, 4)),
                     duration: sqlite3_column_double(statement, 5),
                     timestamp: Date(timeIntervalSince1970: sqlite3_column_double(statement, 7)),
-                    errorKind: columnText(statement, 6)))
+                    errorKind: columnText(statement, 6),
+                    snapshot: columnJSON(Request.self, statement, 8)))
         }
         return entries
     }
@@ -292,8 +335,8 @@ actor LocalDatabase {
             let sql = """
                 INSERT INTO history
                     (position, request_id, name, method, url, status_code, duration,
-                     error_kind, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     error_kind, timestamp, snapshot)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
             for (position, entry) in entries.enumerated() {
                 try run(sql) { statement in
@@ -306,6 +349,11 @@ actor LocalDatabase {
                     sqlite3_bind_double(statement, 7, entry.duration)
                     bindOptionalText(statement, 8, entry.errorKind)
                     sqlite3_bind_double(statement, 9, entry.timestamp.timeIntervalSince1970)
+                    if let snapshot = entry.snapshot {
+                        try bindJSON(snapshot, into: statement, 10)
+                    } else {
+                        sqlite3_bind_null(statement, 10)
+                    }
                 }
             }
             try exec("COMMIT")
