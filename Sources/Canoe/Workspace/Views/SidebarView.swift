@@ -1605,8 +1605,8 @@ private struct HistoryRow: View {
                             .foregroundStyle(AppColor.textSecondary)
                     }
                     .buttonStyle(IconButtonStyle(inset: 0))
-                    .accessibilityLabel("Save to Collection")
-                    .help("Save to Collection")
+                    .accessibilityLabel("Save request")
+                    .help("Save request")
                 }
                 Button {
                     store.removeHistoryEntry(entry)
@@ -1616,8 +1616,8 @@ private struct HistoryRow: View {
                         .foregroundStyle(AppColor.textSecondary)
                 }
                 .buttonStyle(IconButtonStyle(inset: 0))
-                .accessibilityLabel("Remove from history")
-                .help("Remove from history")
+                .accessibilityLabel("Delete from history")
+                .help("Delete from history")
                 .padding(.trailing, AppSpacing.xSmall)
             }
         }
@@ -1629,11 +1629,11 @@ private struct HistoryRow: View {
                 store.sendHistoryEntryAgain(entry)
             }
             if !isSaved {
-                Button("Save to Collection") {
+                Button("Save Request") {
                     store.saveHistoryEntryToCollection(entry)
                 }
             }
-            Button("Remove from History", role: .destructive) {
+            Button("Delete", role: .destructive) {
                 store.removeHistoryEntry(entry)
             }
         }

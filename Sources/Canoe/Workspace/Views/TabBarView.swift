@@ -191,11 +191,11 @@ struct TabBarView: View {
                         // the button. A right-click offers New WebSocket
                         // (Postman's New > WebSocket); the plain click
                         // stays a new HTTP request.
-                        Button("New Request Tab", systemImage: "plus") {
+                        Button("Create New Request", systemImage: "plus") {
                             store.addRequest()
                         }
                         .buttonStyle(ToolbarButtonStyle())
-                        .help("New Request (⌘N) · right-click for New WebSocket")
+                        .help("Create New Request (⌘N) · right-click for New WebSocket")
                         .contextMenu {
                             Button("New HTTP Request") {
                                 store.addRequest()
@@ -242,7 +242,7 @@ struct TabBarView: View {
             ToolbarToggleButton(
                 systemImage: "chevron.down",
                 isOn: isDrawerShown,
-                help: "Browse open tabs"
+                help: "Search tabs"
             ) {
                 isDrawerShown.toggle()
             }
@@ -557,7 +557,7 @@ struct TabDrawerAnchorKey: PreferenceKey {
 /// Postman-style environment selector living in the tab row (the window
 /// toolbar row was removed; this is its new home): a button showing the
 /// active environment over a dropdown panel with search, a create shortcut,
-/// and a checkmarked "No environment" row. No per-collection pinning (see
+/// and a checkmarked "No Environment" row. No per-collection pinning (see
 /// `setActiveEnvironment`): the choice is a single global active
 /// environment.
 struct EnvironmentPicker: View {
@@ -569,7 +569,7 @@ struct EnvironmentPicker: View {
         // Plain content with a tap gesture, not a Button: only part of a
         // Button label was hit-testing (the chevron, not the text).
         HStack(spacing: AppSpacing.xxSmall) {
-            Text(store.activeEnvironment?.name ?? "No environment")
+            Text(store.activeEnvironment?.name ?? "No Environment")
                 .font(AppFont.small)
                 .foregroundStyle(store.activeEnvironment == nil ? AppColor.textSecondary : AppColor.textPrimary)
                 .lineLimit(1)
@@ -590,13 +590,13 @@ struct EnvironmentPicker: View {
         .onTapGesture { isShown.toggle() }
         .animation(AppMotion.quick, value: isHovering)
         .animation(AppMotion.quick, value: isShown)
-        .accessibilityLabel(store.activeEnvironment.map { "Active environment: \($0.name)" } ?? "No environment selected")
+        .accessibilityLabel(store.activeEnvironment.map { "Active environment: \($0.name)" } ?? "No Environment")
         .accessibilityAddTraits(.isButton)
-        .help(store.activeEnvironment.map { "Active environment: \($0.name)" } ?? "No environment selected")
+        .help(store.activeEnvironment.map { "Active environment: \($0.name)" } ?? "No Environment")
     }
 }
 
-/// The dropdown panel: search on top, then the checkmarked "No environment"
+/// The dropdown panel: search on top, then the checkmarked "No Environment"
 /// row and one row per workspace environment, then a create row. Hosted by
 /// ContentView's window-level overlay (see `EnvPickerAnchorKey`).
 struct EnvironmentPickerPanel: View {
@@ -611,7 +611,7 @@ struct EnvironmentPickerPanel: View {
     @State private var keyboard: PanelRow?
     @State private var isHoveringCreate = false
 
-    /// Selectable rows: the "No environment" pseudo-row first, then the
+    /// Selectable rows: the "No Environment" pseudo-row first, then the
     /// workspace environments in sidebar order. The case is deliberately
     /// not named `none`: in a `PanelRow?` context `.none` resolves to
     /// `Optional.none`, silently turning "no active environment" into nil.
@@ -623,7 +623,7 @@ struct EnvironmentPickerPanel: View {
     private var visibleRows: [PanelRow] {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
         var rows: [PanelRow] = []
-        if query.isEmpty || "No environment".localizedCaseInsensitiveContains(query) {
+        if query.isEmpty || "No Environment".localizedCaseInsensitiveContains(query) {
             rows.append(.noEnvironment)
         }
         rows += store.activeWorkspaceEnvironments
@@ -647,7 +647,7 @@ struct EnvironmentPickerPanel: View {
     private func name(for row: PanelRow) -> String {
         switch row {
         case .noEnvironment:
-            "No environment"
+            "No Environment"
         case .environment(let id):
             store.activeWorkspaceEnvironments.first(where: { $0.id == id })?.name ?? ""
         }
@@ -771,7 +771,7 @@ struct EnvironmentPickerPanel: View {
                         // The checkmark gutter, so the create label lines up
                         // with the environment names above it.
                         .frame(width: AppSize.compactControl)
-                    Text("Create new environment")
+                    Text("Create environment")
                         .font(AppFont.small)
                         .foregroundStyle(AppColor.textPrimary)
                         .lineLimit(1)
