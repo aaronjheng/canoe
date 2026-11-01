@@ -407,10 +407,14 @@ final class CodeEditorScrollView: NSScrollView {
 /// `performKeyEquivalent`, so an Option+Shift press would sail past as the
 /// composed character), ⌘/ comment toggling, and bracket/quote smart
 /// insertion in `insertText`.
-final class CodeEditorTextView: NSTextView {
+final class CodeEditorTextView: NSTextView, NSViewToolTipOwner {
     weak var editorCoordinator: CodeEditorCoordinator?
     /// The current-line band's last drawn rect (for targeted invalidation).
     private var lineBandRect: NSRect = .zero
+    /// The registered tooltip rect's tag + the bounds it covers (re-registered
+    /// when the view grows, so hovers work over newly revealed content).
+    private var tooltipTag: NSView.ToolTipTag?
+    private var tooltipBounds: NSRect = .zero
 
     override func keyDown(with event: NSEvent) {
         let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
@@ -519,6 +523,46 @@ final class CodeEditorTextView: NSTextView {
         return false
     }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        registerTooltipRect()
+    }
+
+    override func layout() {
+        super.layout()
+        registerTooltipRect()
+    }
+
+    /// One tooltip rect covering the view; re-registered when the bounds
+    /// grow (the owner hit-tests by point, so the rect just needs to cover
+    /// the area the mouse can be in).
+    private func registerTooltipRect() {
+        guard window != nil, bounds != tooltipBounds else { return }
+        if let tooltipTag { removeToolTip(tooltipTag) }
+        tooltipBounds = bounds
+        tooltipTag = addToolTip(bounds, owner: self, userData: nil)
+    }
+
+    /// Hover over an error squiggle: the diagnostic with its line/column.
+    func view(
+        _ view: NSView,
+        stringForToolTip tag: NSView.ToolTipTag,
+        point: NSPoint,
+        userData data: UnsafeMutableRawPointer?
+    ) -> String {
+        guard let coordinator = editorCoordinator, let layoutManager, let textContainer else { return "" }
+        let characterIndex = layoutManager.characterIndex(for: point, in: textContainer, fractionOfDistanceBetweenInsertionPoints: nil)
+        for (index, range) in coordinator.diagnosticRanges.enumerated()
+        where NSLocationInRange(characterIndex, range) {
+            let position = coordinator.highlighter.lineAndColumn(ofUTF16Offset: range.location)
+            let message =
+                index < coordinator.diagnosticMessages.count
+                ? coordinator.diagnosticMessages[index] : "Syntax error"
+            return "\(message) (line \(position.line), column \(position.column))"
+        }
+        return ""
+    }
+
     /// The band behind the caret's line, drawn before the text (the view's
     /// background is transparent, so the fill shows through).
     override func draw(_ dirtyRect: NSRect) {
@@ -526,7 +570,45 @@ final class CodeEditorTextView: NSTextView {
             AppColor.textPrimaryNS.withAlphaComponent(0.04).setFill()
             lineBandRect.intersection(dirtyRect).fill()
         }
+        drawIndentGuides(dirtyRect: dirtyRect)
         super.draw(dirtyRect)
+    }
+
+    /// Faint vertical guides at every indent level of each visible line
+    /// fragment (the project's 2-space unit). Drawn under the text; wrapped
+    /// continuations carry no leading whitespace and get none.
+    private func drawIndentGuides(dirtyRect: NSRect) {
+        guard let layoutManager = layoutManager, let container = textContainer,
+            !string.isEmpty
+        else { return }
+        let nsString = string as NSString
+        let unitWidth = ("  " as NSString).size(withAttributes: [.font: font]).width
+        guard unitWidth > 0 else { return }
+        let bounding = dirtyRect.offsetBy(dx: -textContainerOrigin.x, dy: -textContainerOrigin.y)
+        let glyphRange = layoutManager.glyphRange(forBoundingRect: bounding, in: container)
+        let guideColor = AppColor.textPrimaryNS.withAlphaComponent(0.06)
+        guideColor.setFill()
+        var index = glyphRange.location
+        let end = NSMaxRange(glyphRange)
+        while index < end {
+            var fragmentGlyphs = NSRange()
+            let fragment = layoutManager.lineFragmentRect(forGlyphAt: index, effectiveRange: &fragmentGlyphs)
+            let charRange = layoutManager.characterRange(forGlyphRange: fragmentGlyphs, actualGlyphRange: nil)
+            let leading = nsString.substring(with: charRange).prefix { $0 == " " }.count
+            let level = leading / 2
+            if level > 0 {
+                let baseX = fragment.minX + textContainerOrigin.x + CodeEditor.fragmentPadding
+                for levelIndex in 0..<min(level, 12) {
+                    NSRect(
+                        x: baseX + CGFloat(levelIndex) * unitWidth,
+                        y: fragment.minY + textContainerOrigin.y,
+                        width: 1,
+                        height: fragment.height
+                    ).fill()
+                }
+            }
+            index = NSMaxRange(fragmentGlyphs)
+        }
     }
 
     /// Recomputes the caret line's band and invalidates the old and new
@@ -650,6 +732,11 @@ final class CodeEditorCoordinator: NSObject, NSTextViewDelegate, @preconcurrency
     var wordHighlightRanges: [NSRange] = []
     /// The currently dashed error-underline ranges (temporary attributes).
     var diagnosticUnderlineRanges: [NSRange] = []
+    /// The live diagnostics behind the underlines: range, message, and the
+    /// 1-based line (parallel to `diagnosticUnderlineRanges`).
+    var diagnosticRanges: [NSRange] = []
+    var diagnosticMessages: [String] = []
+    var diagnosticLines: [Int] = []
     /// The pending go-to-line number (nil = nothing queued).
     var gotoLine: Int?
     var lastLineCountHint = 1

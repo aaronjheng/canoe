@@ -8,9 +8,14 @@ import AppKit
 /// The line ledger itself lives on the shared `SourceHighlighter` (the
 /// editor already keeps it incrementally in sync), so the gutter only reads
 /// counts and line numbers from it.
-final class CodeEditorGutterView: NSView {
+final class CodeEditorGutterView: NSView, NSViewToolTipOwner {
     weak var textView: NSTextView?
     weak var highlighter: SourceHighlighter?
+    /// The content range of the line where a gutter drag started (nil when
+    /// not dragging).
+    private var dragAnchorRange: NSRange?
+    private var tooltipTag: NSView.ToolTipTag?
+    private var tooltipBounds: NSRect = .zero
     /// Vertical hairline between the gutter and the text (off by default).
     var showsSeparator = false
     /// Lines (1-based) carrying a syntax error - drawn as red dots beside
@@ -37,6 +42,51 @@ final class CodeEditorGutterView: NSView {
         // subtree reorders the pane's layers and composites the background
         // above the sibling content (rows vanish behind the pane fill).
         // Plain drawRect needs no layer.
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        registerTooltipRect()
+    }
+
+    override func layout() {
+        super.layout()
+        registerTooltipRect()
+    }
+
+    /// One tooltip rect covering the view; re-registered when the bounds
+    /// change (the owner hit-tests by point).
+    private func registerTooltipRect() {
+        guard window != nil, bounds != tooltipBounds, bounds.height > 0 else { return }
+        if let tooltipTag { removeToolTip(tooltipTag) }
+        tooltipBounds = bounds
+        tooltipTag = addToolTip(bounds, owner: self, userData: nil)
+    }
+
+    /// Hover over an error dot: the diagnostic's line and message.
+    func view(
+        _ view: NSView,
+        stringForToolTip tag: NSView.ToolTipTag,
+        point: NSPoint,
+        userData data: UnsafeMutableRawPointer?
+    ) -> String {
+        guard let highlighter, errorLines.count > 0 else { return "" }
+        let line = highlighter.lineNumber(ofUTF16Offset: 0)
+        _ = line
+        let point = convert(point, from: nil)
+        let textPoint = (textView?.convert(CGPoint(x: fragmentProbeX, y: point.y), from: self)) ?? .zero
+        guard let textView, let layoutManager = textView.layoutManager,
+            let container = textView.textContainer
+        else { return "" }
+        let glyph = layoutManager.glyphIndex(for: textPoint, in: container)
+        var fragmentGlyphs = NSRange()
+        _ = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: &fragmentGlyphs)
+        let charRange = layoutManager.characterRange(forGlyphRange: fragmentGlyphs, actualGlyphRange: nil)
+        guard charRange.length > 0 else { return "" }
+        let location = min(charRange.location, (textView.string as NSString).length - 1)
+        let lineNumber = highlighter.lineNumber(ofUTF16Offset: location)
+        guard errorLines.contains(lineNumber) else { return "" }
+        return "line \(lineNumber): Syntax error"
     }
 
     /// Starts following the text view's clip view (scroll ticks redraw).

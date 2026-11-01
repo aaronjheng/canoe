@@ -324,21 +324,28 @@ extension CodeEditorCoordinator {
             layoutManager.removeTemporaryAttribute(.underlineColor, forCharacterRange: range)
         }
         diagnosticUnderlineRanges = []
+        diagnosticRanges = []
+        diagnosticMessages = []
+        diagnosticLines = []
 
         let style = NSNumber(value: NSUnderlineStyle.patternDash.rawValue)
         var errorLines: Set<Int> = []
         var underlineRanges: [NSRange] = []
-        for (range, _) in highlighter.diagnostics() where underlineRanges.count < 20 {
+        for (range, message) in highlighter.diagnostics() where underlineRanges.count < 20 {
             var squiggle = range.clampedToString(length)
             guard squiggle.length > 0 else { continue }
             if squiggle.length > 200 { squiggle.length = 200 }
             underlineRanges.append(squiggle)
+            let line = highlighter.lineNumber(ofUTF16Offset: squiggle.location)
+            errorLines.insert(line)
+            diagnosticLines.append(line)
             layoutManager.addTemporaryAttribute(.underlineStyle, value: style, forCharacterRange: squiggle)
             layoutManager.addTemporaryAttribute(
                 .underlineColor, value: NSColor(AppColor.error), forCharacterRange: squiggle)
-            errorLines.insert(highlighter.lineNumber(ofUTF16Offset: squiggle.location))
         }
         diagnosticUnderlineRanges = underlineRanges
+        diagnosticRanges = underlineRanges
+        diagnosticMessages = highlighter.diagnostics().map(\.message)
         if let gutter = rootView?.gutterView {
             gutter.errorLines = errorLines
             gutter.needsDisplay = true

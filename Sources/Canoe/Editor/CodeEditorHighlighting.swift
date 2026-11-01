@@ -185,6 +185,14 @@ final class SourceHighlighter {
     /// go-to-line jump reads this ledger.
     var lineStartOffsets: [Int] { lineStarts }
 
+    /// 1-based line and column for a UTF-16 offset (column in characters,
+    /// not visual cells) - the editor's diagnostics tooltips read this.
+    func lineAndColumn(ofUTF16Offset offset: Int) -> (line: Int, column: Int) {
+        let line = lineNumber(ofUTF16Offset: offset)
+        let start = lineStarts[line - 1]
+        return (line, offset - start + 1)
+    }
+
     /// Syntax diagnostics from the retained tree: the outermost ERROR
     /// nodes ("Syntax error") and MISSING tokens ("Missing x") as UTF-16
     /// ranges. Empty when the tree is clean, plain, or over the cap.
