@@ -17,6 +17,10 @@ disabled_rules:
   - type_body_length
   - file_length
   - cyclomatic_complexity
+  # swift-format (the style authority, `just format`) places a multiline
+  # condition's brace on its own line (AddLines), which this rule flags -
+  # the two tools disagree, so the formatter wins and the rule goes.
+  - opening_brace
 
 line_length: 140
 type_name:

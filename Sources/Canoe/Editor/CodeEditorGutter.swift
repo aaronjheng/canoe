@@ -70,7 +70,7 @@ final class CodeEditorGutterView: NSView, NSViewToolTipOwner {
         point: NSPoint,
         userData data: UnsafeMutableRawPointer?
     ) -> String {
-        guard let highlighter, errorLines.count > 0 else { return "" }
+        guard let highlighter, !errorLines.isEmpty else { return "" }
         let line = highlighter.lineNumber(ofUTF16Offset: 0)
         _ = line
         let point = convert(point, from: nil)
