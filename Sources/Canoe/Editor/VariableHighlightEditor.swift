@@ -333,6 +333,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
             onCommit: onCommit,
             onContentHeightChange: fillsContainer ? nil : { contentHeight = $0 },
             syntax: syntax,
+            isEditable: isEditable,
             incomingCaretLocation: incomingCaretLocation,
             formatHandler: formatHandler,
             formatActionName: formatActionName,
@@ -1273,6 +1274,9 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
     let onCommit: (() -> Void)?
     let onContentHeightChange: ((CGFloat) -> Void)?
     var syntax: BodySyntax = .plain
+    /// Whether the text view accepts typing. The inherited-script echo
+    /// renders read-only but selectable, so the source still copies.
+    var isEditable: Bool = true
     let incomingCaretLocation: Int?
     /// Installed when the caller supplies a format handler; the bridge
     /// re-reads the handler through the coordinator on every invocation.
@@ -1295,7 +1299,9 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
         textView.isRichText = false
         textView.importsGraphics = false
         textView.allowsUndo = true
-        textView.isEditable = true
+        // Read-only surfaces (the inherited-script echo) keep selection and
+        // copy, just not typing - mirrors the single-line field.
+        textView.isEditable = isEditable
         textView.isSelectable = true
         textView.drawsBackground = false
         textView.textColor = AppColor.textPrimaryNS

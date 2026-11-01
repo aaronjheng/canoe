@@ -1680,9 +1680,12 @@ struct RequestEditorView: View {
                 suggestions: requestSuggestions,
                 isSingleLine: false,
                 font: .systemSubheadline,
-                isEditable: false
+                isEditable: false,
+                syntax: .javascript
             )
-            .frame(minHeight: 96, maxHeight: 160)
+            // Top-aligned: the editor auto-grows with its content, and a
+            // short script must hug the header, not float mid-block.
+            .frame(minHeight: 96, maxHeight: 160, alignment: .top)
             .padding(.horizontal, AppSpacing.medium)
             .padding(.bottom, AppSpacing.small)
             Divider()
