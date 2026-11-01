@@ -77,11 +77,10 @@ struct ImportCURLSheet: View {
     /// variable editor with no scope - nothing highlights, nothing
     /// completes, it is just a well-behaved AppKit text view).
     private var pasteField: some View {
-        // Explicit specialization: no programmatic focus wiring.
-        VariableHighlightEditor<Bool>(
+        CodeEditor(
             text: $pastedText,
-            isSingleLine: false,
-            fillsContainer: false,
+            showsLineNumbers: false,
+            enablesTypingAssist: false,
             font: .monoBody,
             placeholder: "curl -X POST https://api.example.com/users -H \"Content-Type: application/json\" -d '{\"name\": \"Ada\"}'"
         )

@@ -1673,19 +1673,15 @@ struct RequestEditorView: View {
             .padding(.horizontal, AppSpacing.medium)
             .padding(.top, AppSpacing.small)
             .padding(.bottom, AppSpacing.xSmall)
-            // Explicit specialization: no programmatic focus wiring.
-            VariableHighlightEditor<Bool>(
+            CodeEditor(
                 text: .constant(script),
                 variables: resolvedVariables,
-                suggestions: requestSuggestions,
-                isSingleLine: false,
-                font: .systemSubheadline,
-                isEditable: false,
-                syntax: .javascript
+                syntax: .javascript,
+                isEditable: false
             )
-            // Top-aligned: the editor auto-grows with its content, and a
-            // short script must hug the header, not float mid-block.
-            .frame(minHeight: 96, maxHeight: 160, alignment: .top)
+            // Hug the content: the editor auto-grows with its script (no
+            // outer height frame - a flexible frame would inflate the block
+            // toward its ceiling and leave a dead band under short scripts).
             .padding(.horizontal, AppSpacing.medium)
             .padding(.bottom, AppSpacing.small)
             Divider()
@@ -1774,7 +1770,7 @@ struct RequestEditorView: View {
     /// The editor side of the Scripts tab: full height, bound to whichever
     /// phase the sidebar picked.
     private var scriptEditorFill: some View {
-        VariableHighlightEditor<Bool>(
+        CodeEditor(
             text: Binding(
                 get: {
                     scriptColumn == .beforeRequest
@@ -1790,13 +1786,11 @@ struct RequestEditorView: View {
             ),
             variables: resolvedVariables,
             suggestions: requestSuggestions,
-            isSingleLine: false,
+            syntax: .javascript,
             fillsContainer: true,
-            font: .systemSubheadline,
             placeholder: scriptColumn == .beforeRequest
                 ? "Runs before the request is sent (pm.variables.set, pm.request.headers.add, ...)"
                 : "Runs after the response arrives (pm.expect, pm.environment.set, pm.test)",
-            syntax: .javascript,
             formatHandler: { source in
                 do {
                     return try ScriptFormatter.format(source)
@@ -1807,7 +1801,6 @@ struct RequestEditorView: View {
             formatActionName: "Format Script",
             onFormatError: showInvalidScriptNote
         )
-        // Explicit specialization: no programmatic focus wiring.
         .padding(.horizontal, AppSpacing.medium)
         .padding(.top, AppSpacing.small)
         .padding(.bottom, AppSpacing.small)

@@ -299,7 +299,7 @@ struct FolderDetailView: View {
     }
 
     private var scriptEditor: some View {
-        VariableHighlightEditor<Bool>(
+        CodeEditor(
             text: Binding(
                 get: {
                     scriptColumn == .preRequest
@@ -315,9 +315,8 @@ struct FolderDetailView: View {
             ),
             variables: resolvedVariables,
             suggestions: suggestions,
-            isSingleLine: false,
+            syntax: .javascript,
             fillsContainer: true,
-            font: .systemSubheadline,
             placeholder: scriptColumn == .preRequest
                 ? "Runs before the request scripts of this folder (pm.variables.set, ...)"
                 : "Runs after the request scripts of this folder (pm.expect, pm.test)"

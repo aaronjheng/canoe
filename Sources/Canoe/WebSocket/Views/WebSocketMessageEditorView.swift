@@ -7,8 +7,8 @@ import SwiftUI
 /// `WebSocketWorkspaceView`); the connection itself is driven from the URL bar.
 ///
 /// Layout note: this view deliberately mirrors `BodyEditor`'s raw editor -
-/// a plain `VStack` around a `fillsContainer` `VariableHighlightEditor`, with
-/// no `GeometryReader`, `Color.clear` anchor, `layoutPriority`, or `fixedSize`
+/// a plain `VStack` around a `fillsContainer` `CodeEditor`, with no
+/// `GeometryReader`, `Color.clear` anchor, `layoutPriority`, or `fixedSize`
 /// anywhere. Those each broke the request editor's chrome rows (name bar, URL
 /// bar, section tabs) when tried; the body editor's shape is the one the
 /// layout system already handles.
@@ -63,15 +63,14 @@ struct WebSocketMessageEditorView: View {
     // MARK: - Editor
 
     private var editorArea: some View {
-        VariableHighlightEditor<Bool>(
+        CodeEditor(
             text: messageTextBinding,
             variables: resolvedVariables,
             suggestions: requestSuggestions,
-            isSingleLine: false,
+            syntax: draft.format.syntax,
             fillsContainer: true,
             font: .monoBody,
             placeholder: "Compose a message…",
-            syntax: draft.format.syntax,
             formatHandler: beautifyHandler,
             formatActionName: "Beautify Message",
             onFormatError: showInvalidMessageNote

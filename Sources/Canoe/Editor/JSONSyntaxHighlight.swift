@@ -197,7 +197,7 @@ enum SyntaxHighlight {
 
     /// Mirrors `paint` above, emitting attributed-string runs instead of
     /// Text pieces so the editor shares the exact JSON coloring.
-    private static func paintJSON(
+    static func paintJSON(
         run node: Node,
         asKey: Bool,
         length: Int,
@@ -233,7 +233,7 @@ enum SyntaxHighlight {
         }
     }
 
-    private static func paintJSONLeaf(
+    static func paintJSONLeaf(
         _ node: Node,
         color: NSColor,
         length: Int,
@@ -265,7 +265,7 @@ enum SyntaxHighlight {
     /// as strings, references as numbers, comments tertiary, and markup
     /// punctuation secondary. Unknown leaves stay default; malformed input
     /// degrades through the generic recursion like the JSON walk.
-    private static func paintXML(
+    static func paintXML(
         run node: Node,
         length: Int,
         cursor: inout Int,
@@ -326,7 +326,7 @@ enum SyntaxHighlight {
         }
     }
 
-    private static func paintXMLLeaf(
+    static func paintXMLLeaf(
         _ node: Node,
         color: NSColor,
         length: Int,
@@ -357,7 +357,7 @@ enum SyntaxHighlight {
     /// declarations, literals, the arrow. Anything not on the list falls
     /// through to the editor's default text color, so being out of sync
     /// with the grammar only costs a color, never a crash.
-    private static let jsKeywordTokens: Set<String> = [
+    static let jsKeywordTokens: Set<String> = [
         "function", "const", "let", "var", "return", "if", "else",
         "for", "while", "do", "switch", "case", "default", "break",
         "continue", "new", "delete", "typeof", "instanceof", "in", "of",
@@ -373,7 +373,7 @@ enum SyntaxHighlight {
     /// emphasizes the `pm` surface. Plain identifiers and punctuation stay
     /// the default text color; malformed input degrades through the generic
     /// recursion like the JSON/XML walks.
-    private static func paintJS(
+    static func paintJS(
         run node: Node,
         length: Int,
         cursor: inout Int,
@@ -414,7 +414,7 @@ enum SyntaxHighlight {
     /// identifiers and property names inside the chain, so `pm.test` and
     /// deep `pm.response.to.have.status` read whole. Strings in computed
     /// member chains (`a["x"]`) stay string-colored via the generic walk.
-    private static func paintJSCallee(
+    static func paintJSCallee(
         _ node: Node,
         length: Int,
         cursor: inout Int,
@@ -442,7 +442,7 @@ enum SyntaxHighlight {
         }
     }
 
-    private static func paintJSLeaf(
+    static func paintJSLeaf(
         _ node: Node,
         color: NSColor,
         length: Int,

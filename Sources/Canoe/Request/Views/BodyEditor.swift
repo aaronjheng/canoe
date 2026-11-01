@@ -131,16 +131,13 @@ struct BodyEditor: View {
 
     private var rawEditor: some View {
         VStack(spacing: 0) {
-            // Explicit specialization: this editor never wires programmatic
-            // focus, so FocusValue would otherwise be uninferable.
-            VariableHighlightEditor<Bool>(
+            CodeEditor(
                 text: $request.bodyText,
                 variables: resolvedVariables,
                 suggestions: requestSuggestions,
-                isSingleLine: false,
+                syntax: rawSyntax,
                 fillsContainer: true,
                 font: .monoBody,
-                syntax: rawSyntax,
                 formatHandler: { source in
                     try BodyFormatter.format(source, kind: self.request.rawBodyKind)
                 },

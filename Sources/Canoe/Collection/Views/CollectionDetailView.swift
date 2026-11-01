@@ -183,7 +183,7 @@ struct CollectionDetailView: View {
     }
 
     private var scriptEditor: some View {
-        VariableHighlightEditor<Bool>(
+        CodeEditor(
             text: Binding(
                 get: {
                     scriptColumn == .preRequest
@@ -199,9 +199,8 @@ struct CollectionDetailView: View {
             ),
             variables: resolvedVariables,
             suggestions: suggestions,
-            isSingleLine: false,
+            syntax: .javascript,
             fillsContainer: true,
-            font: .systemSubheadline,
             placeholder: scriptColumn == .preRequest
                 ? "Runs before the request scripts of this collection (pm.variables.set, ...)"
                 : "Runs after the request scripts of this collection (pm.expect, pm.test)"

@@ -117,6 +117,11 @@ enum AppColor {
         light: RGB(red: 255, green: 255, blue: 255),
         dark: RGB(red: 33, green: 33, blue: 33)
     )
+    /// AppKit twin of `codeBackground`: the CodeEditor gutter's fill.
+    static let codeBackgroundNS: NSColor = dynamicNS(
+        light: RGB(red: 255, green: 255, blue: 255),
+        dark: RGB(red: 33, green: 33, blue: 33)
+    )
     /// The app's content layer: center panes, the status bar, boxed fields,
     /// and floating popup cards. White in light mode; the fixed #212121 in
     /// dark - one neutral step below the window chrome.

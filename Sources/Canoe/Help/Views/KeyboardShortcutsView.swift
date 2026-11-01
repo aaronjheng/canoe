@@ -54,6 +54,22 @@ struct KeyboardShortcutsView: View {
                 Shortcut(action: "Find in Response", keys: "⌘F"),
             ]),
         Group(
+            title: "Editor",
+            shortcuts: [
+                Shortcut(action: "Format", keys: "⌥⇧F"),
+                Shortcut(action: "Toggle Comment", keys: "⌘/"),
+                Shortcut(action: "Find in Editor", keys: "⌘F"),
+                Shortcut(action: "Replace in Editor", keys: "⌥⌘F"),
+                Shortcut(action: "Find Next / Previous", keys: "⌘G / ⌘⇧G"),
+                Shortcut(action: "Use Selection for Find", keys: "⌥⌘E"),
+                Shortcut(action: "Go to Line", keys: "⌥⌘L"),
+                Shortcut(action: "Jump to Matching Bracket", keys: "⇧⌘\\"),
+                Shortcut(action: "Duplicate Lines", keys: "⌘D"),
+                Shortcut(action: "Delete Lines", keys: "⇧⌘K"),
+                Shortcut(action: "Move Line Up / Down", keys: "⌃⌘↑ / ⌃⌘↓"),
+                Shortcut(action: "Delete to Line Start", keys: "⌘⌫"),
+            ]),
+        Group(
             title: "Interface",
             shortcuts: [
                 Shortcut(action: "Toggle Sidebar", keys: "⌘\\"),
