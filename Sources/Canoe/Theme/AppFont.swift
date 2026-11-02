@@ -1,3 +1,4 @@
+import Plume
 import SwiftUI
 
 /// Standard font tokens used across the app.
@@ -13,7 +14,7 @@ import SwiftUI
 ///   Decorative badge/meta tokens below may stay under 12.
 /// - Unmarked text stays on the system default (body 13); write a token only
 ///   when deviating.
-/// - `VariableEditorFont` mirrors these sizes for AppKit `NSFont`s - keep the
+/// - `EditorFont` mirrors these sizes for AppKit `NSFont`s - keep the
 ///   numbers in sync (or derive both from one constant).
 enum AppFont {
     /// Floor for body/readable text: 12pt (was caption2 10 / caption·footnote·subheadline 11).

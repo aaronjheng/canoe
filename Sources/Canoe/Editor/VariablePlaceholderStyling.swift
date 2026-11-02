@@ -1,4 +1,8 @@
 import AppKit
+import Plume
+
+// NOTE: Canoe-side feature code, NOT part of Plume (the editor base library).
+// When the editor extracts into a shared package, this file stays here.
 
 /// Shared `{{variable}}` tinting for the AppKit-backed editors
 /// (`VariableHighlightEditor` and `CodeEditor`).
@@ -7,7 +11,7 @@ enum VariablePlaceholderStyling {
     /// foreground colors, plus tinted `{{variable}}` runs.
     static func attributed(
         _ plain: String,
-        font: VariableEditorFont,
+        font: EditorFont,
         variables: [String: String],
         syntax: BodySyntax = .plain,
         lineBreakMode: NSLineBreakMode? = nil
@@ -26,7 +30,7 @@ enum VariablePlaceholderStyling {
             base[.paragraphStyle] = paragraphStyle(lineBreakMode: lineBreakMode)
         }
         let out = NSMutableAttributedString(string: plain, attributes: base)
-        if let runs = SyntaxHighlight.foregroundRuns(in: plain, syntax: syntax) {
+        if let runs = SyntaxHighlight.foregroundRuns(in: plain, profile: syntax.profile) {
             for (range, color) in runs {
                 out.addAttribute(.foregroundColor, value: color, range: range)
             }
@@ -59,5 +63,12 @@ enum VariablePlaceholderStyling {
     /// `{{a}b}}` that resolution ignores).
     static func variableRanges(in source: String) -> [(NSRange, String)] {
         VariableResolver.ranges(in: source).map { ($0.range, $0.key) }
+    }
+
+    /// Colored ranges for the generic editor's annotation seam: every
+    /// `{{name}}` range paired with its resolved-tint background color
+    /// (`CodeEditor` glue feeds this to `CodeEditorCore.annotations`).
+    static func tintedRanges(in source: String, variables: [String: String]) -> [(NSRange, NSColor)] {
+        variableRanges(in: source).map { (range, key) in (range, tint(key, in: variables)) }
     }
 }

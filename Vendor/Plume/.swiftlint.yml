@@ -1,0 +1,33 @@
+excluded:
+  - .build
+  - .swiftpm
+  - tools
+
+opt_in_rules:
+  - empty_count
+  - closure_spacing
+  - force_unwrapping
+  - implicitly_unwrapped_optional
+  - redundant_nil_coalescing
+
+disabled_rules:
+  - trailing_comma
+  - nesting
+  - function_body_length
+  - type_body_length
+  - file_length
+  - cyclomatic_complexity
+  # swift-format (the style authority, `just format`) places a multiline
+  # condition's brace on its own line (AddLines), which this rule flags -
+  # the two tools disagree, so the formatter wins and the rule goes.
+  - opening_brace
+
+line_length: 140
+type_name:
+  min_length: 2
+identifier_name:
+  min_length: 2
+  max_length: 50
+  excluded:
+    - id
+    - ok

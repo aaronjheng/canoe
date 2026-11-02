@@ -1,5 +1,9 @@
 import AppKit
+import Plume
 import SwiftUI
+
+// NOTE: Canoe-side feature code, NOT part of Plume (the editor base library).
+// When the editor extracts into a shared package, this file stays here.
 
 /// A text editor that highlights `{{variable}}` placeholders: green
 /// background when the variable resolves in scope, amber when it does not
@@ -36,7 +40,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
     /// Fill-container editors (the raw body) stretch to the available height
     /// instead of growing with their content.
     var fillsContainer: Bool = false
-    var font: VariableEditorFont = .monoSubheadline
+    var font: EditorFont = .monoSubheadline
     var placeholder: String?
     /// Leading inset of the empty-state placeholder overlay. Matches the
     /// AppKit text origin: the wrapping URL bar runs zero fragment padding
@@ -143,7 +147,7 @@ struct VariableHighlightEditor<FocusValue: Hashable>: View {
         singleLineMinHeight: CGFloat = 24,
         wrapsWhenFocused: Bool = false,
         fillsContainer: Bool = false,
-        font: VariableEditorFont = .monoSubheadline,
+        font: EditorFont = .monoSubheadline,
         placeholder: String? = nil,
         placeholderLeadingPadding: CGFloat = AppSpacing.compact,
         focus: Binding<FocusValue?>? = nil,
@@ -365,7 +369,7 @@ private struct SingleLineField<FocusValue: Hashable>: NSViewRepresentable {
     let variables: [String: String]
     let suggestions: [VariableSuggestion]
     let wordSuggestions: [VariableSuggestion]?
-    let font: VariableEditorFont
+    let font: EditorFont
     let placeholder: String?
     let focus: Binding<FocusValue?>?
     let focusValue: FocusValue?
@@ -648,7 +652,7 @@ private struct WrappingURLField<FocusValue: Hashable>: NSViewRepresentable {
     @Binding var text: String
     let variables: [String: String]
     let suggestions: [VariableSuggestion]
-    let font: VariableEditorFont
+    let font: EditorFont
     let placeholder: String?
     let focus: Binding<FocusValue?>?
     let focusValue: FocusValue?
@@ -1163,7 +1167,7 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
     @Binding var text: String
     let variables: [String: String]
     let suggestions: [VariableSuggestion]
-    let font: VariableEditorFont
+    let font: EditorFont
     let fillsContainer: Bool
     let focus: Binding<FocusValue?>?
     let focusValue: FocusValue?
@@ -1406,7 +1410,7 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
             let fullRange = NSRange(location: 0, length: length)
             storage.removeAttribute(.backgroundColor, range: fullRange)
             storage.removeAttribute(.foregroundColor, range: fullRange)
-            if let runs = SyntaxHighlight.foregroundRuns(in: storage.string, syntax: parent.syntax) {
+            if let runs = SyntaxHighlight.foregroundRuns(in: storage.string, profile: parent.syntax.profile) {
                 for (range, color) in runs {
                     storage.addAttribute(.foregroundColor, value: color, range: range)
                 }
@@ -1488,7 +1492,7 @@ extension VariableHighlightEditor where FocusValue == Never {
         singleLineMinHeight: CGFloat = 24,
         wrapsWhenFocused: Bool = false,
         fillsContainer: Bool = false,
-        font: VariableEditorFont = .monoSubheadline,
+        font: EditorFont = .monoSubheadline,
         placeholder: String? = nil,
         isEditable: Bool = true,
         onFocusChange: ((Bool) -> Void)? = nil,

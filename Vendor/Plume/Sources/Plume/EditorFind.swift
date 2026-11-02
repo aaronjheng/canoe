@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The editor's find/replace state, owned by SwiftUI and mirrored into the
 /// coordinator on every update. `Equatable` so updateNSView can diff.
-struct CodeEditorFindState: Equatable {
+struct EditorFindState: Equatable {
     var visible = false
     var replacing = false
     var query = ""
@@ -14,7 +14,7 @@ struct CodeEditorFindState: Equatable {
 /// Buttons/fields dispatch through this: the SwiftUI side sets a pending
 /// action, updateNSView performs it on the coordinator and clears it (the
 /// same deferred-action pattern as the method dropdown's pending pick).
-enum CodeEditorFindAction {
+enum EditorFindAction {
     case next
     case previous
     case replaceCurrent
@@ -24,7 +24,7 @@ enum CodeEditorFindAction {
 /// AppKit → SwiftUI callbacks: ⌘F opening the bar (with the selection as
 /// the prefill and whether the replace row shows), match count/index
 /// updates, Esc closing the bar.
-struct CodeEditorFindHooks {
+struct EditorFindHooks {
     let requested: (String?, Bool) -> Void
     let countChanged: (Int, Int?) -> Void
     let closed: () -> Void
@@ -37,7 +37,7 @@ struct CodeEditorFindHooks {
 /// The find/replace bar overlaid across the editor's top-right corner
 /// (Xcode-style): fields stacked left, controls right, with a replace row
 /// behind the toggle. Pure presentation - actions are handed back out.
-struct CodeEditorFindBar: View {
+struct EditorFindBar: View {
     @Binding var query: String
     @Binding var replacement: String
     @Binding var caseSensitive: Bool
@@ -58,7 +58,7 @@ struct CodeEditorFindBar: View {
     private let controlZoneWidth: CGFloat = 160
 
     var body: some View {
-        HStack(alignment: .top, spacing: AppSpacing.compact) {
+        HStack(alignment: .top, spacing: EditorTheme.spaceCompact) {
             VStack(alignment: .leading, spacing: 6) {
                 findField
                 if replacing {
@@ -83,11 +83,11 @@ struct CodeEditorFindBar: View {
                 if replacing {
                     HStack(spacing: 4) {
                         Button("Replace", action: onReplace)
-                            .buttonStyle(SecondaryButtonStyle(minHeight: 24))
+                            .buttonStyle(EditorSecondaryButtonStyle(minHeight: 24))
                             .disabled(!isEditable || matchCount == 0)
                             .help("Replace current match (⌘⌥F)")
                         Button("All", action: onReplaceAll)
-                            .buttonStyle(SecondaryButtonStyle(minHeight: 24))
+                            .buttonStyle(EditorSecondaryButtonStyle(minHeight: 24))
                             .disabled(!isEditable || matchCount == 0)
                             .help("Replace all matches (⌘⌥⇧F)")
                     }
@@ -96,7 +96,7 @@ struct CodeEditorFindBar: View {
             }
             VStack(alignment: .trailing, spacing: 6) {
                 HStack(spacing: 4) {
-                    ToolbarToggleButton(
+                    EditorToolbarToggleButton(
                         systemImage: "text.magnifyingglass",
                         isOn: replacing,
                         help: replacing ? "Hide Replace" : "Show Replace"
@@ -104,7 +104,7 @@ struct CodeEditorFindBar: View {
                         replacing.toggle()
                     }
                     Button("Done", action: onClose)
-                        .buttonStyle(SecondaryButtonStyle(minHeight: 24))
+                        .buttonStyle(EditorSecondaryButtonStyle(minHeight: 24))
                         .help("Close find bar (Esc)")
                 }
                 if replacing {
@@ -112,15 +112,15 @@ struct CodeEditorFindBar: View {
                 }
             }
         }
-        .padding(AppSpacing.small)
+        .padding(EditorTheme.spaceSmall)
         .background(
-            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                .fill(AppColor.controlBackground)
-                .shadow(color: AppColor.popupShadow, radius: 10, y: 3)
+            RoundedRectangle(cornerRadius: EditorTheme.radiusMedium, style: .continuous)
+                .fill(EditorTheme.controlBackground)
+                .shadow(color: EditorTheme.popupShadow, radius: 10, y: 3)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                .strokeBorder(AppColor.border, lineWidth: AppLine.field)
+            RoundedRectangle(cornerRadius: EditorTheme.radiusMedium, style: .continuous)
+                .strokeBorder(EditorTheme.border, lineWidth: EditorTheme.lineField)
         )
         .onAppear {
             // Focus after the field is actually in a window - a same-tick
@@ -154,20 +154,20 @@ struct CodeEditorFindBar: View {
 
     private func field(text: Binding<String>, prompt: String, focused: Bool) -> some View {
         TextField(prompt, text: text)
-            .font(AppFont.monoSubheadline)
+            .font(EditorTheme.fontMonoSubheadline)
             .textFieldStyle(.plain)
             .focusEffectDisabled()
-            .padding(.horizontal, AppSpacing.compact)
+            .padding(.horizontal, EditorTheme.spaceCompact)
             .frame(width: fieldWidth, height: 26)
             .background(
-                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                    .fill(AppColor.fieldBackground)
+                RoundedRectangle(cornerRadius: EditorTheme.radiusSmall, style: .continuous)
+                    .fill(EditorTheme.fieldBackground)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                RoundedRectangle(cornerRadius: EditorTheme.radiusSmall, style: .continuous)
                     .strokeBorder(
-                        focused ? AppColor.accent : AppColor.border,
-                        lineWidth: focused ? AppLine.focusedField : AppLine.field
+                        focused ? EditorTheme.accent : EditorTheme.border,
+                        lineWidth: focused ? EditorTheme.lineFocusedField : EditorTheme.lineField
                     )
             )
     }
@@ -176,19 +176,19 @@ struct CodeEditorFindBar: View {
     private var countLabel: some View {
         if query.isEmpty {
             Text(" ")
-                .font(AppFont.small.monospacedDigit())
+                .font(EditorTheme.fontSmall.monospacedDigit())
         } else if matchCount == 0 {
             Text("No results")
-                .font(AppFont.small)
-                .foregroundStyle(AppColor.error)
+                .font(EditorTheme.fontSmall)
+                .foregroundStyle(EditorTheme.error)
         } else if let matchIndex {
             Text("\(matchIndex + 1)/\(matchCount)")
-                .font(AppFont.small.monospacedDigit())
-                .foregroundStyle(AppColor.textSecondary)
+                .font(EditorTheme.fontSmall.monospacedDigit())
+                .foregroundStyle(EditorTheme.textSecondary)
         } else {
             Text("\(matchCount) found")
-                .font(AppFont.small)
-                .foregroundStyle(AppColor.textSecondary)
+                .font(EditorTheme.fontSmall)
+                .foregroundStyle(EditorTheme.textSecondary)
         }
     }
 
@@ -203,27 +203,27 @@ struct CodeEditorFindBar: View {
     ) -> some View {
         Button(action: action) {
             Text(label)
-                .font(AppFont.small.weight(isActive ? .semibold : .regular))
+                .font(EditorTheme.fontSmall.weight(isActive ? .semibold : .regular))
                 .foregroundStyle(
-                    isActive ? AppColor.accent : AppColor.textSecondary
+                    isActive ? EditorTheme.accent : EditorTheme.textSecondary
                 )
                 .frame(width: 24, height: 24)
                 .background(
-                    RoundedRectangle(cornerRadius: AppRadius.small)
-                        .fill(isActive ? AppColor.subtleBackground : .clear)
+                    RoundedRectangle(cornerRadius: EditorTheme.radiusSmall)
+                        .fill(isActive ? EditorTheme.subtleBackground : .clear)
                 )
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(disabled)
-        .opacity(disabled ? AppOpacity.disabled : 1)
+        .opacity(disabled ? EditorTheme.opacityDisabled : 1)
         .help(help)
     }
 }
 
 /// The go-to-line mini panel (⌥⌘L): a number field and a Go button,
 /// matching the find bar's overlay language.
-struct CodeEditorGoToLineBar: View {
+struct EditorGoToLineBar: View {
     @Binding var text: String
     let lineCount: Int
     let onClose: () -> Void
@@ -232,12 +232,12 @@ struct CodeEditorGoToLineBar: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        HStack(spacing: AppSpacing.xSmall) {
+        HStack(spacing: EditorTheme.spaceXSmall) {
             Text("Line")
-                .font(AppFont.small)
-                .foregroundStyle(AppColor.textSecondary)
+                .font(EditorTheme.fontSmall)
+                .foregroundStyle(EditorTheme.textSecondary)
             TextField("1–\(max(lineCount, 1))", text: $text)
-                .font(AppFont.monoSubheadline)
+                .font(EditorTheme.fontMonoSubheadline)
                 .textFieldStyle(.plain)
                 .focusEffectDisabled()
                 .focused($focused)
@@ -247,32 +247,32 @@ struct CodeEditorGoToLineBar: View {
                     let digitsOnly = newValue.filter { $0.isNumber }
                     text = digitsOnly
                 }
-                .padding(.horizontal, AppSpacing.compact)
+                .padding(.horizontal, EditorTheme.spaceCompact)
                 .frame(width: 110, height: 26)
                 .background(
-                    RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                        .fill(AppColor.fieldBackground)
+                    RoundedRectangle(cornerRadius: EditorTheme.radiusSmall, style: .continuous)
+                        .fill(EditorTheme.fieldBackground)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                    RoundedRectangle(cornerRadius: EditorTheme.radiusSmall, style: .continuous)
                         .strokeBorder(
                             (text.isEmpty || Int(text) != nil)
-                                ? AppColor.accent : AppColor.error,
-                            lineWidth: AppLine.focusedField
+                                ? EditorTheme.accent : EditorTheme.error,
+                            lineWidth: EditorTheme.lineFocusedField
                         )
                 )
             Button("Go", action: onSubmit)
-                .buttonStyle(SecondaryButtonStyle(minHeight: 24))
+                .buttonStyle(EditorSecondaryButtonStyle(minHeight: 24))
         }
-        .padding(AppSpacing.small)
+        .padding(EditorTheme.spaceSmall)
         .background(
-            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                .fill(AppColor.controlBackground)
-                .shadow(color: AppColor.popupShadow, radius: 10, y: 3)
+            RoundedRectangle(cornerRadius: EditorTheme.radiusMedium, style: .continuous)
+                .fill(EditorTheme.controlBackground)
+                .shadow(color: EditorTheme.popupShadow, radius: 10, y: 3)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                .strokeBorder(AppColor.border, lineWidth: AppLine.field)
+            RoundedRectangle(cornerRadius: EditorTheme.radiusMedium, style: .continuous)
+                .strokeBorder(EditorTheme.border, lineWidth: EditorTheme.lineField)
         )
         .onAppear {
             DispatchQueue.main.async { focused = true }
@@ -282,10 +282,10 @@ struct CodeEditorGoToLineBar: View {
 
 // MARK: - Coordinator machinery
 
-extension CodeEditorCoordinator {
+extension EditorCoordinator {
     /// Diffs the find state pushed from SwiftUI: recompute + highlight when
     /// the query/case/visibility changed, clear when closed.
-    func syncFindState(_ state: CodeEditorFindState, in textView: NSTextView) {
+    func syncFindState(_ state: EditorFindState, in textView: NSTextView) {
         guard state != lastFindState else { return }
         let wasVisible = lastFindState?.visible ?? false
         lastFindState = state
@@ -347,8 +347,8 @@ extension CodeEditorCoordinator {
         guard !findMatches.isEmpty else { return }
         // Temporary background attributes overlay the storage tints (and
         // drop automatically on edits - the pipeline re-runs this after).
-        let wash = NSColor(AppColor.warning).withAlphaComponent(0.28)
-        let currentWash = NSColor(AppColor.warning).withAlphaComponent(0.48)
+        let wash = NSColor(EditorTheme.warning).withAlphaComponent(0.28)
+        let currentWash = NSColor(EditorTheme.warning).withAlphaComponent(0.48)
         for (index, range) in findMatches.enumerated() {
             layoutManager.addTemporaryAttribute(
                 .backgroundColor,
@@ -374,7 +374,7 @@ extension CodeEditorCoordinator {
         return ranges
     }
 
-    func performFindAction(_ action: CodeEditorFindAction, in textView: NSTextView) {
+    func performFindAction(_ action: EditorFindAction, in textView: NSTextView) {
         switch action {
         case .next: findNext(in: textView)
         case .previous: findPrevious(in: textView)

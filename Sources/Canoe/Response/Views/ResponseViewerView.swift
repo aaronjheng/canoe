@@ -1,4 +1,5 @@
 import AppKit
+import Plume
 import SwiftUI
 
 struct ResponseViewerView: View {

@@ -4,7 +4,7 @@ import TreeSitterJSON
 import TreeSitterJavaScript
 import TreeSitterXML
 
-/// Incremental syntax highlighting for `CodeEditor`: one parser + parse
+/// Incremental syntax highlighting for `Editor`: one parser + parse
 /// tree kept alive per editor, edited through tree-sitter's incremental
 /// machinery instead of the full re-parse every keystroke that
 /// `SyntaxHighlight.foregroundRuns` does for one-shot painting.
@@ -16,39 +16,43 @@ import TreeSitterXML
 ///    `changedRanges`,
 /// 3. returns a repaint window: the edited lines united with everything the
 ///    parse says moved (a `/*` typed above recolors lines far below), and
-/// 4. the fresh runs intersecting that window, from the same paint walks
-///    the response viewer uses.
+/// 4. the fresh runs intersecting that window, from the profile's paint
+///    walk.
 ///
-/// `{{variable}}` tints are line-scoped, so the caller re-tints the same
-/// window; the window is always expanded to line boundaries first, which
-/// also guarantees a placeholder never straddles its edge.
+/// The host's annotation washes are line-scoped, so the caller re-tints
+/// the same window; the window is always expanded to line boundaries
+/// first, which also guarantees an annotation never straddles its edge.
 ///
 /// Anything unexpected (grammar load failure, parse cancellation, text over
 /// the shared length cap) degrades to tint-only, matching
 /// `SyntaxHighlight`'s contract: highlighting must never break the editor.
 final class SourceHighlighter {
-    private var syntax: BodySyntax
+    private var profile: SyntaxProfile
     private var parser: Parser?
     private var tree: MutableTree?
     /// UTF-16 offsets of every line start, kept incrementally so the
     /// InputEdit points stay O(edited lines) even on megabyte bodies.
     private var lineStarts: [Int] = [0]
 
-    /// Same cap as `SyntaxHighlight`: beyond it the editor paints variable
-    /// tints only and skips the grammar entirely.
+    /// Same cap as `SyntaxHighlight`: beyond it the editor paints
+    /// annotations only and skips the grammar entirely.
     private let maxSyntaxLength = 200_000
 
-    init(syntax: BodySyntax) {
-        self.syntax = .plain
-        setSyntax(syntax)
+    init(profile: SyntaxProfile) {
+        self.profile = .plain
+        setProfile(profile)
     }
 
-    /// Switches the grammar (the raw body's JSON/XML/Text picker). Rebuilds
-    /// the parser; the next paint is a full one.
-    func setSyntax(_ syntax: BodySyntax) {
-        guard syntax != self.syntax || parser == nil else { return }
-        self.syntax = syntax
-        parser = Self.parser(for: syntax)
+    /// Switches the grammar. Rebuilds the parser; the next paint is a full
+    /// one. Profiles compare by id (see `SyntaxProfile.==`).
+    func setProfile(_ profile: SyntaxProfile) {
+        guard profile != self.profile || parser == nil else { return }
+        self.profile = profile
+        parser = profile.language().flatMap { language in
+            let parser = Parser()
+            guard (try? parser.setLanguage(language)) != nil else { return nil }
+            return parser
+        }
         tree = nil
     }
 
@@ -91,7 +95,7 @@ final class SourceHighlighter {
         // tree, from scratch when there is none (first edit, previous parse
         // failure) or the grammar is unavailable (tint-only degradation).
         var runs: [(NSRange, NSColor)]?
-        if length <= maxSyntaxLength, syntax != .plain, let parser {
+        if length <= maxSyntaxLength, let parser {
             if let oldTree = tree {
                 oldTree.edit(
                     InputEdit(
@@ -118,7 +122,7 @@ final class SourceHighlighter {
             }
             if let current = tree ?? parser.parse(text) {
                 tree = current
-                runs = Self.paint(current, syntax: syntax, length: length)
+                runs = Self.paint(current, profile: profile, length: length)
             } else {
                 tree = nil
             }
@@ -129,23 +133,14 @@ final class SourceHighlighter {
 
     // MARK: - Painting
 
-    /// Walks a fresh tree once with the shared paint walks. The walk is
+    /// Walks a fresh tree once with the profile's paint. The walk is
     /// O(nodes) - microseconds next to the attribute work - so the caller
     /// filters rather than re-strategizing the traversal.
-    private static func paint(_ tree: MutableTree, syntax: BodySyntax, length: Int) -> [(NSRange, NSColor)]? {
+    private static func paint(_ tree: MutableTree, profile: SyntaxProfile, length: Int) -> [(NSRange, NSColor)]? {
         guard let root = tree.rootNode else { return nil }
         var runs: [(NSRange, NSColor)] = []
         var cursor = 0
-        switch syntax {
-        case .plain:
-            return nil
-        case .json:
-            SyntaxHighlight.paintJSON(run: root, asKey: false, length: length, cursor: &cursor, runs: &runs)
-        case .xml:
-            SyntaxHighlight.paintXML(run: root, length: length, cursor: &cursor, runs: &runs)
-        case .javascript:
-            SyntaxHighlight.paintJS(run: root, length: length, cursor: &cursor, runs: &runs)
-        }
+        profile.paint(root, length, &cursor, &runs)
         return runs
     }
 
@@ -153,26 +148,6 @@ final class SourceHighlighter {
     private static func windowRuns(full: [(NSRange, NSColor)]?, window: NSRange) -> [(NSRange, NSColor)]? {
         guard let full else { return nil }
         return full.filter { NSIntersectionRange($0.0, window).length > 0 }
-    }
-
-    /// Parser for a body language; nil when the grammar is unavailable
-    /// (plain, or the tree-sitter language function failed to load).
-    private static func parser(for syntax: BodySyntax) -> Parser? {
-        let pointer: OpaquePointer?
-        switch syntax {
-        case .plain:
-            return nil
-        case .json:
-            pointer = tree_sitter_json()
-        case .xml:
-            pointer = tree_sitter_xml()
-        case .javascript:
-            pointer = tree_sitter_javascript()
-        }
-        guard let pointer else { return nil }
-        let parser = Parser()
-        guard (try? parser.setLanguage(Language(pointer))) != nil else { return nil }
-        return parser
     }
 
     // MARK: - Line bookkeeping

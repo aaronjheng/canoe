@@ -51,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppKitFocusRing.install()
+        EditorThemeInstallation.install()
         NSApp.setActivationPolicy(.regular)
         NSApp.activate()
         (AppAppearance(rawValue: SettingsStore.shared.settings.appearance) ?? .system).apply()

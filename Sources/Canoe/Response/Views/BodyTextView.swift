@@ -1,4 +1,5 @@
 import AppKit
+import Plume
 import SwiftUI
 
 /// The response body's rendered text: a read-only AppKit `NSTextView`
@@ -166,7 +167,7 @@ struct BodyTextView: NSViewRepresentable {
         // Postman renders the body pane at 13px; this is the AppKit NSFont
         // mirror of `AppFont.monoBody` (the old single-Text render used the
         // 12pt table tier, which read undersized beside Postman).
-        textView.font = VariableEditorFont.monoBody.nsFont
+        textView.font = EditorFont.monoBody.nsFont
         // Postman's body rides ~20px lines at that size (~1.5x); AppKit's
         // default ~16pt extent read cramped once the glyphs matched, so the
         // line box gets the +4. Runs keep their own colors only - paragraph
@@ -410,7 +411,7 @@ struct BodyTextView: NSViewRepresentable {
             indent.isEmpty
             ? 0
             : (indent as NSString).size(
-                withAttributes: [.font: VariableEditorFont.monoBody.nsFont]
+                withAttributes: [.font: EditorFont.monoBody.nsFont]
             ).width
         lineStyles[indent] = paragraph
         return paragraph

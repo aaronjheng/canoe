@@ -1,6 +1,9 @@
 import AppKit
 import SwiftUI
 
+// NOTE: Canoe-side feature code, NOT part of Plume (the editor base library).
+// When the editor extracts into a shared package, this file stays here.
+
 /// One URL-history suggestion row: the request's method (display only) and
 /// the URL exactly as entered. Built from the machine-local history.
 struct URLSuggestion: Identifiable {

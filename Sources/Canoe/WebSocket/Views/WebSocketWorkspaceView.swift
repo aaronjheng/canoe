@@ -1,4 +1,5 @@
 import AppKit
+import Plume
 import SwiftUI
 
 /// The pane under a WebSocket request editor: the message log (Postman's

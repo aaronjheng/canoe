@@ -1,4 +1,5 @@
 import AppKit
+import Plume
 import SwiftUI
 
 /// The WebSocket request editor's "Message" tab (Postman's WebSocket message

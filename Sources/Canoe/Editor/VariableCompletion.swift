@@ -1,5 +1,8 @@
 import Foundation
 
+// NOTE: Canoe-side feature code, NOT part of Plume (the editor base library).
+// When the editor extracts into a shared package, this file stays here.
+
 /// One candidate in the `{{variable}}` completion popup: the placeholder name
 /// to insert plus display metadata from its highest-precedence definition.
 /// Values are deliberately absent - secret values must never surface in a

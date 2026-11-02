@@ -1,6 +1,6 @@
 import AppKit
 
-/// Line-number gutter for `CodeEditor`: a fixed strip left of the scroll
+/// Line-number gutter for `Editor`: a fixed strip left of the scroll
 /// view, drawing one number per logical line aligned to the line's first
 /// laid-out fragment. Wrapped continuations repeat nothing; the phantom
 /// line after a trailing newline is numbered like every editor's last line.
@@ -8,7 +8,7 @@ import AppKit
 /// The line ledger itself lives on the shared `SourceHighlighter` (the
 /// editor already keeps it incrementally in sync), so the gutter only reads
 /// counts and line numbers from it.
-final class CodeEditorGutterView: NSView, NSViewToolTipOwner {
+final class EditorGutterView: NSView, NSViewToolTipOwner {
     weak var textView: NSTextView?
     weak var highlighter: SourceHighlighter?
     /// The content range of the line where a gutter drag started (nil when
@@ -109,7 +109,9 @@ final class CodeEditorGutterView: NSView, NSViewToolTipOwner {
             object: scrollView.contentView,
             queue: .main
         ) { [weak self] _ in
-            self?.needsDisplay = true
+            MainActor.assumeIsolated {
+                self?.needsDisplay = true
+            }
         }
     }
 
@@ -147,13 +149,13 @@ final class CodeEditorGutterView: NSView, NSViewToolTipOwner {
         // editor - the pane's rows vanished behind the gutter's fill.
         let safe = dirtyRect.intersection(bounds)
         guard !safe.isNull, safe.width > 0, safe.height > 0 else { return }
-        AppColor.codeBackgroundNS.setFill()
+        EditorTheme.codeBackgroundNS.setFill()
         safe.fill()
 
         // Right hairline separating gutter from text. A solid dynamic token:
         // opacity-composited semantic colors are unreliable as NSView fills.
         if showsSeparator {
-            NSColor(AppColor.border).setFill()
+            NSColor(EditorTheme.border).setFill()
             NSRect(x: bounds.maxX - 1, y: bounds.minY, width: 1, height: bounds.height).fill()
         }
 
@@ -165,7 +167,7 @@ final class CodeEditorGutterView: NSView, NSViewToolTipOwner {
 
         let numberAttributes: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: NSColor(AppColor.textSecondary),
+            .foregroundColor: NSColor(EditorTheme.textSecondary),
         ]
         var index = glyphRange.location
         let end = NSMaxRange(glyphRange)
@@ -247,7 +249,7 @@ final class CodeEditorGutterView: NSView, NSViewToolTipOwner {
             y: origin.y + (fragmentRect.height - diameter) / 2,
             width: diameter,
             height: diameter)
-        NSColor(AppColor.error).setFill()
+        NSColor(EditorTheme.error).setFill()
         dot.fill()
     }
 

@@ -1,6 +1,9 @@
 import AppKit
 import SwiftUI
 
+// NOTE: Canoe-side feature code, NOT part of Plume (the editor base library).
+// When the editor extracts into a shared package, this file stays here.
+
 /// The SwiftUI content hosted inside the completion panel: the filtered
 /// `{{name}}` rows plus a keyboard-hint footer. Selection is owned by the
 /// controller; hover mirrors it so mouse and keyboard share one state.

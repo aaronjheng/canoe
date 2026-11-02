@@ -2,7 +2,7 @@ import AppKit
 
 // MARK: - Line operations
 
-extension CodeEditorCoordinator {
+extension EditorCoordinator {
     /// ⌘D: duplicates the selection's lines right below, selecting the copy.
     func duplicateLines(in textView: NSTextView) {
         guard textView.isEditable, !textView.hasMarkedText(),
@@ -94,7 +94,7 @@ extension CodeEditorCoordinator {
 
 // MARK: - Bracket matching
 
-extension CodeEditorCoordinator {
+extension EditorCoordinator {
     /// Highlights the bracket pair around the caret: the character before
     /// the caret wins, then the character at it. Temporary foreground
     /// attributes (edits drop them; the next selection change reapplies).
@@ -120,7 +120,7 @@ extension CodeEditorCoordinator {
             NSRange(location: match, length: 1),
         ]
         for range in bracketHighlightRanges {
-            layoutManager.addTemporaryAttribute(.foregroundColor, value: NSColor(AppColor.accent), forCharacterRange: range)
+            layoutManager.addTemporaryAttribute(.foregroundColor, value: NSColor(EditorTheme.accent), forCharacterRange: range)
         }
     }
 
@@ -191,7 +191,7 @@ func isWordChar(_ character: Character?) -> Bool {
     return character.isLetter || character.isNumber || character == "_"
 }
 
-extension CodeEditorCoordinator {
+extension EditorCoordinator {
     /// Whether a format handler is installed (the menu's Format item).
     func canFormat(_ textView: NSTextView) -> Bool {
         parent.formatHandler != nil
@@ -199,19 +199,23 @@ extension CodeEditorCoordinator {
 
     /// Whether the current grammar has comments (drives the menu item).
     var supportsComments: Bool {
-        parent.syntax == .javascript || parent.syntax == .xml
+        parent.syntax.commentStyle != .none
     }
 }
 
 // MARK: - Go to line / selection for find / delete to line start
 
-extension CodeEditorCoordinator {
+extension EditorCoordinator {
     /// ⌥⌘L's submit: lands the caret on the head of line `line` (1-based,
     /// clamped) and scrolls it into view.
     func goToLine(_ line: Int, in textView: NSTextView) {
         let starts = highlighter.lineStartOffsets
         let clamped = min(max(line, 1), max(starts.count, 1))
-        let location = starts[clamped - 1]
+        // Clamp against the live string: the incremental line ledger could
+        // briefly disagree with the storage; an OOB caret here poisons the
+        // text system (AppKit throws NSRangeException on the blink rect).
+        let length = (textView.string as NSString).length
+        let location = min(starts[clamped - 1], length)
         textView.setSelectedRange(NSRange(location: location, length: 0))
         textView.scrollRangeToVisible(NSRange(location: location, length: 0))
     }
@@ -254,7 +258,7 @@ extension CodeEditorCoordinator {
 
 // MARK: - Word occurrence highlight
 
-extension CodeEditorCoordinator {
+extension EditorCoordinator {
     /// Double-click/selection helper: when the selection is a bare word
     /// (letters, digits, underscore, ≤64 chars), washes every occurrence.
     /// Suspended while the find bar owns the background washes.
@@ -293,14 +297,14 @@ extension CodeEditorCoordinator {
             searchRange.length = length - searchRange.location
         }
         wordHighlightRanges = ranges
-        let wash = NSColor(AppColor.accent).withAlphaComponent(0.12)
+        let wash = NSColor(EditorTheme.accent).withAlphaComponent(0.12)
         for range in ranges {
             layoutManager.addTemporaryAttribute(.backgroundColor, value: wash, forCharacterRange: range)
         }
     }
 }
 
-extension CodeEditorCoordinator {
+extension EditorCoordinator {
     /// ⌥⌘L: opens the go-to-line panel (closing the find bar - the two
     /// overlays share the editor's top-right corner).
     func requestLinePanel(in textView: NSTextView) {
@@ -311,7 +315,7 @@ extension CodeEditorCoordinator {
 
 // MARK: - Syntax diagnostics
 
-extension CodeEditorCoordinator {
+extension EditorCoordinator {
     /// After every storage edit: dashes the tree's ERROR/MISSING ranges and
     /// marks their lines in the gutter. Capped (20 squiggles, 200 chars
     /// each) so one broken brace early in a huge body doesn't paint half
@@ -331,7 +335,7 @@ extension CodeEditorCoordinator {
         let style = NSNumber(value: NSUnderlineStyle.patternDash.rawValue)
         var errorLines: Set<Int> = []
         var underlineRanges: [NSRange] = []
-        for (range, message) in highlighter.diagnostics() where underlineRanges.count < 20 {
+        for (range, _) in highlighter.diagnostics() where underlineRanges.count < 20 {
             var squiggle = range.clampedToString(length)
             guard squiggle.length > 0 else { continue }
             if squiggle.length > 200 { squiggle.length = 200 }
@@ -341,7 +345,7 @@ extension CodeEditorCoordinator {
             diagnosticLines.append(line)
             layoutManager.addTemporaryAttribute(.underlineStyle, value: style, forCharacterRange: squiggle)
             layoutManager.addTemporaryAttribute(
-                .underlineColor, value: NSColor(AppColor.error), forCharacterRange: squiggle)
+                .underlineColor, value: NSColor(EditorTheme.error), forCharacterRange: squiggle)
         }
         diagnosticUnderlineRanges = underlineRanges
         diagnosticRanges = underlineRanges
@@ -365,7 +369,7 @@ extension NSRange {
 
 // MARK: - Paste and format
 
-extension CodeEditorCoordinator {
+extension EditorCoordinator {
     /// ⌥⇧⌘V / context menu: pastes the pasteboard string through the
     /// format handler (minified JSON lands pretty-printed). Falls back to
     /// a plain paste when there is no handler, the pasteboard is empty,

@@ -1,4 +1,5 @@
 import Foundation
+import Plume
 import SwiftUI
 
 /// Postman-style request editor: a breadcrumb name bar

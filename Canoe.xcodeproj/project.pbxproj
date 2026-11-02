@@ -318,17 +318,6 @@
 			<key>path</key>
 			<string>Components</string>
 		</dict>
-		<key>DCFE401E39B16C0E3F575E96</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.swift</string>
-			<key>path</key>
-			<string>JSONSyntaxHighlight.swift</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
 		<key>463C03345AEB1A2F4D009D5C</key>
 		<dict>
 			<key>isa</key>
@@ -362,28 +351,6 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
-		<key>C0DE00000000000000000001</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.swift</string>
-			<key>path</key>
-			<string>TextFormatError.swift</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
-		<key>C0DE00000000000000000002</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.swift</string>
-			<key>path</key>
-			<string>VariableEditorFont.swift</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
 		<key>C0DE00000000000000000003</key>
 		<dict>
 			<key>isa</key>
@@ -406,47 +373,25 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
-		<key>C0DE00000000000000000005</key>
+		<key>C0DED0000000000000000005</key>
 		<dict>
 			<key>isa</key>
 			<string>PBXFileReference</string>
 			<key>lastKnownFileType</key>
 			<string>sourcecode.swift</string>
 			<key>path</key>
-			<string>CodeEditorHighlighting.swift</string>
+			<string>BodySyntax.swift</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
-		<key>C0DE00000000000000000006</key>
+		<key>C0DED0000000000000000006</key>
 		<dict>
 			<key>isa</key>
 			<string>PBXFileReference</string>
 			<key>lastKnownFileType</key>
 			<string>sourcecode.swift</string>
 			<key>path</key>
-			<string>CodeEditorGutter.swift</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
-		<key>C0DE00000000000000000007</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.swift</string>
-			<key>path</key>
-			<string>CodeEditorFind.swift</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
-		<key>C0DE00000000000000000008</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.swift</string>
-			<key>path</key>
-			<string>CodeEditorEditing.swift</string>
+			<string>EditorThemeInstallation.swift</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
@@ -456,15 +401,9 @@
 			<string>PBXGroup</string>
 			<key>children</key>
 			<array>
-				<string>C0DE00000000000000000007</string>
-				<string>C0DE00000000000000000008</string>
-				<string>C0DE00000000000000000001</string>
-				<string>C0DE00000000000000000002</string>
+				<string>C0DED0000000000000000005</string>
 				<string>C0DE00000000000000000003</string>
 				<string>C0DE00000000000000000004</string>
-				<string>C0DE00000000000000000005</string>
-				<string>C0DE00000000000000000006</string>
-				<string>DCFE401E39B16C0E3F575E96</string>
 				<string>463C03345AEB1A2F4D009D5C</string>
 				<string>29D0F9950EE7A654D999EDDB</string>
 				<string>8770709A5599F706B1DFFB07</string>
@@ -974,6 +913,7 @@
 			<string>PBXGroup</string>
 			<key>children</key>
 			<array>
+				<string>C0DED0000000000000000006</string>
 				<string>64FD0C7C8F58B10195C7071D</string>
 				<string>FDD7B949E5E900076BB79121</string>
 				<string>CC5965BB252021BC4DE68025</string>
@@ -1773,20 +1713,6 @@
 			<key>fileRef</key>
 			<string>C7C7C4D8D12B2FBFBBCD7F7A</string>
 		</dict>
-		<key>D0C000000000000000000001</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>C0DE00000000000000000001</string>
-		</dict>
-		<key>D0C000000000000000000002</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>C0DE00000000000000000002</string>
-		</dict>
 		<key>D0C000000000000000000003</key>
 		<dict>
 			<key>isa</key>
@@ -1801,33 +1727,19 @@
 			<key>fileRef</key>
 			<string>C0DE00000000000000000004</string>
 		</dict>
-		<key>D0C000000000000000000005</key>
+		<key>D0C0000000000000000000D5</key>
 		<dict>
 			<key>isa</key>
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
-			<string>C0DE00000000000000000005</string>
+			<string>C0DED0000000000000000005</string>
 		</dict>
-		<key>D0C000000000000000000006</key>
+		<key>D0C0000000000000000000D6</key>
 		<dict>
 			<key>isa</key>
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
-			<string>C0DE00000000000000000006</string>
-		</dict>
-		<key>D0C000000000000000000007</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>C0DE00000000000000000007</string>
-		</dict>
-		<key>D0C000000000000000000008</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>C0DE00000000000000000008</string>
+			<string>C0DED0000000000000000006</string>
 		</dict>
 		<key>5303BE232F2C7F4F409D26DA</key>
 		<dict>
@@ -1835,13 +1747,6 @@
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>B91B503E037275772DD2A6A1</string>
-		</dict>
-		<key>EA91334643A831720A0C92E4</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>DCFE401E39B16C0E3F575E96</string>
 		</dict>
 		<key>BF175C0C4076E5F0BF92CB6E</key>
 		<dict>
@@ -2482,6 +2387,29 @@
 			<key>productRef</key>
 			<string>C0DEC00000000000000000D1</string>
 		</dict>
+		<key>C0DEC00000000000000000E1</key>
+		<dict>
+			<key>isa</key>
+			<string>XCLocalSwiftPackageReference</string>
+			<key>relativePath</key>
+			<string>Vendor/Plume</string>
+		</dict>
+		<key>C0DEC00000000000000000E2</key>
+		<dict>
+			<key>isa</key>
+			<string>XCSwiftPackageProductDependency</string>
+			<key>package</key>
+			<string>C0DEC00000000000000000E1</string>
+			<key>productName</key>
+			<string>Plume</string>
+		</dict>
+		<key>C0DEC00000000000000000E3</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>productRef</key>
+			<string>C0DEC00000000000000000E2</string>
+		</dict>
 		<key>C0DEC00000000000000000C4</key>
 		<dict>
 			<key>isa</key>
@@ -2994,7 +2922,6 @@
 				<string>ACA88995122962F3252F2102</string>
 				<string>5303BE232F2C7F4F409D26DA</string>
 				<string>DD1111000000000000000A02</string>
-				<string>EA91334643A831720A0C92E4</string>
 				<string>BF175C0C4076E5F0BF92CB6E</string>
 				<string>6C4622A04BCC264C3D3E278E</string>
 				<string>43BB6BDD8D3B278A52E636A6</string>
@@ -3093,14 +3020,10 @@
 				<string>A70F1002A1B1000000000011</string>
 				<string>A70F1002A1B1000000000012</string>
 				<string>C3D4E5F6070808090A1B2C3D</string>
-						<string>D0C000000000000000000001</string>
-				<string>D0C000000000000000000002</string>
-				<string>D0C000000000000000000003</string>
+						<string>D0C000000000000000000003</string>
 				<string>D0C000000000000000000004</string>
-				<string>D0C000000000000000000005</string>
-				<string>D0C000000000000000000006</string>
-				<string>D0C000000000000000000007</string>
-				<string>D0C000000000000000000008</string>
+				<string>D0C0000000000000000000D5</string>
+				<string>D0C0000000000000000000D6</string>
 </array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>
@@ -3119,6 +3042,7 @@
 				<string>F00DCAFE1234567890ABC06</string>
 				<string>C0DEC00000000000000000A3</string>
 				<string>C0DEC00000000000000000D2</string>
+				<string>C0DEC00000000000000000E3</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>
@@ -3570,6 +3494,7 @@
 				<string>F00DCAFE1234567890ABC04</string>
 				<string>C0DEC00000000000000000A1</string>
 				<string>C0DEC00000000000000000D0</string>
+							<string>C0DEC00000000000000000E1</string>
 			</array>
 			<key>productRefGroup</key>
 			<string>DB1220D8A260A6C1FF20221A</string>
