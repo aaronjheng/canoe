@@ -1,8 +1,5 @@
 import AppKit
 import SwiftTreeSitter
-import TreeSitterJSON
-import TreeSitterJavaScript
-import TreeSitterXML
 
 /// Incremental syntax highlighting for `Editor`: one parser + parse
 /// tree kept alive per editor, edited through tree-sitter's incremental

@@ -1,9 +1,6 @@
 import AppKit
 import SwiftTreeSitter
 import SwiftUI
-import TreeSitterJSON
-import TreeSitterJavaScript
-import TreeSitterXML
 
 /// The package's grammar paint walks plus the generic one-shot driver,
 /// backed by tree-sitter.
