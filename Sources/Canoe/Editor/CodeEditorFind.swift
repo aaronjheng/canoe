@@ -85,9 +85,11 @@ struct CodeEditorFindBar: View {
                         Button("Replace", action: onReplace)
                             .buttonStyle(SecondaryButtonStyle(minHeight: 24))
                             .disabled(!isEditable || matchCount == 0)
+                            .help("Replace current match (⌘⌥F)")
                         Button("All", action: onReplaceAll)
                             .buttonStyle(SecondaryButtonStyle(minHeight: 24))
                             .disabled(!isEditable || matchCount == 0)
+                            .help("Replace all matches (⌘⌥⇧F)")
                     }
                     .frame(width: controlZoneWidth, alignment: .trailing)
                 }
@@ -103,6 +105,7 @@ struct CodeEditorFindBar: View {
                     }
                     Button("Done", action: onClose)
                         .buttonStyle(SecondaryButtonStyle(minHeight: 24))
+                        .help("Close find bar (Esc)")
                 }
                 if replacing {
                     Color.clear.frame(height: 24)
@@ -240,6 +243,10 @@ struct CodeEditorGoToLineBar: View {
                 .focused($focused)
                 .onSubmit(onSubmit)
                 .onExitCommand { onClose() }
+                .onChange(of: text) { _, newValue in
+                    let digitsOnly = newValue.filter { $0.isNumber }
+                    text = digitsOnly
+                }
                 .padding(.horizontal, AppSpacing.compact)
                 .frame(width: 110, height: 26)
                 .background(
@@ -248,7 +255,11 @@ struct CodeEditorGoToLineBar: View {
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                        .strokeBorder(AppColor.accent, lineWidth: AppLine.focusedField)
+                        .strokeBorder(
+                            (text.isEmpty || Int(text) != nil)
+                                ? AppColor.accent : AppColor.error,
+                            lineWidth: AppLine.focusedField
+                        )
                 )
             Button("Go", action: onSubmit)
                 .buttonStyle(SecondaryButtonStyle(minHeight: 24))

@@ -1381,6 +1381,12 @@ private struct MultiLineField<FocusValue: Hashable>: NSViewRepresentable {
                 let formattedLength = (formatted as NSString).length
                 textView.setSelectedRange(NSRange(location: min(caret, formattedLength), length: 0))
                 textView.undoManager?.setActionName(parent.formatActionName)
+                // Brief visual feedback for successful formatting.
+                let originalColor = textView.insertionPointColor
+                textView.insertionPointColor = NSColor(AppColor.success)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    textView.insertionPointColor = originalColor
+                }
                 return true
             } catch let error as TextFormatError {
                 parent.onFormatError?(error.message)

@@ -86,7 +86,16 @@ final class CodeEditorGutterView: NSView, NSViewToolTipOwner {
         let location = min(charRange.location, (textView.string as NSString).length - 1)
         let lineNumber = highlighter.lineNumber(ofUTF16Offset: location)
         guard errorLines.contains(lineNumber) else { return "" }
-        return "line \(lineNumber): Syntax error"
+        // Find the first diagnostic that matches this line for a detailed message.
+        var message = "Syntax error"
+        for (range, msg) in highlighter.diagnostics() {
+            let lineNum = highlighter.lineNumber(ofUTF16Offset: range.location)
+            if lineNum == lineNumber {
+                message = msg
+                break
+            }
+        }
+        return "line \(lineNumber): \(message)"
     }
 
     /// Starts following the text view's clip view (scroll ticks redraw).
@@ -125,9 +134,10 @@ final class CodeEditorGutterView: NSView, NSViewToolTipOwner {
     }
 
     private static let horizontalPadding: CGFloat = 7
-    /// The x the gutter probes the text layout with (any point inside the
-    /// text column works - the y carries the line).
-    private var fragmentProbeX: CGFloat { 1 }
+    /// The x the gutter probes the text layout with: just inside the text
+    /// column (the gutter's right edge + 1), so any point in the column
+    /// hits the correct line regardless of container origin or padding.
+    private var fragmentProbeX: CGFloat { max(bounds.width, 1) + 1 }
 
     override func draw(_ dirtyRect: NSRect) {
         guard let textView, let highlighter else { return }
@@ -231,7 +241,7 @@ final class CodeEditorGutterView: NSView, NSViewToolTipOwner {
             x: fragmentRect.minX + textView.textContainerOrigin.x,
             y: fragmentRect.minY + textView.textContainerOrigin.y)
         let origin = convert(originInTextView, from: textView)
-        let diameter: CGFloat = 5
+        let diameter: CGFloat = 7
         let dot = CGRect(
             x: Self.horizontalPadding - diameter - 1,
             y: origin.y + (fragmentRect.height - diameter) / 2,

@@ -183,6 +183,7 @@ struct CodeEditor: View {
                     .foregroundStyle(AppColor.tertiaryText)
                     .padding(.leading, Self.textInset.width + Self.fragmentPadding + gutterWidth)
                     .padding(.top, Self.textInset.height)
+                    .animation(.easeInOut(duration: 0.15), value: gutterWidth)
                     .allowsHitTesting(false)
             }
         }
@@ -344,6 +345,25 @@ struct CodeEditorRepresentable: NSViewRepresentable {
         if let gutter = root.gutterView {
             gutter.font = font.nsFont
         }
+
+        // Find/action/goto pipeline (missing from the original: buttons
+        // and go-to-line actions set state but never executed). Actions are
+        // processed synchronously for immediate feedback; SwiftUI-state
+        // clears are deferred (synchronous writes inside update transactions
+        // are silently dropped) and tracked locally so re-renders don't
+        // re-execute.
+        if let action = findAction, action != coordinator.lastProcessedFindAction {
+            coordinator.performFindAction(action, in: textView)
+            coordinator.lastProcessedFindAction = action
+            DispatchQueue.main.async { onFindActionHandled?() }
+        }
+        if let line = gotoLine, line != coordinator.lastProcessedGotoLine {
+            coordinator.gotoLine = line
+            coordinator.goToLine(line, in: textView)
+            coordinator.lastProcessedGotoLine = line
+            DispatchQueue.main.async { onGoToLineHandled?() }
+        }
+        coordinator.syncFindState(find, in: textView)
     }
     static func dismantleNSView(_ root: CodeEditorRootView, coordinator: CodeEditorCoordinator) {
         coordinator.completion.hide()
@@ -441,6 +461,22 @@ final class CodeEditorTextView: NSTextView, NSViewToolTipOwner {
         {
             editorCoordinator.deleteToLogicalLineStart(in: self)
             return
+        }
+        // Right arrow: jump past a closing bracket/quote when the caret
+        // sits right before it, so the paired character does not trap the
+        // caret between the pair.
+        if event.keyCode == 124, selectedRange().length == 0, !string.isEmpty {
+            let caret = selectedRange().location
+            let text = string as NSString
+            if caret < text.length {
+                let char = codeEditorChar(text, caret)
+                if ")]}".contains(char ?? " ") || char == "\"" || char == "'" || char == "`" {
+                    let newLocation = min(caret + 1, text.length)
+                    setSelectedRange(NSRange(location: newLocation, length: 0))
+                    scrollRangeToVisible(NSRange(location: newLocation, length: 0))
+                    return
+                }
+            }
         }
         super.keyDown(with: event)
     }
@@ -586,7 +622,7 @@ final class CodeEditorTextView: NSTextView, NSViewToolTipOwner {
         guard unitWidth > 0 else { return }
         let bounding = dirtyRect.offsetBy(dx: -textContainerOrigin.x, dy: -textContainerOrigin.y)
         let glyphRange = layoutManager.glyphRange(forBoundingRect: bounding, in: container)
-        let guideColor = AppColor.textPrimaryNS.withAlphaComponent(0.06)
+        let guideColor = AppColor.textPrimaryNS.withAlphaComponent(0.12)
         guideColor.setFill()
         var index = glyphRange.location
         let end = NSMaxRange(glyphRange)
@@ -739,6 +775,10 @@ final class CodeEditorCoordinator: NSObject, NSTextViewDelegate, @preconcurrency
     var diagnosticLines: [Int] = []
     /// The pending go-to-line number (nil = nothing queued).
     var gotoLine: Int?
+    /// Last processed find/goto actions so synchronous SwiftUI-state
+    /// clears (dropped inside update transactions) do not re-trigger.
+    fileprivate var lastProcessedFindAction: CodeEditorFindAction?
+    fileprivate var lastProcessedGotoLine: Int?
     var lastLineCountHint = 1
 
     fileprivate init(_ parent: CodeEditorRepresentable) {
@@ -946,6 +986,12 @@ final class CodeEditorCoordinator: NSObject, NSTextViewDelegate, @preconcurrency
             let formattedLength = (formatted as NSString).length
             textView.setSelectedRange(NSRange(location: min(caret, formattedLength), length: 0))
             textView.undoManager?.setActionName(parent.formatActionName)
+            // Brief visual feedback for successful formatting.
+            let originalColor = textView.insertionPointColor
+            textView.insertionPointColor = NSColor(AppColor.success)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                textView.insertionPointColor = originalColor
+            }
             return true
         } catch let error as TextFormatError {
             parent.onFormatError?(error.message)

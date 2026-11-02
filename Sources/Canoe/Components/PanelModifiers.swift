@@ -18,6 +18,9 @@ enum AppKitFocusRing {
     // the state is intentionally process-wide.
     nonisolated(unsafe) private static var swizzled = Set<ObjectIdentifier>()
     nonisolated(unsafe) private static var fieldEditorOriginal: IMP?
+    /// Lock protecting swizzled state (install/disable) across concurrent
+    /// window creation (the hook itself is nonisolated by design).
+    private static let stateLock = NSLock()
     // ObjC selector is fieldEditor:forObject: (Swift renames the label to for:).
     private static let fieldEditorSelector = NSSelectorFromString("fieldEditor:forObject:")
     nonisolated(unsafe) private static let typeGetter: @convention(block) (AnyObject) -> UInt = { _ in
@@ -75,6 +78,8 @@ enum AppKitFocusRing {
     /// - never on NSTextView / NSTextField, whose methods must stay intact
     /// for text layout.
     private static func disable(on cls: AnyClass) {
+        stateLock.lock()
+        defer { stateLock.unlock() }
         guard cls != NSView.self, cls != NSTextView.self, cls != NSTextField.self else { return }
         let key = ObjectIdentifier(cls)
         guard swizzled.insert(key).inserted else { return }
@@ -101,6 +106,8 @@ enum AppKitFocusRing {
     /// Hook `NSWindow.fieldEditor:forObject:`. Whatever private class AppKit
     /// hands back is patched before it can paint the one-frame ring.
     private static func installFieldEditorHook() {
+        stateLock.lock()
+        defer { stateLock.unlock() }
         guard fieldEditorOriginal == nil else { return }
         guard let method = class_getInstanceMethod(NSWindow.self, fieldEditorSelector) else { return }
         guard let types = method_getTypeEncoding(method) else { return }
