@@ -1,0 +1,537 @@
+{
+  "default-configuration": "Debug",
+  "configurations": [
+    "Debug",
+    "Release",
+  ],
+  "localizations": {
+    "development": "en",
+    "supported": [
+      "Base",
+    ],
+  },
+  "packages": [
+    {
+      "kind": "remote",
+      "repository": "https://github.com/tree-sitter/swift-tree-sitter",
+      "version": {
+        "up-to-next-major-version": "0.25.0",
+      },
+    }, {
+      "kind": "remote",
+      "repository": "https://github.com/tree-sitter/tree-sitter-json",
+      "version": {
+        "up-to-next-major-version": "0.24.8",
+      },
+    }, {
+      "kind": "remote",
+      "repository": "https://github.com/tree-sitter-grammars/tree-sitter-xml",
+      "version": {
+        "up-to-next-major-version": "0.7.0",
+      },
+    }, {
+      "kind": "remote",
+      "repository": "https://github.com/tree-sitter/tree-sitter-javascript",
+      "version": {
+        "revision": "8d2992c1071befdc0146e9e1d335d9f50f459030",
+      },
+    }, {
+      "kind": "local",
+      "path": "Vendor/QuickJS",
+    }, {
+      "kind": "local",
+      "path": "Vendor/Oxfmt",
+    }, {
+      "kind": "remote",
+      "repository": "https://github.com/aaronjheng/plume.git",
+      "version": {
+        "branch": "master",
+      },
+    },
+  ],
+  "files": [
+    { "path": "<PROJECT>/LICENSE", "target-membership": [ "Canoe/resources" ] },
+    {
+      "kind": "group",
+      "path": "Sources/Canoe",
+      "name": "Sources/Canoe",
+      "children": [
+        {
+          "kind": "group",
+          "path": "About",
+          "children": [
+            {
+              "kind": "group",
+              "path": "Models",
+              "children": [
+                { "path": "AppLicense.swift", "target-membership": [ "Canoe/compile-sources" ] },
+              ],
+            }, {
+              "kind": "group",
+              "path": "Views",
+              "children": [
+                { "path": "AboutView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "LicenseView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+              ],
+            },
+          ],
+        }, {
+          "kind": "group",
+          "path": "Help",
+          "children": [
+            {
+              "kind": "group",
+              "path": "Views",
+              "children": [
+                { "path": "KeyboardShortcutsView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "DynamicVariablesHelpView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+              ],
+            },
+          ],
+        }, {
+          "kind": "group",
+          "path": "Collection",
+          "children": [
+            {
+              "kind": "group",
+              "path": "Models",
+              "children": [
+                { "path": "Collection.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "Folder.swift", "target-membership": [ "Canoe/compile-sources" ] },
+              ],
+            }, {
+              "kind": "group",
+              "path": "Views",
+              "children": [
+                { "path": "CollectionDetailView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "FolderDetailView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+              ],
+            },
+          ],
+        }, {
+          "kind": "group",
+          "path": "Components",
+          "children": [
+            { "path": "HTTPMethod+Presentation.swift", "target-membership": [ "Canoe/compile-sources" ] },
+            { "path": "KeyValueEditor.swift", "target-membership": [ "Canoe/compile-sources" ] },
+            { "path": "Badges.swift", "target-membership": [ "Canoe/compile-sources" ] },
+            { "path": "InspectorChrome.swift", "target-membership": [ "Canoe/compile-sources" ] },
+            { "path": "States.swift", "target-membership": [ "Canoe/compile-sources" ] },
+            { "path": "Buttons.swift", "target-membership": [ "Canoe/compile-sources" ] },
+            { "path": "Fields.swift", "target-membership": [ "Canoe/compile-sources" ] },
+            { "path": "PanelModifiers.swift", "target-membership": [ "Canoe/compile-sources" ] },
+            { "path": "Dropdown.swift", "target-membership": [ "Canoe/compile-sources" ] },
+          ],
+        }, {
+          "kind": "group",
+          "path": "Editor",
+          "children": [
+            { "path": "BodySyntax.swift", "target-membership": [ "Canoe/compile-sources" ] },
+            { "path": "SyntaxProfiles.swift", "target-membership": [ "Canoe/compile-sources" ] },
+            { "path": "VariablePlaceholderStyling.swift", "target-membership": [ "Canoe/compile-sources" ] },
+            { "path": "CodeEditor.swift", "target-membership": [ "Canoe/compile-sources" ] },
+            { "path": "VariableCompletion.swift", "target-membership": [ "Canoe/compile-sources" ] },
+            { "path": "VariableCompletionPopup.swift", "target-membership": [ "Canoe/compile-sources" ] },
+            { "path": "VariableHighlightEditor.swift", "target-membership": [ "Canoe/compile-sources" ] },
+            { "path": "URLSuggestionPopup.swift", "target-membership": [ "Canoe/compile-sources" ] },
+          ],
+        }, {
+          "kind": "group",
+          "path": "Environment",
+          "children": [
+            {
+              "kind": "group",
+              "path": "Models",
+              "children": [
+                { "path": "EnvironmentProfile.swift", "target-membership": [ "Canoe/compile-sources" ] },
+              ],
+            }, {
+              "kind": "group",
+              "path": "Views",
+              "children": [
+                { "path": "EnvironmentDetailView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+              ],
+            },
+          ],
+        }, {
+          "kind": "group",
+          "path": "HTTP",
+          "children": [
+            { "path": "HTTPClient.swift", "target-membership": [ "Canoe/compile-sources" ] },
+            { "path": "MultipartForm.swift", "target-membership": [ "Canoe/compile-sources" ] },
+            { "path": "CookieStore.swift", "target-membership": [ "Canoe/compile-sources" ] },
+            { "path": "DigestAuth.swift", "target-membership": [ "Canoe/compile-sources" ] },
+            { "path": "OAuth2Service.swift", "target-membership": [ "Canoe/compile-sources" ] },
+            { "path": "WebSocketClient.swift", "target-membership": [ "Canoe/compile-sources" ] },
+          ],
+        }, {
+          "kind": "group",
+          "path": "Request",
+          "children": [
+            {
+              "kind": "group",
+              "path": "Models",
+              "children": [
+                { "path": "HTTPHeader.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "HTTPMethod.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "QueryParam.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "Authorization.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "RequestBody.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "Request.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "RequestType.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "WebSocketMessage.swift", "target-membership": [ "Canoe/compile-sources" ] },
+              ],
+            }, {
+              "kind": "group",
+              "path": "Views",
+              "children": [
+                { "path": "AuthEditor.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "BodyEditor.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "CodeSnippetSidebarView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "RequestEditorView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "SaveRequestSheet.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "ImportCURLSheet.swift", "target-membership": [ "Canoe/compile-sources" ] },
+              ],
+            }, {
+              "kind": "group",
+              "path": "Services",
+              "children": [
+                { "path": "CodeSnippetGenerator.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "CURLImporter.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "HTTPHeaderNameSuggestions.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "BodyFormatter.swift", "target-membership": [ "Canoe/compile-sources" ] },
+              ],
+            },
+          ],
+        }, {
+          "kind": "group",
+          "path": "Response",
+          "children": [
+            {
+              "kind": "group",
+              "path": "Models",
+              "children": [
+                { "path": "HistoryEntry.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "ResponseModel.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "SSEEvent.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "ConsoleEntry.swift", "target-membership": [ "Canoe/compile-sources" ] },
+              ],
+            }, {
+              "kind": "group",
+              "path": "Views",
+              "children": [
+                { "path": "ResponseViewerView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "BodyTextView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "EventStreamView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "CookieManagerView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "ConsoleView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "PreviewMediaViews.swift", "target-membership": [ "Canoe/compile-sources" ] },
+              ],
+            },
+          ],
+        }, {
+          "kind": "group",
+          "path": "Scripts",
+          "children": [
+            {
+              "kind": "group",
+              "path": "Models",
+              "children": [
+                { "path": "ScriptTestResult.swift", "target-membership": [ "Canoe/compile-sources" ] },
+              ],
+            }, {
+              "kind": "group",
+              "path": "Services",
+              "children": [
+                { "path": "PMPrelude.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "ScriptEngine.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "ScriptFormatter.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "ScriptSnapshots.swift", "target-membership": [ "Canoe/compile-sources" ] },
+              ],
+            },
+          ],
+        }, {
+          "kind": "group",
+          "path": "Session",
+          "children": [
+            {
+              "kind": "group",
+              "path": "State",
+              "children": [
+                { "path": "AppStore.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "AppStore+Navigation.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "AppStore+Workspace.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "AppStore+Collection.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "AppStore+Request.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "AppStore+Environment.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "AppStore+Variables.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "AppStore+Sending.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "AppStore+OAuth.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "AppStore+Scripts.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "AppStore+WebSocket.swift", "target-membership": [ "Canoe/compile-sources" ] },
+              ],
+            }, {
+              "kind": "group",
+              "path": "Persistence",
+              "children": [
+                { "path": "VaultStore.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "VaultConfig.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "FileStore.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "VaultDrafts.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "VariableOverrides.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "LocalDatabase.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "LossyDecoding.swift", "target-membership": [ "Canoe/compile-sources" ] },
+              ],
+            },
+          ],
+        }, {
+          "kind": "group",
+          "path": "Settings",
+          "children": [
+            {
+              "kind": "group",
+              "path": "Models",
+              "children": [
+                { "path": "AppSettings.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "SettingsPane.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "ProxySettings.swift", "target-membership": [ "Canoe/compile-sources" ] },
+              ],
+            }, {
+              "kind": "group",
+              "path": "State",
+              "children": [
+                { "path": "SettingsNavigationState.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "SettingsStore.swift", "target-membership": [ "Canoe/compile-sources" ] },
+              ],
+            }, {
+              "kind": "group",
+              "path": "Views",
+              "children": [
+                { "path": "SettingsSidebarView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "SettingsSplitViewController.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "SettingsToolbarController.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "SettingsView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+              ],
+            },
+          ],
+        }, {
+          "kind": "group",
+          "path": "Theme",
+          "children": [
+            { "path": "EditorThemeInstallation.swift", "target-membership": [ "Canoe/compile-sources" ] },
+            { "path": "AppAppearance.swift", "target-membership": [ "Canoe/compile-sources" ] },
+            { "path": "AppColor.swift", "target-membership": [ "Canoe/compile-sources" ] },
+            { "path": "AppFont.swift", "target-membership": [ "Canoe/compile-sources" ] },
+            { "path": "AppMetrics.swift", "target-membership": [ "Canoe/compile-sources" ] },
+          ],
+        }, {
+          "kind": "group",
+          "path": "Variables",
+          "children": [
+            {
+              "kind": "group",
+              "path": "Models",
+              "children": [
+                { "path": "VariableScope.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "Variable.swift", "target-membership": [ "Canoe/compile-sources" ] },
+              ],
+            }, {
+              "kind": "group",
+              "path": "Views",
+              "children": [
+                { "path": "VariablesSidebarView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+              ],
+            }, {
+              "kind": "group",
+              "path": "Services",
+              "children": [
+                { "path": "VariableResolver.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "DynamicVariables.swift", "target-membership": [ "Canoe/compile-sources" ] },
+              ],
+            },
+          ],
+        }, {
+          "kind": "group",
+          "path": "Workspace",
+          "children": [
+            {
+              "kind": "group",
+              "path": "Models",
+              "children": [
+                { "path": "OpenTab.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "SidebarTab.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "DetailSection.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "Workspace.swift", "target-membership": [ "Canoe/compile-sources" ] },
+              ],
+            }, {
+              "kind": "group",
+              "path": "Views",
+              "children": [
+                { "path": "ContentView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "NewWorkspaceView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "SidebarView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "StatusBarView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "TabBarView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "TopBarView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "WelcomeView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "WorkspaceOverviewView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "WorkspaceVariablesView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "WorkspacesView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+              ],
+            },
+          ],
+        },
+        { "path": "AppDelegate.swift", "target-membership": [ "Canoe/compile-sources" ] },
+        { "path": "AppLogger.swift", "target-membership": [ "Canoe/compile-sources" ] },
+        { "path": "CanoeApp.swift", "target-membership": [ "Canoe/compile-sources" ] },
+        {
+          "kind": "group",
+          "path": "WebSocket",
+          "children": [
+            {
+              "kind": "group",
+              "path": "Views",
+              "children": [
+                { "path": "WebSocketWorkspaceView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+                { "path": "WebSocketMessageEditorView.swift", "target-membership": [ "Canoe/compile-sources" ] },
+              ],
+            },
+          ],
+        },
+      ],
+    }, {
+      "kind": "group",
+      "name": "Products",
+      "children": [
+        { "path": "<PRODUCTS>/Canoe.app", "id": "662302FADABA0FC9249D80BB", "type": "wrapper.application", "index": false },
+      ],
+    },
+    { "path": "Assets.xcassets", "target-membership": [ "Canoe/resources" ] },
+  ],
+  "targets": [
+    {
+      "name": "Canoe",
+      "id": "D962F559289912E8F73688D8",
+      "product": "Products/Canoe.app",
+      "product-type": "application",
+      "build-phases": [
+        "compile-sources",
+        "frameworks",
+        "resources",
+      ],
+      "package-product-members": [
+        {
+          "package": "Oxfmt",
+          "product-name": "Oxfmt",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "package": "QuickJS",
+          "product-name": "QuickJS",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "package": "plume",
+          "product-name": "Plume",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "package": "swift-tree-sitter",
+          "product-name": "SwiftTreeSitter",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "package": "tree-sitter-javascript",
+          "product-name": "TreeSitterJavaScript",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "package": "tree-sitter-json",
+          "product-name": "TreeSitterJSON",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "package": "tree-sitter-xml",
+          "product-name": "TreeSitterXML",
+          "build-phase": { "build-phase": "frameworks" },
+        },
+      ],
+      "build-settings": {
+        "ARCHS[config=Release]": "arm64",
+        "ASSETCATALOG_COMPILER_APPICON_NAME": "Canoe",
+        "ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS": "YES",
+        "COMBINE_HIDPI_IMAGES": "YES",
+        "INFOPLIST_FILE": "Resources/Canoe-Info.plist",
+        "LD_RUNPATH_SEARCH_PATHS": [
+          "$(inherited)",
+          "@executable_path/../Frameworks",
+        ],
+        "PRODUCT_NAME": "$(TARGET_NAME)",
+        "SDKROOT": "macosx",
+      },
+    },
+  ],
+  "build-settings": {
+    "ALWAYS_SEARCH_USER_PATHS": "NO",
+    "CLANG_ANALYZER_NONNULL": "YES",
+    "CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION": "YES_AGGRESSIVE",
+    "CLANG_CXX_LANGUAGE_STANDARD": "gnu++20",
+    "CLANG_CXX_LIBRARY": "libc++",
+    "CLANG_ENABLE_MODULES": "YES",
+    "CLANG_ENABLE_OBJC_ARC": "YES",
+    "CLANG_ENABLE_OBJC_WEAK": "YES",
+    "CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING": "YES",
+    "CLANG_WARN_BOOL_CONVERSION": "YES",
+    "CLANG_WARN_COMMA": "YES",
+    "CLANG_WARN_CONSTANT_CONVERSION": "YES",
+    "CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS": "YES",
+    "CLANG_WARN_DIRECT_OBJC_ISA_USAGE": "YES_ERROR",
+    "CLANG_WARN_DOCUMENTATION_COMMENTS": "YES",
+    "CLANG_WARN_EMPTY_BODY": "YES",
+    "CLANG_WARN_ENUM_CONVERSION": "YES",
+    "CLANG_WARN_INFINITE_RECURSION": "YES",
+    "CLANG_WARN_INT_CONVERSION": "YES",
+    "CLANG_WARN_NON_LITERAL_NULL_CONVERSION": "YES",
+    "CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF": "YES",
+    "CLANG_WARN_OBJC_LITERAL_CONVERSION": "YES",
+    "CLANG_WARN_OBJC_ROOT_CLASS": "YES_ERROR",
+    "CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "YES",
+    "CLANG_WARN_RANGE_LOOP_ANALYSIS": "YES",
+    "CLANG_WARN_STRICT_PROTOTYPES": "YES",
+    "CLANG_WARN_SUSPICIOUS_MOVE": "YES",
+    "CLANG_WARN_UNGUARDED_AVAILABILITY": "YES_AGGRESSIVE",
+    "CLANG_WARN_UNREACHABLE_CODE": "YES",
+    "CLANG_WARN__DUPLICATE_METHOD_MATCH": "YES",
+    "COPY_PHASE_STRIP": "NO",
+    "DEBUG_INFORMATION_FORMAT[config=Debug]": "dwarf",
+    "DEBUG_INFORMATION_FORMAT[config=Release]": "dwarf-with-dsym",
+    "ENABLE_STRICT_OBJC_MSGSEND": "YES",
+    "ENABLE_TESTABILITY[config=Debug]": "YES",
+    "ENABLE_TESTABILITY[config=Release]": "NO",
+    "EXCLUDED_ARCHS": "x86_64",
+    "GCC_C_LANGUAGE_STANDARD": "gnu17",
+    "GCC_DYNAMIC_NO_PIC[config=Debug]": "NO",
+    "GCC_DYNAMIC_NO_PIC[config=Release]": "YES",
+    "GCC_NO_COMMON_BLOCKS": "YES",
+    "GCC_OPTIMIZATION_LEVEL[config=Debug]": "0",
+    "GCC_OPTIMIZATION_LEVEL[config=Release]": "s",
+    "GCC_PREPROCESSOR_DEFINITIONS[config=Debug]": [
+      "$(inherited)",
+      "DEBUG=1",
+    ],
+    "GCC_WARN_64_TO_32_BIT_CONVERSION": "YES",
+    "GCC_WARN_ABOUT_RETURN_TYPE": "YES_ERROR",
+    "GCC_WARN_UNDECLARED_SELECTOR": "YES",
+    "GCC_WARN_UNINITIALIZED_AUTOS": "YES_AGGRESSIVE",
+    "GCC_WARN_UNUSED_FUNCTION": "YES",
+    "GCC_WARN_UNUSED_VARIABLE": "YES",
+    "MACOSX_DEPLOYMENT_TARGET": "27.0",
+    "MTL_ENABLE_DEBUG_INFO[config=Debug]": "INCLUDE_SOURCE",
+    "MTL_ENABLE_DEBUG_INFO[config=Release]": "NO",
+    "MTL_FAST_MATH": "YES",
+    "ONLY_ACTIVE_ARCH[config=Debug]": "YES",
+    "PRODUCT_BUNDLE_IDENTIFIER": "app.canoe",
+    "PRODUCT_NAME": "$(TARGET_NAME)",
+    "SDKROOT": "macosx",
+    "SWIFT_ACTIVE_COMPILATION_CONDITIONS[config=Debug]": "DEBUG",
+    "SWIFT_COMPILATION_MODE[config=Release]": "wholemodule",
+    "SWIFT_OPTIMIZATION_LEVEL[config=Debug]": "-Onone",
+    "SWIFT_OPTIMIZATION_LEVEL[config=Release]": "-O",
+    "SWIFT_VERSION": "6.4",
+  },
+  "last-upgrade": "27.0",
+}
