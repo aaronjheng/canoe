@@ -42,17 +42,17 @@ struct CodeEditor: View {
             formatHandler: formatHandler,
             formatActionName: formatActionName,
             onFormatError: onFormatError,
-            completionFactory: { VariableCompletionBridge() },
-            completionCandidates: suggestions ?? VariableSuggestion.suggestions(from: variables)
+            suggestFactory: { VariableCompletionBridge() },
+            suggestItems: suggestions ?? VariableSuggestion.suggestions(from: variables)
         )
     }
 }
 
 /// Bridges Canoe's `VariableCompletionController` onto the generic editor's
-/// opaque `EditorCompletionControlling` protocol - pure forwarding, no
+/// opaque `EditorSuggestControlling` protocol - pure forwarding, no
 /// state of its own.
 @MainActor
-private final class VariableCompletionBridge: EditorCompletionControlling {
+private final class VariableCompletionBridge: EditorSuggestControlling {
     private let controller = VariableCompletionController()
 
     func candidatesChanged(_ candidates: [Any]) {

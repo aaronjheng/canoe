@@ -2409,9 +2409,16 @@
 		<key>C0DEC00000000000000000E1</key>
 		<dict>
 			<key>isa</key>
-			<string>XCLocalSwiftPackageReference</string>
-			<key>relativePath</key>
-			<string>Vendor/Plume</string>
+			<string>XCRemoteSwiftPackageReference</string>
+			<key>repositoryURL</key>
+			<string>https://github.com/aaronjheng/plume.git</string>
+			<key>requirement</key>
+			<dict>
+				<key>branch</key>
+				<string>master</string>
+				<key>kind</key>
+				<string>branch</string>
+			</dict>
 		</dict>
 		<key>C0DEC00000000000000000E2</key>
 		<dict>
