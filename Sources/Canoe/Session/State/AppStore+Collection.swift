@@ -1,5 +1,30 @@
 import Foundation
 
+/// The Scripts-tab payload of a collection or folder: both phases' sources
+/// plus their enable switches. One value so the updaters land text and
+/// switches together (a toggle is a discrete action, keystrokes debounce -
+/// either way all four fields travel as one).
+struct ScopedScripts: Equatable, Sendable {
+    var preRequest: String
+    var postResponse: String
+    var preRequestEnabled: Bool
+    var postResponseEnabled: Bool
+
+    init(from collection: Collection) {
+        preRequest = collection.preRequestScript
+        postResponse = collection.postResponseScript
+        preRequestEnabled = collection.preRequestScriptEnabled
+        postResponseEnabled = collection.postResponseScriptEnabled
+    }
+
+    init(from folder: Folder) {
+        preRequest = folder.preRequestScript
+        postResponse = folder.postResponseScript
+        preRequestEnabled = folder.preRequestScriptEnabled
+        postResponseEnabled = folder.postResponseScriptEnabled
+    }
+}
+
 /// AppStore collection and folder management, plus the Authorization
 /// inheritance chain (Request -> Folder -> Collection).
 @MainActor
@@ -426,17 +451,15 @@ extension AppStore {
     /// Applies collection-level script edits (Postman's collection
     /// Pre-request / Tests) and auto-saves them like a description edit:
     /// the caller debounces keystrokes, this lands the value in the vault
-    /// and writes the collection file.
-    func updateCollectionScripts(
-        _ id: UUID, preRequestScript: String, postResponseScript: String
-    ) {
+    /// and writes the collection file. The enable switches land with the
+    /// text (a checkbox toggle calls this directly, a discrete action).
+    func updateCollectionScripts(_ id: UUID, scripts: ScopedScripts) {
         guard let idx = vault.collections.firstIndex(where: { $0.id == id }) else { return }
-        guard
-            vault.collections[idx].preRequestScript != preRequestScript
-                || vault.collections[idx].postResponseScript != postResponseScript
-        else { return }
-        vault.collections[idx].preRequestScript = preRequestScript
-        vault.collections[idx].postResponseScript = postResponseScript
+        guard ScopedScripts(from: vault.collections[idx]) != scripts else { return }
+        vault.collections[idx].preRequestScript = scripts.preRequest
+        vault.collections[idx].postResponseScript = scripts.postResponse
+        vault.collections[idx].preRequestScriptEnabled = scripts.preRequestEnabled
+        vault.collections[idx].postResponseScriptEnabled = scripts.postResponseEnabled
         // An edit is an edit: it pins a live preview like any other.
         if previewTab == .collection(id) { previewTab = nil }
         let updated = vault.collections[idx]
@@ -446,20 +469,17 @@ extension AppStore {
     /// Applies folder-level script edits (Postman's folder Pre-request /
     /// Tests) and auto-saves them like a folder description edit: the
     /// caller debounces keystrokes, this lands the value in the vault and
-    /// writes the collection file.
-    func updateFolderScripts(
-        _ folderID: UUID, in collectionID: UUID,
-        preRequestScript: String, postResponseScript: String
-    ) {
+    /// writes the collection file. The enable switches land with the
+    /// text (a checkbox toggle calls this directly, a discrete action).
+    func updateFolderScripts(_ folderID: UUID, in collectionID: UUID, scripts: ScopedScripts) {
         guard let collectionIdx = vault.collections.firstIndex(where: { $0.id == collectionID }),
             let folderIdx = vault.collections[collectionIdx].folders.firstIndex(where: { $0.id == folderID })
         else { return }
-        guard
-            vault.collections[collectionIdx].folders[folderIdx].preRequestScript != preRequestScript
-                || vault.collections[collectionIdx].folders[folderIdx].postResponseScript != postResponseScript
-        else { return }
-        vault.collections[collectionIdx].folders[folderIdx].preRequestScript = preRequestScript
-        vault.collections[collectionIdx].folders[folderIdx].postResponseScript = postResponseScript
+        guard ScopedScripts(from: vault.collections[collectionIdx].folders[folderIdx]) != scripts else { return }
+        vault.collections[collectionIdx].folders[folderIdx].preRequestScript = scripts.preRequest
+        vault.collections[collectionIdx].folders[folderIdx].postResponseScript = scripts.postResponse
+        vault.collections[collectionIdx].folders[folderIdx].preRequestScriptEnabled = scripts.preRequestEnabled
+        vault.collections[collectionIdx].folders[folderIdx].postResponseScriptEnabled = scripts.postResponseEnabled
         let updated = vault.collections[collectionIdx]
         enqueueStructuralWrite { await self.vault.writeCollection(self.persistable(updated)) }
     }

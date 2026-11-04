@@ -1629,7 +1629,9 @@ struct RequestEditorView: View {
     /// The inherited scripts for the selected phase, in execution order
     /// (Postman's inheritance chain): Before request runs collection ->
     /// outermost folder -> ... -> innermost folder; After response runs the
-    /// reverse. Empty when the request is scratch or nothing is inherited.
+    /// reverse. A disabled script (its own checkbox is off) is skipped like
+    /// an empty one - the send pipeline never runs it. Empty when the
+    /// request is scratch or nothing is inherited.
     private var inheritedScripts: [(label: String, script: String)] {
         guard
             let collection = store.vault.collections.first(where: { collection in
@@ -1640,17 +1642,19 @@ struct RequestEditorView: View {
         let chain = collection.folderChain(forRequest: draft.id)
         switch scriptColumn {
         case .beforeRequest:
-            if !collection.preRequestScript.isEmpty {
+            if collection.preRequestScriptEnabled, !collection.preRequestScript.isEmpty {
                 result.append(("Collection script", collection.preRequestScript))
             }
-            for folder in chain.reversed() where !folder.preRequestScript.isEmpty {
+            for folder in chain.reversed()
+            where folder.preRequestScriptEnabled && !folder.preRequestScript.isEmpty {
                 result.append(("Folder script - \(folder.name)", folder.preRequestScript))
             }
         case .afterResponse:
-            for folder in chain where !folder.postResponseScript.isEmpty {
+            for folder in chain
+            where folder.postResponseScriptEnabled && !folder.postResponseScript.isEmpty {
                 result.append(("Folder script - \(folder.name)", folder.postResponseScript))
             }
-            if !collection.postResponseScript.isEmpty {
+            if collection.postResponseScriptEnabled, !collection.postResponseScript.isEmpty {
                 result.append(("Collection script", collection.postResponseScript))
             }
         }

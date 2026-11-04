@@ -29,6 +29,10 @@ struct Collection: Identifiable, Codable, Hashable, Sendable {
     /// description.
     var preRequestScript: String = ""
     var postResponseScript: String = ""
+    /// Per-script switches: an off script keeps its source but is skipped
+    /// at send time exactly like an empty one (Postman's disabled script).
+    var preRequestScriptEnabled: Bool = true
+    var postResponseScriptEnabled: Bool = true
 
     init(
         id: UUID = UUID(),
@@ -55,6 +59,7 @@ struct Collection: Identifiable, Codable, Hashable, Sendable {
         case requestDescription
         case preRequestScript
         case postResponseScript
+        case preRequestScriptEnabled, postResponseScriptEnabled
     }
 }
 
@@ -96,5 +101,9 @@ extension Collection {
         requestDescription = try container.decodeIfPresent(String.self, forKey: .requestDescription) ?? ""
         preRequestScript = try container.decodeIfPresent(String.self, forKey: .preRequestScript) ?? ""
         postResponseScript = try container.decodeIfPresent(String.self, forKey: .postResponseScript) ?? ""
+        preRequestScriptEnabled =
+            try container.decodeIfPresent(Bool.self, forKey: .preRequestScriptEnabled) ?? true
+        postResponseScriptEnabled =
+            try container.decodeIfPresent(Bool.self, forKey: .postResponseScriptEnabled) ?? true
     }
 }

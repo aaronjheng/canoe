@@ -248,7 +248,9 @@ struct FolderDetailView: View {
     /// The folder's Scripts tab: a sidebar picks the phase, the editor
     /// holds that phase's script. Every request in this folder's subtree
     /// runs these between the collection's and the request's own scripts.
-    /// Text auto-saves (debounced), like the Overview's description.
+    /// Text auto-saves (debounced), like the Overview's description. Each
+    /// row carries the same enable checkbox as the request Scripts tab: a
+    /// switched-off script keeps its source but is skipped at send time.
     private var scriptsPane: some View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
@@ -259,35 +261,54 @@ struct FolderDetailView: View {
             .padding(.top, AppSpacing.medium)
             .frame(width: 168, alignment: .topLeading)
             Divider()
+            // A switched-off script keeps editing, but the dimmed editor
+            // says it will not run.
             scriptEditor
+                .opacity(isScriptEnabled(scriptColumn) ? 1 : AppOpacity.disabled)
         }
     }
 
+    /// One sidebar row of the Scripts tab: the enable checkbox (the same
+    /// disable language as the request Scripts tab's rows), the phase
+    /// label, the green content dot right after it, the light pill when
+    /// selected. An unchecked script keeps its source but is skipped at
+    /// send time exactly like an empty one.
     private func scriptColumnRow(_ column: FolderScriptColumn) -> some View {
-        Button {
-            scriptColumn = column
-        } label: {
-            HStack(spacing: AppSpacing.xSmall) {
-                Text(column.rawValue)
-                    .font(AppFont.rowTitle)
-                    .foregroundStyle(AppColor.textPrimary)
-                if hasScriptContent(column) {
-                    Circle()
-                        .fill(AppColor.success)
-                        .frame(width: AppSize.contentDot, height: AppSize.contentDot)
+        HStack(spacing: AppSpacing.xSmall) {
+            Toggle("", isOn: scriptEnabledBinding(for: column))
+                .labelsHidden()
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
+                .focusEffectDisabled()
+                .help(isScriptEnabled(column) ? "Disable script" : "Enable script")
+            Button {
+                scriptColumn = column
+            } label: {
+                HStack(spacing: AppSpacing.xSmall) {
+                    Text(column.rawValue)
+                        .font(AppFont.rowTitle)
+                        .foregroundStyle(
+                            isScriptEnabled(column)
+                                ? AppColor.textPrimary : AppColor.textSecondary)
+                    if hasScriptContent(column) {
+                        Circle()
+                            .fill(AppColor.success)
+                            .frame(width: AppSize.contentDot, height: AppSize.contentDot)
+                    }
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
+                .opacity(isScriptEnabled(column) ? 1 : AppOpacity.disabled)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, AppSpacing.small)
-            .padding(.vertical, AppSpacing.compact)
-            .background(
-                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                    .fill(scriptColumn == column ? AppColor.subtleBackground : .clear)
-            )
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .clickCursor()
         }
-        .buttonStyle(.plain)
-        .clickCursor()
+        .padding(.horizontal, AppSpacing.small)
+        .padding(.vertical, AppSpacing.compact)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                .fill(scriptColumn == column ? AppColor.subtleBackground : .clear)
+        )
         .padding(.horizontal, AppSpacing.compact)
     }
 
@@ -296,6 +317,34 @@ struct FolderDetailView: View {
         case .preRequest: !draft.preRequestScript.isEmpty
         case .postResponse: !draft.postResponseScript.isEmpty
         }
+    }
+
+    private func isScriptEnabled(_ column: FolderScriptColumn) -> Bool {
+        switch column {
+        case .preRequest: draft.preRequestScriptEnabled
+        case .postResponse: draft.postResponseScriptEnabled
+        }
+    }
+
+    private func scriptEnabledBinding(for column: FolderScriptColumn) -> Binding<Bool> {
+        Binding(
+            get: {
+                switch column {
+                case .preRequest: draft.preRequestScriptEnabled
+                case .postResponse: draft.postResponseScriptEnabled
+                }
+            },
+            set: { newValue in
+                switch column {
+                case .preRequest: draft.preRequestScriptEnabled = newValue
+                case .postResponse: draft.postResponseScriptEnabled = newValue
+                }
+                // A checkbox is a discrete action: persist at once. Any
+                // pending debounced text edits ride along (the later save
+                // then no-ops).
+                guard let collection else { return }
+                store.updateFolderScripts(draft.id, in: collection.id, scripts: ScopedScripts(from: draft))
+            })
     }
 
     private var scriptEditor: some View {
@@ -338,10 +387,7 @@ struct FolderDetailView: View {
         scriptSaveTask = Task {
             try? await Task.sleep(for: .milliseconds(500))
             guard !Task.isCancelled else { return }
-            store.updateFolderScripts(
-                draft.id, in: collection.id,
-                preRequestScript: draft.preRequestScript,
-                postResponseScript: draft.postResponseScript)
+            store.updateFolderScripts(draft.id, in: collection.id, scripts: ScopedScripts(from: draft))
         }
     }
 

@@ -136,8 +136,10 @@ extension AppStore {
             var scriptScopeOutcome: ScriptPhaseOutcome?
             do {
                 // The collection's Pre-request script (inherited chain top).
+                // The switch skips a disabled script exactly like an empty
+                // one - the source stays, nothing runs.
                 let collection = collectionForRequest(request)
-                if let collection, !collection.preRequestScript.isEmpty {
+                if let collection, collection.preRequestScriptEnabled, !collection.preRequestScript.isEmpty {
                     let outcome = try await runScript(
                         .preRequest, script: collection.preRequestScript, of: request,
                         variables: scriptVariables, resetsCarriedState: true)
@@ -159,9 +161,10 @@ extension AppStore {
                     if let change = outcome.bodyChange { preBodyChange = change }
                     prePhaseRan = true
                 }
-                // Folder Pre-request scripts, outermost folder first.
+                // Folder Pre-request scripts, outermost folder first. A
+                // folder's switch skips its script exactly like an empty one.
                 for folder in (collection?.folderChain(forRequest: request.id) ?? []).reversed()
-                where !folder.preRequestScript.isEmpty {
+                where folder.preRequestScriptEnabled && !folder.preRequestScript.isEmpty {
                     let outcome = try await runScript(
                         .preRequest, script: folder.preRequestScript, of: request,
                         variables: scriptVariables, resetsCarriedState: false)
@@ -273,7 +276,8 @@ extension AppStore {
                 // is never discarded at this point.
                 var responseWithScripts = response
                 let collection = collectionForRequest(request)
-                let collectionHasPost = !(collection?.postResponseScript.isEmpty ?? true)
+                let collectionHasPost =
+                    collection.map { $0.postResponseScriptEnabled && !$0.postResponseScript.isEmpty } ?? false
                 let requestHasPost =
                     request.postResponseScriptEnabled && !request.postResponseScript.isEmpty
                 if requestHasPost || collectionHasPost {
@@ -311,9 +315,11 @@ extension AppStore {
                             ScriptTestResult(
                                 name: "Script error", status: .failed, message: error))
                     }
-                    // Folder Tests scripts, innermost folder first.
+                    // Folder Tests scripts, innermost folder first. A
+                    // folder's switch skips its script exactly like an empty
+                    // one - the source stays, nothing runs.
                     for folder in (collection?.folderChain(forRequest: request.id) ?? [])
-                    where !folder.postResponseScript.isEmpty {
+                    where folder.postResponseScriptEnabled && !folder.postResponseScript.isEmpty {
                         let folderPost: ScriptPhaseOutcome
                         do {
                             folderPost = try await runScript(
@@ -341,8 +347,9 @@ extension AppStore {
                         }
                     }
                     // The collection's Tests script, reading the same
-                    // carried state.
-                    if let collection, !collection.postResponseScript.isEmpty {
+                    // carried state. The switch skips a disabled script
+                    // exactly like an empty one.
+                    if let collection, collection.postResponseScriptEnabled, !collection.postResponseScript.isEmpty {
                         let collectionPost: ScriptPhaseOutcome
                         do {
                             collectionPost = try await runScript(
