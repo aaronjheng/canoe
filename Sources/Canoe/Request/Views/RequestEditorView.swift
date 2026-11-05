@@ -71,7 +71,7 @@ struct RequestEditorView: View {
 
     /// The tabs an HTTP request shows (Postman's tab order).
     private var httpSections: [RequestSection] {
-        [.docs, .params, .headers, .body, .scripts, .settings]
+        [.docs, .params, .auth, .headers, .body, .scripts, .settings]
     }
 
     private var visibleSections: [RequestSection] {
