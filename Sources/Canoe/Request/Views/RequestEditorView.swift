@@ -1682,7 +1682,9 @@ struct RequestEditorView: View {
                 text: .constant(script),
                 variables: resolvedVariables,
                 syntax: .javascript,
-                isEditable: false
+                isEditable: false,
+                linksEnabled: true,
+                readOnlyMessage: "Inherited scripts are read-only"
             )
             // Hug the content: the editor auto-grows with its script (no
             // outer height frame - a flexible frame would inflate the block

@@ -143,7 +143,9 @@ struct BodyEditor: View {
                 },
                 formatActionName: "Format Body",
                 onFormatError: { showBodyFormatNote($0) },
-                showsOverviewRuler: true
+                showsOverviewRuler: true,
+                scrollBeyondLastLine: true,
+                unicodeHighlight: true
             )
             .background(AppColor.codeBackground)
             // Same gutter as the key/value body types (see KeyValueEditor):

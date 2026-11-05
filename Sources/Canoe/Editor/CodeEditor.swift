@@ -33,6 +33,21 @@ struct CodeEditor: View {
     /// Show Plume's overview ruler (worth it in the full-pane body/script
     /// editors, noise in the compact ones).
     var showsOverviewRuler: Bool = false
+    /// Gutter line-number follows the caret highlight too (Monaco:
+    /// `renderLineHighlight: "all"`), on for every Canoe editor.
+    var renderLineHighlight: EditorLineHighlightMode = .all
+    /// Scrollable space past the last line (Monaco
+    /// `scrollBeyondLastLine`); only visible in the scroll-mode (fill
+    /// container) editors.
+    var scrollBeyondLastLine: Bool = false
+    /// Highlight invisible/ambiguous unicode (Monaco `unicodeHighlight`)
+    /// - worth it on paste surfaces, where zero-width characters sneak in.
+    var unicodeHighlight: Bool = false
+    /// Open URL runs on click (Monaco `links`); read-only surfaces only.
+    var linksEnabled: Bool = false
+    /// Capsule shown when a read-only edit is attempted
+    /// (Monaco `readOnlyMessage`).
+    var readOnlyMessage: String?
 
     var body: some View {
         Editor(
@@ -55,7 +70,12 @@ struct CodeEditor: View {
             suggestFactory: { VariableCompletionBridge() },
             suggestItems: suggestions ?? VariableSuggestion.suggestions(from: variables),
             markers: markers + unresolvedVariableMarkers,
-            showsOverviewRuler: showsOverviewRuler
+            showsOverviewRuler: showsOverviewRuler,
+            renderLineHighlight: renderLineHighlight,
+            scrollBeyondLastLine: scrollBeyondLastLine,
+            unicodeHighlight: unicodeHighlight,
+            readOnlyMessage: readOnlyMessage,
+            linksEnabled: linksEnabled
         )
     }
 

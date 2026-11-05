@@ -75,7 +75,8 @@ struct WebSocketMessageEditorView: View {
             formatHandler: beautifyHandler,
             formatActionName: "Beautify Message",
             onFormatError: showInvalidMessageNote,
-            showsOverviewRuler: true
+            showsOverviewRuler: true,
+            scrollBeyondLastLine: true
         )
         .background(AppColor.codeBackground)
         // Even inset on all four sides: the multi-line editor draws its text
