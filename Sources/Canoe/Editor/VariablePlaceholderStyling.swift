@@ -71,4 +71,14 @@ enum VariablePlaceholderStyling {
     static func tintedRanges(in source: String, variables: [String: String]) -> [(NSRange, NSColor)] {
         variableRanges(in: source).map { (range, key) in (range, tint(key, in: variables)) }
     }
+
+    /// The placeholder runs that resolve to nothing - neither a scope
+    /// definition nor a dynamic variable. The editor's marker seam turns
+    /// these into warning squiggles (Monaco: `setModelMarkers`), matching
+    /// the inspector's "Unresolved Variables" list.
+    static func unresolvedRanges(in source: String, variables: [String: String]) -> [(NSRange, String)] {
+        variableRanges(in: source).filter { _, name in
+            variables[name] == nil && !DynamicVariables.isDynamic(name)
+        }
+    }
 }

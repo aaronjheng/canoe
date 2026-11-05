@@ -142,7 +142,8 @@ struct BodyEditor: View {
                     try BodyFormatter.format(source, kind: self.request.rawBodyKind)
                 },
                 formatActionName: "Format Body",
-                onFormatError: { showBodyFormatNote($0) }
+                onFormatError: { showBodyFormatNote($0) },
+                showsOverviewRuler: true
             )
             .background(AppColor.codeBackground)
             // Same gutter as the key/value body types (see KeyValueEditor):

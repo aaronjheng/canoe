@@ -82,7 +82,8 @@ struct ImportCURLSheet: View {
             showsLineNumbers: false,
             enablesTypingAssist: false,
             font: .monoBody,
-            placeholder: "curl -X POST https://api.example.com/users -H \"Content-Type: application/json\" -d '{\"name\": \"Ada\"}'"
+            placeholder: "curl -X POST https://api.example.com/users -H \"Content-Type: application/json\" -d '{\"name\": \"Ada\"}'",
+            flagsUnresolvedVariables: false
         )
         .frame(height: 150, alignment: .topLeading)
         .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
