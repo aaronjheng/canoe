@@ -183,6 +183,12 @@ struct KeyValueEditor<T: KVItem>: View {
     // Wide enough for the checkmark gutter plus "File" at the small size,
     // so the dropdown never truncates its own label.
     private let kindMenuWidth: CGFloat = 84
+    // The Type menu must fit the 24pt table row: at the standard 28pt
+    // control height it stretched the key cell 2pt past the row on both
+    // sides, so the cell's focus border rode 2pt high and its bottom edge
+    // landed outside the table (clipped - a missing bottom border).
+    // Row height minus 2pt insets leaves the pill small but tappable.
+    private let kindMenuHeight: CGFloat = AppSize.tableRowHeight - 2 * AppSpacing.xxSmall
     private var secretColumnWidth: CGFloat { secretKeyPath == nil ? 0 : 26 }
     private var showsKindMenu: Bool { kindKeyPath != nil }
     private var leadingColumnWidth: CGFloat {
@@ -443,6 +449,7 @@ struct KeyValueEditor<T: KVItem>: View {
                     kind: kindBinding,
                     showsKindMenu: showsKindMenu,
                     kindMenuWidth: kindMenuWidth,
+                    kindMenuHeight: kindMenuHeight,
                     isKeyDisabled: disablesKeyCell,
                     isSecret: secretBinding,
                     secretColumnWidth: secretColumnWidth,
@@ -485,6 +492,7 @@ struct KeyValueEditor<T: KVItem>: View {
                     kind: ghostKindBinding,
                     showsKindMenu: showsKindMenu,
                     kindMenuWidth: kindMenuWidth,
+                    kindMenuHeight: kindMenuHeight,
                     isSecret: nil,
                     secretColumnWidth: secretColumnWidth,
                     variables: variables,
@@ -806,6 +814,7 @@ private struct KVRow: View {
     var kind: Binding<FormFieldKind>?
     let showsKindMenu: Bool
     let kindMenuWidth: CGFloat
+    let kindMenuHeight: CGFloat
     /// Muted, non-editable key cell (path variables: the key derives from
     /// the URL). Opts the key cell out of hover/focus chrome.
     var isKeyDisabled: Bool = false
@@ -1124,6 +1133,7 @@ private struct KVRow: View {
                     id: "kv.kind.\(kindID)",
                     label: kind.wrappedValue == .text ? "Text" : "File",
                     width: kindMenuWidth,
+                    minHeight: kindMenuHeight,
                     isDisabled: !isEnabled
                 ) {
                     FormFieldKind.allCases.map { pickedKind in

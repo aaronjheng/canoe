@@ -336,7 +336,10 @@ struct DropdownMenuContent: View {
 /// The standard picker-style trigger: the current value with a trailing
 /// chevron, opening a dropdown panel. Replaces the form menu pickers
 /// (auth type, raw body format, snippet language, console filter...); the
-/// panel itself is the shared one (see DropdownMenuPanel).
+/// panel itself is the shared one (see DropdownMenuPanel). A caller may
+/// shrink `minHeight` for dense hosts (a key/value table row is shorter
+/// than the standard control height, and an unshrunk menu stretched the
+/// cell past the row, shoving its focus border off the table).
 struct DropdownFieldButton: View {
     @Environment(DropdownCoordinator.self) private var dropdown
     /// Stable, site-unique presentation id.
@@ -344,6 +347,7 @@ struct DropdownFieldButton: View {
     let label: String
     var showsSelection = true
     var width: CGFloat = AppSize.dropdownDefaultWidth
+    var minHeight: CGFloat = AppSize.controlHeight
     var isDisabled = false
     let rows: () -> [DropdownRow]
 
@@ -365,7 +369,7 @@ struct DropdownFieldButton: View {
         }
         .padding(.leading, AppSpacing.compact)
         .padding(.trailing, AppSpacing.compact)
-        .frame(minHeight: AppSize.controlHeight)
+        .frame(minHeight: minHeight)
         .frame(width: width, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
