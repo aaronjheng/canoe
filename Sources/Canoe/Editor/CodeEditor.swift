@@ -36,6 +36,14 @@ struct CodeEditor: View {
     /// Gutter line-number follows the caret highlight too (Monaco:
     /// `renderLineHighlight: "all"`), on for every Canoe editor.
     var renderLineHighlight: EditorLineHighlightMode = .all
+    /// Word-under-caret occurrence wash (Monaco `occurrencesHighlight`).
+    var occurrencesHighlight: Bool = true
+    /// Inline color swatches (Monaco `colorDecorators`): bodies carry
+    /// JSON with colors.
+    var colorDecorators: Bool = true
+    /// Bracket pairs painted by nesting depth (Monaco
+    /// `bracketPairColorization`).
+    var bracketPairColorization: Bool = true
     /// Scrollable space past the last line (Monaco
     /// `scrollBeyondLastLine`); only visible in the scroll-mode (fill
     /// container) editors.
@@ -74,6 +82,9 @@ struct CodeEditor: View {
             renderLineHighlight: renderLineHighlight,
             scrollBeyondLastLine: scrollBeyondLastLine,
             unicodeHighlight: unicodeHighlight,
+            occurrencesHighlight: occurrencesHighlight,
+            colorDecorators: colorDecorators,
+            bracketPairColorization: bracketPairColorization,
             readOnlyMessage: readOnlyMessage,
             linksEnabled: linksEnabled
         )
