@@ -44,6 +44,28 @@ struct CodeEditor: View {
     /// Bracket pairs painted by nesting depth (Monaco
     /// `bracketPairColorization`).
     var bracketPairColorization: Bool = true
+    /// Final-newline pilcrow, boundary mode (Monaco
+    /// `renderFinalNewline`): visible only on the last line.
+    var renderFinalNewline: EditorFinalNewlineMode = .boundary
+    /// Vertical guides spanning bracket pairs (Monaco
+    /// `guides.bracketPairs`).
+    var bracketGuides: Bool = false
+    /// Lines kept visible around the caret on jumps (Monaco
+    /// `cursorSurroundingLines`).
+    var cursorSurroundingLines: Int = 0
+    /// Common ligatures (Monaco `fontLigatures`).
+    var fontLigatures: Bool = false
+    /// Overview-ruler border hairline (Monaco `overviewRulerBorder`).
+    var overviewRulerBorder: Bool = true
+    /// Hide the caret tick in the overview ruler.
+    var hideCursorInOverviewRuler: Bool = false
+    /// Selection change callback (Monaco `onDidChangeCursorPosition`).
+    var onSelectionChange: ((EditorSelectionSnapshot) -> Void)?
+    /// Selection-only formatting (Monaco formatSelection); ⌥⇧F with a
+    /// selection routes here before the whole-document handler.
+    var formatSelectionHandler: ((String) throws -> String?)?
+    /// Host actions (Monaco `addAction`): menu entries + key equivalents.
+    var actions: [EditorAction] = []
     /// Scrollable space past the last line (Monaco
     /// `scrollBeyondLastLine`); only visible in the scroll-mode (fill
     /// container) editors.
@@ -86,7 +108,16 @@ struct CodeEditor: View {
             colorDecorators: colorDecorators,
             bracketPairColorization: bracketPairColorization,
             readOnlyMessage: readOnlyMessage,
-            linksEnabled: linksEnabled
+            linksEnabled: linksEnabled,
+            renderFinalNewline: renderFinalNewline,
+            overviewRulerBorder: overviewRulerBorder,
+            hideCursorInOverviewRuler: hideCursorInOverviewRuler,
+            cursorSurroundingLines: cursorSurroundingLines,
+            fontLigatures: fontLigatures,
+            bracketGuides: bracketGuides,
+            onSelectionChange: onSelectionChange,
+            formatSelectionHandler: formatSelectionHandler,
+            actions: actions
         )
     }
 
