@@ -33,16 +33,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "175812e0be2bccb6abe50bb8d566126198344f707e304f45c648fd8f2cc0365e"
 
 [[package]]
-name = "canoe_shim"
-version = "0.1.0"
-dependencies = [
- "oxc_allocator",
- "oxc_diagnostics",
- "oxc_formatter",
- "oxc_span",
-]
-
-[[package]]
 name = "castaway"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -511,6 +501,16 @@ dependencies = [
  "oxc_str",
  "phf",
  "unicode-id-start",
+]
+
+[[package]]
+name = "oxfmt_shim"
+version = "1.0.0"
+dependencies = [
+ "oxc_allocator",
+ "oxc_diagnostics",
+ "oxc_formatter",
+ "oxc_span",
 ]
 
 [[package]]

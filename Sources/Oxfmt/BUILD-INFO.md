@@ -7,7 +7,7 @@ JavaScript; the formatter is native Rust.
 - Built by `build.sh` (`sh Sources/Oxfmt/build.sh`): compiles the in-repo
   shim crate (`shim/`, a standalone Cargo project) for arm64 - Canoe
   targets macOS 27+, which shipped no Intel release - and writes
-  `Sources/Oxfmt/lib/libcanoe_oxfmt.xcframework`, which is
+  `Sources/Oxfmt/lib/liboxfmt_shim.xcframework`, which is
   git-ignored - `just build` refuses to run without it.
 - Dependencies: the oxc crates ship no usable registry release (every
   published version is yanked), so `shim/Cargo.toml` pins the needed
@@ -28,6 +28,6 @@ JavaScript; the formatter is native Rust.
 - Formatter: `oxc_formatter` v0.74.0 (the `oxfmt` Tier-1 backend)
 - Options: oxfmt defaults (2-space indent, double quotes, width 100)
   with `Semicolons::AsNeeded` - Canoe pins `semi: false` (ASI style)
-- Toolchain: `shim/rust-toolchain.toml` pins 1.99.1 (oxc's choice - the
-  shim builds with the compiler the upstream project pins)
+- Toolchain: `shim/rust-toolchain.toml` pins `stable` (Canoe's choice - the
+  shim builds with the stable compiler)
 - Upstream license: MIT (`LICENSE-oxc`)

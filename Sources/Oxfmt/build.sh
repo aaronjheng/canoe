@@ -10,7 +10,7 @@
 set -eu
 
 cd "$(dirname "$0")"
-out="$PWD/lib/libcanoe_oxfmt.xcframework"
+out="$PWD/lib/liboxfmt_shim.xcframework"
 
 command -v cargo >/dev/null 2>&1 || { echo "cargo not found - install rustup (rustup.rs)" >&2; exit 1; }
 
@@ -23,7 +23,7 @@ cargo build --release
 mkdir -p ../lib
 rm -rf "$out"
 xcodebuild -create-xcframework \
-    -library target/release/libcanoe_shim.a \
+    -library target/release/liboxfmt_shim.a \
     -output "$out" >/dev/null
 
 echo "Built $out"

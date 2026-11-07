@@ -1,11 +1,11 @@
 [package]
-name = "canoe_shim"
-version = "0.1.0"
+name = "oxfmt_shim"
+version = "1.0.0"
 edition = "2024"
 publish = false
 
 [lib]
-name = "canoe_shim"
+name = "oxfmt_shim"
 crate-type = ["staticlib"]
 
 [dependencies]

@@ -13,6 +13,6 @@ let package = Package(
         .library(name: "Oxfmt", targets: ["OxfmtBin"]),
     ],
     targets: [
-        .binaryTarget(name: "OxfmtBin", path: "lib/libcanoe_oxfmt.xcframework"),
+        .binaryTarget(name: "OxfmtBin", path: "lib/liboxfmt_shim.xcframework"),
     ]
 )

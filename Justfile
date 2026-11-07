@@ -17,8 +17,8 @@ format-check:
     swift format lint --recursive Sources/Canoe
 
 build:
-    @if [ ! -d Sources/Oxfmt/lib/libcanoe_oxfmt.xcframework ]; then \
-        echo 'Sources/Oxfmt/lib/libcanoe_oxfmt.xcframework missing - building oxfmt' >&2; \
+    @if [ ! -d Sources/Oxfmt/lib/liboxfmt_shim.xcframework ]; then \
+        echo 'Sources/Oxfmt/lib/liboxfmt_shim.xcframework missing - building oxfmt' >&2; \
         sh Sources/Oxfmt/build.sh; \
     fi
     xcodebuild -project Canoe.xcodeproj \
