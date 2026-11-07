@@ -12,30 +12,6 @@
   },
   "packages": [
     {
-      "kind": "remote",
-      "repository": "https://github.com/tree-sitter/swift-tree-sitter",
-      "version": {
-        "version": "0.10.0",
-      },
-    }, {
-      "kind": "remote",
-      "repository": "https://github.com/tree-sitter/tree-sitter-json",
-      "version": {
-        "up-to-next-major-version": "0.24.8",
-      },
-    }, {
-      "kind": "remote",
-      "repository": "https://github.com/tree-sitter-grammars/tree-sitter-xml",
-      "version": {
-        "up-to-next-major-version": "0.7.0",
-      },
-    }, {
-      "kind": "remote",
-      "repository": "https://github.com/tree-sitter/tree-sitter-javascript",
-      "version": {
-        "revision": "8d2992c1071befdc0146e9e1d335d9f50f459030",
-      },
-    }, {
       "kind": "local",
       "path": "Sources/QuickJS",
     }, {
@@ -130,7 +106,6 @@
           "path": "Editor",
           "children": [
             { "path": "BodySyntax.swift", "target-membership": [ "Canoe/compile-sources" ] },
-            { "path": "SyntaxProfiles.swift", "target-membership": [ "Canoe/compile-sources" ] },
             { "path": "VariablePlaceholderStyling.swift", "target-membership": [ "Canoe/compile-sources" ] },
             { "path": "CodeEditor.swift", "target-membership": [ "Canoe/compile-sources" ] },
             { "path": "VariableCompletion.swift", "target-membership": [ "Canoe/compile-sources" ] },
@@ -440,20 +415,8 @@
           "product-name": "Plume",
           "build-phase": { "build-phase": "frameworks" },
         }, {
-          "package": "swift-tree-sitter",
-          "product-name": "SwiftTreeSitter",
-          "build-phase": { "build-phase": "frameworks" },
-        }, {
-          "package": "tree-sitter-javascript",
-          "product-name": "TreeSitterJavaScript",
-          "build-phase": { "build-phase": "frameworks" },
-        }, {
-          "package": "tree-sitter-json",
-          "product-name": "TreeSitterJSON",
-          "build-phase": { "build-phase": "frameworks" },
-        }, {
-          "package": "tree-sitter-xml",
-          "product-name": "TreeSitterXML",
+          "package": "plume",
+          "product-name": "PlumeLanguages",
           "build-phase": { "build-phase": "frameworks" },
         },
       ],

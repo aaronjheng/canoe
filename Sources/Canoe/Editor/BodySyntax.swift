@@ -1,5 +1,6 @@
 import AppKit
 import Plume
+import PlumeLanguages
 import SwiftUI
 
 /// Request-body language selected in the raw editor. Canoe-side domain type

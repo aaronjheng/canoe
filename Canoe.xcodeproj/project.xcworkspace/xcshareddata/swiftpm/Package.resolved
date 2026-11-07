@@ -1,5 +1,5 @@
 {
-  "originHash" : "90481fa9d2cace40cb2bbfef7beecd62504949bf65161293f2ed7c9853c41f5f",
+  "originHash" : "f75633bcc43bbbcbab3b6d463d270cf694115d76f18911fc3f718c6037e2c876",
   "pins" : [
     {
       "identity" : "plume",
@@ -7,7 +7,7 @@
       "location" : "https://github.com/aaronjheng/plume.git",
       "state" : {
         "branch" : "master",
-        "revision" : "a45072f0d955f8a523d8b42b2f5ae5e0b0a43ad4"
+        "revision" : "e0791ea3219c29b739b9b3552cf8265073986184"
       }
     },
     {
@@ -29,6 +29,15 @@
       }
     },
     {
+      "identity" : "tree-sitter-bash",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tree-sitter/tree-sitter-bash",
+      "state" : {
+        "revision" : "a06c2e4415e9bc0346c6b86d401879ffb44058f7",
+        "version" : "0.25.1"
+      }
+    },
+    {
       "identity" : "tree-sitter-javascript",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tree-sitter/tree-sitter-javascript",
@@ -43,6 +52,14 @@
       "state" : {
         "revision" : "ee35a6ebefcef0c5c416c0d1ccec7370cfca5a24",
         "version" : "0.24.8"
+      }
+    },
+    {
+      "identity" : "tree-sitter-lua",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tree-sitter-grammars/tree-sitter-lua",
+      "state" : {
+        "revision" : "591977fe1e8e24cdf9d94d3bfe2593e06b90c973"
       }
     },
     {

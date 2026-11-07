@@ -14,11 +14,6 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
-    ignore:
-      # Pinned exactly to 0.10.0 (0.25.0 is a broken release). Remove after upstream fixes 0.25+.
-      - dependency-name: github.com/tree-sitter/swift-tree-sitter
-      # swift-tree-sitter only allows tree-sitter < 0.26. Remove after upstream relaxes the constraint.
-      - dependency-name: github.com/tree-sitter/tree-sitter
     groups:
       swift:
         patterns:

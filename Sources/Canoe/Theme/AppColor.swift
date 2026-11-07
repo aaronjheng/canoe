@@ -122,6 +122,20 @@ enum AppColor {
         light: RGB(red: 255, green: 255, blue: 255),
         dark: RGB(red: 33, green: 33, blue: 33)
     )
+    /// Current-line highlight in code editors (the band behind the
+    /// caret's line), following the pattern of Monaco's
+    /// `editor.lineHighlightBackground`. Canoe uses a pure-border style,
+    /// so the background is clear and `lineHighlightBorderNS` carries
+    /// the highlight.
+    static let lineHighlightBackgroundNS: NSColor = .clear
+    /// Current-line highlight border in code editors (Monaco's
+    /// `editor.lineHighlightBorder`): a touch stronger than the code
+    /// background so the current line reads even if the host clears the
+    /// highlight background for a pure-border style.
+    static let lineHighlightBorderNS: NSColor = dynamicNS(
+        light: RGB(red: 192, green: 192, blue: 192),
+        dark: RGB(red: 82, green: 82, blue: 82)
+    )
     /// The app's content layer: center panes, the status bar, boxed fields,
     /// and floating popup cards. White in light mode; the fixed #212121 in
     /// dark - one neutral step below the window chrome.

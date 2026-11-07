@@ -104,7 +104,10 @@ struct CodeEditor: View {
             suggestItems: suggestions ?? VariableSuggestion.suggestions(from: variables),
             markers: markers + unresolvedVariableMarkers,
             showsOverviewRuler: showsOverviewRuler,
-            renderLineHighlight: renderLineHighlight,
+            // Read-only views are for reading, not caret tracking: the
+            // current-line band is an editing affordance (Monaco hides it
+            // in read-only panes too).
+            renderLineHighlight: isEditable ? renderLineHighlight : .none,
             scrollBeyondLastLine: scrollBeyondLastLine,
             unicodeHighlight: unicodeHighlight,
             occurrencesHighlight: occurrencesHighlight,

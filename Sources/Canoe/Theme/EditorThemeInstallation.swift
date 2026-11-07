@@ -29,6 +29,8 @@ enum EditorThemeInstallation {
         // AppKit fills
         EditorTheme.textPrimaryNS = AppColor.textPrimaryNS
         EditorTheme.codeBackgroundNS = AppColor.codeBackgroundNS
+        EditorTheme.lineHighlightBackgroundNS = AppColor.lineHighlightBackgroundNS
+        EditorTheme.lineHighlightBorderNS = AppColor.lineHighlightBorderNS
 
         // Syntax palette (the GitHub-ish token colors)
         EditorTheme.syntaxKey = AppColor.syntaxKey
@@ -54,6 +56,14 @@ enum EditorThemeInstallation {
         EditorTheme.radiusMedium = AppRadius.medium
         EditorTheme.lineField = AppLine.field
         EditorTheme.lineFocusedField = AppLine.focusedField
+        EditorTheme.lineHighlightBorderWidth = 1
+        // Airier code lines: the natural monospaced leading reads cramped
+        // in the multi-line editors.
+        EditorTheme.lineHeightMultiple = 1.35
+        // Derive the metrics-balanced monospaced family so the extra
+        // leading splits around the ink (Monaco's half-leading look)
+        // instead of piling above it. Must precede the first editor.
+        EditorFontBalancing.install(lineHeightMultiple: EditorTheme.lineHeightMultiple)
         EditorTheme.toggleControlSize = AppSize.topBarControlHeight
         EditorTheme.opacityDisabled = AppOpacity.disabled
         EditorTheme.motionQuick = AppMotion.quick
