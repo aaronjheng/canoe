@@ -50,6 +50,9 @@ struct CodeEditor: View {
     /// Vertical guides spanning bracket pairs (Monaco
     /// `guides.bracketPairs`).
     var bracketGuides: Bool = false
+    /// Vertical guides at every completed indent level (Monaco
+    /// `guides.indentation`).
+    var indentGuides: Bool = true
     /// Lines kept visible around the caret on jumps (Monaco
     /// `cursorSurroundingLines`).
     var cursorSurroundingLines: Int = 0
@@ -115,6 +118,7 @@ struct CodeEditor: View {
             cursorSurroundingLines: cursorSurroundingLines,
             fontLigatures: fontLigatures,
             bracketGuides: bracketGuides,
+            indentGuides: indentGuides,
             onSelectionChange: onSelectionChange,
             formatSelectionHandler: formatSelectionHandler,
             actions: actions
