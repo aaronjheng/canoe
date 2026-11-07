@@ -42,6 +42,9 @@
       "kind": "local",
       "path": "Sources/Oxfmt",
     }, {
+      "kind": "local",
+      "path": "Sources/CanoeCore",
+    }, {
       "kind": "remote",
       "repository": "https://github.com/aaronjheng/plume.git",
       "version": {
@@ -421,6 +424,10 @@
       ],
       "package-product-members": [
         {
+          "package": "CanoeCore",
+          "product-name": "CanoeCore",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
           "package": "Oxfmt",
           "product-name": "Oxfmt",
           "build-phase": { "build-phase": "frameworks" },
