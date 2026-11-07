@@ -4,10 +4,10 @@ The Scripts tab's native formatter: the oxc project's `oxfmt` backend as
 a statically linked Rust archive behind a C-ABI shim. Nothing here runs
 JavaScript; the formatter is native Rust.
 
-- Built by `build.sh` (`sh Vendor/Oxfmt/build.sh`): compiles the in-repo
+- Built by `build.sh` (`sh Sources/Oxfmt/build.sh`): compiles the in-repo
   shim crate (`shim/`, a standalone Cargo project) for arm64 - Canoe
   targets macOS 27+, which shipped no Intel release - and writes
-  `Vendor/Oxfmt/lib/libcanoe_oxfmt.xcframework`, which is
+  `Sources/Oxfmt/lib/libcanoe_oxfmt.xcframework`, which is
   git-ignored - `just build` refuses to run without it.
 - Dependencies: the oxc crates ship no usable registry release (every
   published version is yanked), so `shim/Cargo.toml` pins the needed

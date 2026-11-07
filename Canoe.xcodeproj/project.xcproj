@@ -37,10 +37,10 @@
       },
     }, {
       "kind": "local",
-      "path": "Vendor/QuickJS",
+      "path": "Sources/QuickJS",
     }, {
       "kind": "local",
-      "path": "Vendor/Oxfmt",
+      "path": "Sources/Oxfmt",
     }, {
       "kind": "remote",
       "repository": "https://github.com/aaronjheng/plume.git",

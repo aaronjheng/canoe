@@ -2,7 +2,7 @@ import Foundation
 
 /// Native JavaScript formatting behind the Scripts editor's ⌥⇧F: the oxc
 /// project's `oxfmt` backend, statically linked into the app from
-/// `Vendor/Oxfmt` (see BUILD-INFO.md - no JavaScript engine is involved).
+/// `Sources/Oxfmt` (see BUILD-INFO.md - no JavaScript engine is involved).
 /// The shim crate exports this one C ABI pair, and the bindings below pin
 /// its exact shape for Swift. Input and output are plain UTF-8 text; a
 /// script that does not parse throws instead of being guessed at, so the

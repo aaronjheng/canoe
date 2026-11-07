@@ -6,7 +6,7 @@
 # the SPM package links against. arm64 only: Canoe targets macOS 27+,
 # which shipped no Intel release.
 #
-# Usage: sh Vendor/Oxfmt/build.sh   (the Justfile recipe `just oxfmt`)
+# Usage: sh Sources/Oxfmt/build.sh   (the Justfile recipe `just oxfmt`)
 set -eu
 
 cd "$(dirname "$0")"

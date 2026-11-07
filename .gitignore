@@ -10,7 +10,7 @@ CanoeVault/
 .env
 
 # Built by `just oxfmt` from the in-repo shim sources
-Vendor/Oxfmt/lib/
+Sources/Oxfmt/lib/
 
 # Rust (the shim builds in-place, so a local cargo run drops target/ here)
 **/target/

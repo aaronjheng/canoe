@@ -34,7 +34,7 @@ just run
 just build
 
 # Rebuild just the vendored oxfmt formatter after shim changes
-sh Vendor/Oxfmt/build.sh
+sh Sources/Oxfmt/build.sh
 
 # Install to ~/Applications
 just install
