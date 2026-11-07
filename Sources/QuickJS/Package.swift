@@ -2,10 +2,10 @@
 import PackageDescription
 
 // Canoe's embedded QuickJS-NG engine, pinned by the `quickjs/` git
-// submodule inside this target (v0.9.0 - see LICENSE there).
+// submodule inside this target (v0.18.0 - see LICENSE there).
 //
 // QuickJSEngine compiles the curated upstream C sources (quickjs.c,
-// libregexp, libunicode, libbf, cutils) - quickjs-libc and its std/os/file
+// libregexp, libunicode, dtoa) - quickjs-libc and its std/os/file
 // modules are deliberately excluded, the sandbox surface comes from the
 // Swift binding instead. QJSShims bridges the macros/inline helpers/union
 // members Swift cannot reach; its public header pulls the engine API in
@@ -23,8 +23,7 @@ let package = Package(
             name: "QuickJSEngine",
             sources: [
                 "QJSShims.c",
-                "quickjs/cutils.c",
-                "quickjs/libbf.c",
+                "quickjs/dtoa.c",
                 "quickjs/libregexp.c",
                 "quickjs/libunicode.c",
                 "quickjs/quickjs.c",

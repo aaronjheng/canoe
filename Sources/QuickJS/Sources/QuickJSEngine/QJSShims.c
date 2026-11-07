@@ -56,7 +56,7 @@ JSValue qjs_float64(double v) {
 }
 
 JSValue qjs_exception(void) {
-    return (JSValue){ (JSValueUnion){ .int32 = 0 }, JS_TAG_EXCEPTION };
+    return (JSValue){ (JSValueUnion){ .uint64 = 0 }, JS_TAG_EXCEPTION };
 }
 
 JSValue qjs_new_string_len(JSContext *ctx, const char *utf8, size_t len) {
