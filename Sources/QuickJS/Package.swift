@@ -27,6 +27,14 @@ let package = Package(
                 "quickjs/libregexp.c",
                 "quickjs/libunicode.c",
                 "quickjs/quickjs.c",
+            ],
+            cSettings: [
+                .unsafeFlags([
+                    "-Wno-shorten-64-to-32",
+                    "-Wno-implicit-int-conversion",
+                    "-Wno-implicit-float-conversion",
+                    "-Wno-implicit-int-enum-cast",
+                ])
             ]
         ),
         .target(name: "QuickJS", dependencies: ["QuickJSEngine"]),
