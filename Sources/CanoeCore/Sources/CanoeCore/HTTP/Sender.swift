@@ -1,29 +1,5 @@
 import Foundation
 
-public struct SendResult: Codable {
-    public var request: String
-    public var method: String
-    public var url: String
-    public var statusCode: Int?
-    public var headers: [String: String]
-    public var body: String
-    public var durationMs: Double
-    public var error: String?
-}
-
-public enum SendError: LocalizedError {
-    case invalidURL(String)
-    case fileNotFound(String)
-    case unsupportedAuth(String)
-    public var errorDescription: String? {
-        switch self {
-        case .invalidURL(let u): return "unsupported URL: \(u)"
-        case .fileNotFound(let p): return "file not found: \(p)"
-        case .unsupportedAuth(let t): return "auth type not supported by CLI: \(t) (open Canoe.app for that part)"
-        }
-    }
-}
-
 public final class Sender: Sendable {
     public static let shared = Sender()
     public init() {}
@@ -106,9 +82,6 @@ public final class Sender: Sendable {
         }
         // apiKey in query is added after auth resolution
         let auth = resolveAuth(request: request, collection: collection, vars: vars)
-        if auth.type.lowercased() == "apikey" || auth.type.lowercased() == "api_key" || auth.type.lowercased() == "api key" {
-            // normalized check below handles variants
-        }
         if auth.type.lowercased() == "apikey", auth.apiKeyIn.lowercased() == "query", !auth.apiKey.isEmpty {
             items.append(URLQueryItem(name: auth.apiKey, value: auth.apiKeyValue))
         }
@@ -210,6 +183,40 @@ public final class Sender: Sendable {
         return urlRequest
     }
 
+    /// Human/machine preview of a built request (no network).
+    public func preview(
+        request: Request,
+        collection: Collection,
+        vars: [String: String],
+        timeoutSeconds: Double = 30,
+        useCookies: Bool = true
+    ) -> [String: Any] {
+        do {
+            let req = try build(request: request, collection: collection, vars: vars, timeoutSeconds: timeoutSeconds, useCookies: useCookies)
+            var headers: [String: String] = [:]
+            for (k, v) in req.allHTTPHeaderFields ?? [:] { headers[k] = v }
+            let bodyStr = req.httpBody.map { String(decoding: $0, as: UTF8.self) } ?? ""
+            return [
+                "request": request.name,
+                "method": req.httpMethod ?? request.method,
+                "url": req.url?.absoluteString ?? "",
+                "headers": headers,
+                "body": bodyStr,
+                "dryRun": true,
+            ]
+        } catch {
+            let err: String
+            if let e = error as? SendError { err = e.errorDescription ?? "\(e)" } else { err = error.localizedDescription }
+            return [
+                "request": request.name,
+                "method": request.method,
+                "url": VariableResolver.resolve(request.urlString, with: vars),
+                "error": err,
+                "dryRun": true,
+            ]
+        }
+    }
+
     public func send(
         request: Request,
         collection: Collection,
@@ -234,10 +241,8 @@ public final class Sender: Sendable {
             if let h = http?.allHeaderFields {
                 for (k, v) in h { headers["\(k)"] = "\(v)" }
             }
-            let bodyString = data.prefix(512 * 1024).withUnsafeBytes { String(decoding: $0, as: UTF8.self) }
-            // data.prefix returns ArraySlice; convert correctly
             let truncated = data.count > 512 * 1024
-            let text = truncated ? String(decoding: data.prefix(512 * 1024), as: UTF8.self) : bodyString
+            let text = truncated ? String(decoding: data.prefix(512 * 1024), as: UTF8.self) : String(decoding: data, as: UTF8.self)
             return SendResult(
                 request: request.name, method: request.method.uppercased(), url: urlRequest.url?.absoluteString ?? "",
                 statusCode: http?.statusCode, headers: headers, body: text, durationMs: elapsed, error: nil
