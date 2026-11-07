@@ -5,16 +5,16 @@ configuration := "Release"
 app_bundle := derived_data / "Build/Products" / configuration / "Canoe.app"
 
 lint:
-    swiftlint lint Sources/Canoe
+    swiftlint lint Sources
 
 lint-fix:
-    swiftlint lint --fix Sources/Canoe
+    swiftlint lint --fix Sources
 
 format:
-    swift format --recursive --in-place Sources/Canoe
+    swift format --recursive --in-place Sources
 
 format-check:
-    swift format lint --recursive Sources/Canoe
+    swift format lint --recursive Sources
 
 build:
     @if [ ! -d Sources/Oxfmt/lib/liboxfmt_shim.xcframework ]; then \

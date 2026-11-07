@@ -107,7 +107,7 @@ public final class QJSRuntime {
         // without it.
         let bytes = Array(source.utf8CString)
         return try bytes.withUnsafeBufferPointer { buffer throws in
-            let length = buffer.count > 0 ? buffer.count - 1 : 0
+            let length = buffer.isEmpty ? 0 : buffer.count - 1
             // JS_EVAL_TYPE_GLOBAL (0) / JS_EVAL_TYPE_MODULE (1) - the flag
             // macros are not importable from Swift, these constants mirror
             // quickjs.h.
