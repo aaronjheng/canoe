@@ -19,6 +19,9 @@ struct CodeEditor: View {
     var showsGutterSeparator: Bool = false
     var enablesTypingAssist: Bool = true
     var font: EditorFont = .monoSubheadline
+    /// Per-editor line-height multiplier (Monaco's `lineHeight`);
+    /// 1.35 matches the host's installed default from the global era.
+    var lineHeightMultiple: CGFloat = 1.35
     var placeholder: String?
     var formatHandler: ((String) throws -> String?)?
     var formatActionName: String = "Format"
@@ -96,6 +99,7 @@ struct CodeEditor: View {
             showsGutterSeparator: showsGutterSeparator,
             enablesTypingAssist: enablesTypingAssist,
             font: font,
+            lineHeightMultiple: lineHeightMultiple,
             placeholder: placeholder,
             formatHandler: formatHandler,
             formatActionName: formatActionName,
