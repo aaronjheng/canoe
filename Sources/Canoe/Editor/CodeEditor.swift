@@ -84,6 +84,24 @@ struct CodeEditor: View {
     /// Capsule shown when a read-only edit is attempted
     /// (Monaco `readOnlyMessage`).
     var readOnlyMessage: String?
+    /// Gutter line-number style (Monaco `lineNumbers`); `.on` is historic.
+    var lineNumbersMode: EditorLineNumbersMode = .on
+    /// Caret glide (Monaco `cursorSmoothCaretAnimation`); `.off` is historic.
+    var cursorSmoothCaretAnimation: EditorCursorSmoothCaretAnimation = .off
+    /// Format whatever is pasted through `formatHandler` (JSON bodies).
+    var formatOnPaste: Bool = false
+    /// Debounced whole-document format after typing pauses.
+    var formatOnType: Bool = false
+    /// Starting zoom for the editor-local font scale (`⌃=`/`⌃-` afterwards).
+    var initialFontScale: CGFloat = 1
+    /// Observe zoom changes (for persistence); nil keeps zoom local.
+    var onFontScaleChange: ((CGFloat) -> Void)?
+    /// Go-to-definition (F12/⌘-click); nil keeps both as no-ops.
+    var definitionProvider: ((_ range: NSRange) -> NSRange?)?
+    /// Outline symbols (⌃⇧O); nil uses Plume's built-in extraction.
+    var documentSymbolsProvider: ((_ text: String) -> [EditorDocumentSymbol])?
+    /// Signature help on `(`; nil disables the popup.
+    var signatureProvider: ((_ functionRange: NSRange, _ activeParameter: Int) -> EditorSignatureHelp?)?
 
     var body: some View {
         Editor(
@@ -128,7 +146,16 @@ struct CodeEditor: View {
             indentGuides: indentGuides,
             onSelectionChange: onSelectionChange,
             formatSelectionHandler: formatSelectionHandler,
-            actions: actions
+            actions: actions,
+            lineNumbersMode: lineNumbersMode,
+            cursorSmoothCaretAnimation: cursorSmoothCaretAnimation,
+            formatOnPaste: formatOnPaste,
+            formatOnType: formatOnType,
+            initialFontScale: initialFontScale,
+            onFontScaleChange: onFontScaleChange,
+            definitionProvider: definitionProvider,
+            documentSymbolsProvider: documentSymbolsProvider,
+            signatureProvider: signatureProvider
         )
     }
 

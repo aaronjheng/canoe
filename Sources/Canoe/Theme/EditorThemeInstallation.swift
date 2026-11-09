@@ -38,6 +38,10 @@ enum EditorThemeInstallation {
         EditorTheme.syntaxNumber = AppColor.syntaxNumber
         EditorTheme.syntaxKeyword = AppColor.syntaxKeyword
         EditorTheme.syntaxPlain = AppColor.syntaxPlain
+        EditorTheme.syntaxComment = AppColor.tertiaryText
+        EditorTheme.syntaxFunction = AppColor.success
+        EditorTheme.syntaxVariable = AppColor.syntaxKey
+        EditorTheme.syntaxConstant = AppColor.methodOPTIONS
 
         // Fonts
         EditorTheme.fontSmall = AppFont.small
