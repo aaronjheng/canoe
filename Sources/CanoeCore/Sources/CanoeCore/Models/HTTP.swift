@@ -8,11 +8,12 @@ public struct HTTPHeader: Decodable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
-        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        // The app stores the row's name as `key`; `name` is the older spelling.
+        name = try c.decodeIfPresent(String.self, forKey: .key) ?? c.decodeIfPresent(String.self, forKey: .name) ?? ""
         value = try c.decodeIfPresent(String.self, forKey: .value) ?? ""
         isEnabled = try c.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
     }
-    enum CodingKeys: String, CodingKey { case id, name, value, isEnabled }
+    enum CodingKeys: String, CodingKey { case id, key, name, value, isEnabled }
 }
 
 public struct QueryParam: Decodable, Sendable {
@@ -23,11 +24,12 @@ public struct QueryParam: Decodable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
-        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        // The app stores the row's name as `key`; `name` is the older spelling.
+        name = try c.decodeIfPresent(String.self, forKey: .key) ?? c.decodeIfPresent(String.self, forKey: .name) ?? ""
         value = try c.decodeIfPresent(String.self, forKey: .value) ?? ""
         isEnabled = try c.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
     }
-    enum CodingKeys: String, CodingKey { case id, name, value, isEnabled }
+    enum CodingKeys: String, CodingKey { case id, key, name, value, isEnabled }
 }
 
 public struct FormField: Decodable, Sendable {
