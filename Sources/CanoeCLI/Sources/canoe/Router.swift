@@ -73,7 +73,6 @@ public func runCLI(_ argv: [String]) -> Int32 {
         switch subcommand {
         case "list": return cmdEnvList(args: args, loader: loader)
         case "get": return cmdEnvGet(args: args, loader: loader)
-        case "set": return cmdEnvSet(args: args, loader: loader)
         default: print(usage()); return 1
         }
     default:

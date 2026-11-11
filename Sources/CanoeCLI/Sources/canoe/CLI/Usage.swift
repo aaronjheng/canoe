@@ -21,7 +21,6 @@ func usage() -> String {
       request send <id|name>      Send one request (requires --collection)
       env list                    List environments
       env get <id|name>           Dump one environment as JSON
-      env set <id|name> K=V ...   Set environment variables (writes vault file)
 
     FLAGS:
       --vault <path>     Vault root (or vault/ dir). Default: $CANOE_VAULT /
@@ -47,7 +46,6 @@ func usage() -> String {
       canoe request preview "/v1/console/me" --collection CS --env "3 Staging" --json
       canoe request send "/v1/console/me" --collection CS --var cs_base_url=https://example.invalid --json
       canoe collection run CS --env staging --json
-      canoe env set Staging box_base_url=https://example.com
       canoe vault info
       canoe init /tmp/myproj
       CANOE_VAULT=~/.../Canoe canoe env list --json

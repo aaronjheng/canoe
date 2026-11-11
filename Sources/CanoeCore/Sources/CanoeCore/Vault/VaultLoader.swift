@@ -83,11 +83,6 @@ public final class VaultLoader: Sendable {
         return collection.requests.first(where: { $0.name.lowercased().contains(lower) })
     }
 
-    /// Raw file URL for an environment by UUID (for env set writes).
-    public func environmentFile(forID id: UUID) -> URL {
-        environmentsDir.appendingPathComponent(id.uuidString + ".json")
-    }
-
     /// Structure summary for `vault info` (human + JSON).
     public func summary() -> [String: Any] {
         [

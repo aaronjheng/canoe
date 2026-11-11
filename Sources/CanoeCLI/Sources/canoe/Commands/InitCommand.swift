@@ -29,7 +29,7 @@ func cmdInit(args: ParsedArgs, vaultRoot: URL) -> Int32 {
     - Variables resolve `{{name}}` in order: workspace → collection → environment, then `--var key=value` overrides. Pass explicit `--env` instead of guessing the active one.
     - Sending a request is network I/O. Only send when the user asked, or when verifying a change. Use `request preview` or `request send --dry-run` to validate URLs without network.
     - Pre/post-request scripts are NOT run by this CLI. If a request depends on them (e.g. token minted by a login pre-script), open Canoe.app for that part.
-    - Prefer `canoe env set` over hand-editing `vault/*.json` for variable-only changes.
+    - The CLI only reads the vault. Never edit `vault/*.json` by hand; make changes in Canoe.app.
 
     ## Cheatsheet
 
@@ -41,7 +41,6 @@ func cmdInit(args: ParsedArgs, vaultRoot: URL) -> Int32 {
     canoe request send "Get User" --collection "Users" --env staging --var baseUrl=https://staging.api --json
     canoe collection run "Users" --env staging --json
     canoe env list --json
-    canoe env set staging baseUrl=https://staging.api
     canoe vault info
     ```
 
