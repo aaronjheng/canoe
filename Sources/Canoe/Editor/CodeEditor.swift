@@ -202,4 +202,9 @@ private final class VariableCompletionBridge: EditorSuggestControlling {
     func hide() {
         controller.hide()
     }
+
+    func triggerSuggest(in textView: NSTextView) -> Bool {  // ⌥⎋
+        controller.triggerSuggest(in: textView)
+        return true
+    }
 }

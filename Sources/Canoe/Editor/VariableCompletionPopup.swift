@@ -199,6 +199,13 @@ final class VariableCompletionController: NSObject {
     func hide() {
         engine.hide()
     }
+
+    /// ⌥⎋ / F5 (Monaco `triggerSuggest`): explicitly opens the word-mode
+    /// panel at the caret — the universe is already synced by the last
+    /// textChanged, so this just presents it.
+    func triggerSuggest(in textView: NSTextView) {
+        engine.showSuggestions(at: textView)
+    }
 }
 
 extension VariableSuggestion {
