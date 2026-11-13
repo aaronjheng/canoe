@@ -137,7 +137,7 @@ struct BodyEditor: View {
                 suggestions: requestSuggestions,
                 syntax: rawSyntax,
                 fillsContainer: true,
-                font: .monoBody,
+                font: .monoSubheadline,
                 formatHandler: { source in
                     try BodyFormatter.format(source, kind: self.request.rawBodyKind)
                 },

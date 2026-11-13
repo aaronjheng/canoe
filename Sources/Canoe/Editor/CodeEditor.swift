@@ -51,7 +51,7 @@ struct CodeEditor: View {
     /// `renderFinalNewline`): visible only on the last line.
     var renderFinalNewline: EditorFinalNewlineMode = .boundary
     /// Vertical guides spanning bracket pairs (Monaco
-    /// `guides.bracketPairs`).
+    /// `guides.bracketPairs`, off by default like VS Code).
     var bracketGuides: Bool = false
     /// Vertical guides at every completed indent level (Monaco
     /// `guides.indentation`).
