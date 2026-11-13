@@ -79,6 +79,9 @@ struct CodeEditor: View {
     /// Highlight invisible/ambiguous unicode (Monaco `unicodeHighlight`)
     /// - worth it on paste surfaces, where zero-width characters sneak in.
     var unicodeHighlight: Bool = false
+    /// Whitespace markers (Monaco `renderWhitespace`): VS Code's default
+    /// is "selection" - dots on every space/tab inside the selection.
+    var renderWhitespace: WhitespaceMode = .selection
     /// Open URL runs on click (Monaco `links`); read-only surfaces only.
     var linksEnabled: Bool = false
     /// Capsule shown when a read-only edit is attempted
@@ -124,6 +127,7 @@ struct CodeEditor: View {
             onFormatError: onFormatError,
             suggestFactory: { VariableCompletionBridge() },
             suggestItems: suggestions ?? VariableSuggestion.suggestions(from: variables),
+            renderWhitespace: renderWhitespace,
             markers: markers + unresolvedVariableMarkers,
             showsOverviewRuler: showsOverviewRuler,
             // Read-only views are for reading, not caret tracking: the
