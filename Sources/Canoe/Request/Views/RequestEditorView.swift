@@ -890,6 +890,11 @@ struct RequestEditorView: View {
                 crumbView(crumb)
             }
         }
+        // One hover space for the whole path: the crumbs' geometric tracking
+        // reports their frames here and the pointer position is fed from the
+        // row's bounds (the AppKit backing of a crumb button would strand
+        // plain `.onHover`).
+        .hoverTracking()
         .help(crumbs.map(\.name).joined(separator: " › "))
     }
 
@@ -919,7 +924,6 @@ struct RequestEditorView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .clickCursor()
             // Geometric tracking, not `.onHover`: the AppKit button behind a
             // SwiftUI button can take the pointer away from the crumb and
             // leave the highlight stuck or missing.

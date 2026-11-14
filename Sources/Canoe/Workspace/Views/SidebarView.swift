@@ -174,6 +174,7 @@ private struct ItemsView: View {
                     .padding(.bottom, AppSpacing.small)
                     .frame(maxWidth: .infinity, minHeight: viewport.size.height, alignment: .top)
                 }
+                .hoverTracking()
                 .overlay {
                     // Same centered placement as the History tab's empty
                     // state - an unframed overlay view would sit at the
@@ -249,7 +250,6 @@ private struct GroupHeader<Actions: View>: View {
         // row in the same list, so its enter must retire any tree row still
         // claiming hover (exits get dropped when rows shift under the pointer).
         .tracksHover { isHovering = $0 }
-        .clickCursor()
         .help(isExpanded ? "Collapse \(title)" : "Expand \(title)")
     }
 }
@@ -342,7 +342,6 @@ private struct EnvironmentRow: View {
         }
         .buttonStyle(.plain)
         .tracksHover { isHovering = $0 }
-        .clickCursor()
         .animation(AppMotion.quick, value: isSelected)
         .animation(AppMotion.quick, value: showsActions)
         // Double-click pins the preview tab (same instant-click reasoning
@@ -910,7 +909,6 @@ private struct CollectionTree: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .clickCursor()
                         .help(isExpanded ? "Collapse collection" : "Expand collection")
                         sidebarRowLabel(collection.name, filter: store.sidebarFilter)
                             .font(AppFont.sidebarRow)
@@ -933,7 +931,6 @@ private struct CollectionTree: View {
                 }
                 .buttonStyle(.plain)
                 .tracksHover { isHoveringHeader = $0 }
-                .clickCursor()
                 .animation(AppMotion.quick, value: isSelected)
                 .animation(AppMotion.quick, value: showsActions)
                 .help("Open \(collection.name)")
@@ -1212,7 +1209,6 @@ private struct FolderTree: View {
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
-                            .clickCursor()
                             .help(isExpanded ? "Collapse folder" : "Expand folder")
                             // The icon keeps its own xSmall gap to the name:
                             // only the chevron's gap tightens.
@@ -1245,7 +1241,6 @@ private struct FolderTree: View {
                 }
                 .buttonStyle(.plain)
                 .tracksHover { isHoveringHeader = $0 }
-                .clickCursor()
                 .animation(AppMotion.quick, value: isSelected)
                 .animation(AppMotion.quick, value: showsActions)
                 .help("Open \(folder.name)")
@@ -1485,7 +1480,6 @@ private struct RequestRow: View {
                 }
                 .buttonStyle(.plain)
                 .tracksHover { isHovering = $0 }
-                .clickCursor()
                 .animation(AppMotion.quick, value: isSelected)
                 .animation(AppMotion.quick, value: showsActions)
                 // Double-click pins the preview tab. The Button above still

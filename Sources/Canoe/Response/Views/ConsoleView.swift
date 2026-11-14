@@ -123,6 +123,9 @@ struct ConsoleView: View {
             .help("Hide Console (⌥⌘C)")
         }
         .panelToolbar(horizontalPadding: AppSpacing.medium)
+        // The toolbar's overflow pill tracks hover geometrically; its frames
+        // are measured in this row's own space.
+        .hoverTracking()
     }
 
     private var emptyState: some View {

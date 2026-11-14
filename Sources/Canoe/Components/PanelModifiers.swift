@@ -122,189 +122,287 @@ enum AppKitFocusRing {
 
 // MARK: - Hover tracking
 
-/// Reports pointer enter/exit for a SwiftUI area through a real `NSTrackingArea`.
+/// Hover for rows and pills, *derived* from live geometry instead of
+/// accumulated from events.
 ///
-/// SwiftUI's own `.onHover` is hit-test based, so an AppKit view inside the
-/// tracked area - the `NSMenuButton` behind every `Menu` that uses
-/// `.menuStyle(.borderlessButton)`, an `NSTextField`, the field editor - takes
-/// the hover away from the view that contains it. A row that reveals its
-/// actions on hover then hides the very control the pointer is on, the control
-/// vanishes from under the pointer, the row counts as hovered again, and the
-/// two chase each other into a flicker. A tracking area is purely geometric,
-/// so nothing inside can take the pointer away from it.
+/// The per-row `NSTrackingArea` approach this replaces was measured, not
+/// guessed: the diagnostic run showed every row sensor's `.inVisibleRect`
+/// spanning the whole list viewport (360×702 with per-row origins) instead of
+/// the row's own 344×24 frame - SwiftUI-hosted background views inside a
+/// `LazyVStack` do not track row geometry, so every area covered everything,
+/// enters fired for many rows at once, and exits never came. That one fact
+/// explains every symptom this file used to chase.
 ///
-/// The sensor stays out of hit testing: it must never swallow a click meant for
-/// whatever SwiftUI drew above it.
+/// The design now:
 ///
-/// Enter/exit *delivery* itself is also unreliable here, and that is the bug
-/// that stacks "several rows lit at once" in the sidebar: `mouseExited` is
-/// dropped whenever a tracking area is replaced, moved, or torn down (and
-/// rows shift under a stationary pointer every time the list scrolls, the
-/// filter reflows, a group collapses, or a history entry is prepended - all
-/// moments where the mouse never moves), while `mouseEntered` keeps firing.
-/// So hover is never *accumulated* from events here - claims are *mutually
-/// exclusive*: one pointer can only be over one row, so each sensor's enter
-/// retires every other live sensor's claim (`HoverRegistry.entered`), no
-/// matter which exits AppKit dropped along the way. Scroll/drag retires all
-/// claims and reinstalls the areas, letting AppKit's synthetic enter re-mark
-/// the one row that is actually under the stationary pointer. No code here
-/// queries geometry - every attempt to re-derive hover from
-/// `convert`/`visibleRect` against SwiftUI-hosted views has proven wrong
-/// (it lit every row at once); only the enter/exit events themselves are
-/// trusted, plus one invariant enforced by construction.
-struct HoverTracker: NSViewRepresentable {
-    let onHover: (Bool) -> Void
-    /// Independent sensors (e.g. the overflow button nested inside a hovered
-    /// row's own trailing actions) keep their state to themselves and never
-    /// join the one-hovered-row group: retiring them from another row's enter
-    /// would tear the row's actions down under the pointer and recreate the
-    /// flicker loop this tracker exists to prevent.
-    var joinsGroup = true
+/// - ONE tracking area per hover space, on the space's own background sensor -
+///   a stable, never-re-rendered view that only feeds the pointer position
+///   (AppKit-computed window rect + one deterministic y flip).
+/// - Tracked views report their SwiftUI frames through `onGeometryChange`, in
+///   the space's coordinates - frames always match what is rendered.
+/// - Hover is re-derived on every frame or pointer change: a view is hovered
+///   exactly while its frame contains the pointer. Frames are disjoint, so
+///   several rows can never be lit at once; re-renders touch nothing; and
+///   scrolling, reflowing, and inserting all re-derive cleanly because
+///   nothing is accumulated. Nested controls (the "…" pill inside a row's
+///   trailing actions) simply register their own frame and light up together
+///   with their row.
+@MainActor
+final class HoverSpace {
+    /// The coordinate space this instance owns; unique per instance.
+    let name = "hover.\(UUID().uuidString)"
 
-    func makeNSView(context: Context) -> TrackingView {
-        let view = TrackingView()
-        view.joinsGroup = joinsGroup
-        view.onHover = onHover
-        if joinsGroup { HoverRegistry.add(view) }
-        return view
+    private var pointer: CGPoint?
+    private var entries: [UUID: Entry] = [:]
+
+    private struct Entry {
+        var cursor: NSCursor?
+        var onHover: (Bool) -> Void
+        var frame: CGRect = .null
+        var isHovered = false
     }
 
-    func updateNSView(_ nsView: TrackingView, context: Context) {
-        nsView.onHover = onHover
+    func register(_ id: UUID, cursor: NSCursor?, onHover: @escaping (Bool) -> Void) {
+        var entry = entries[id] ?? Entry(cursor: cursor, onHover: onHover)
+        entry.cursor = cursor
+        entry.onHover = onHover
+        entries[id] = entry
+        recompute()
     }
 
-    final class TrackingView: NSView {
-        var onHover: ((Bool) -> Void)?
-        var joinsGroup = true
-        /// The last state handed to `onHover`, so the synthetic enters that
-        /// every area re-add produces are deduped down to real transitions.
-        private var isReportedHovered = false
-
-        /// Hover only: clicks belong to the SwiftUI content this sits behind.
-        override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-        override func viewWillMove(toWindow newWindow: NSWindow?) {
-            // A view leaving its window never gets mouseExited (rows torn down
-            // mid-hover by lazy recycling, sidebar tab switches, filter
-            // reflow) - clear now so a remounted row can't come back lit.
-            if newWindow == nil { setHovered(false) }
-            super.viewWillMove(toWindow: newWindow)
-        }
-
-        override func updateTrackingAreas() {
-            super.updateTrackingAreas()
-            reinstallTrackingArea()
-        }
-
-        /// Removes and re-adds the sensor's area: AppKit drops exits for
-        /// removed areas, so this both refreshes the enter/exit bookkeeping
-        /// after any geometry change and lets the window synthesize an enter
-        /// for the sensor that ended up under a stationary pointer.
-        func reinstallTrackingArea() {
-            for area in trackingAreas {
-                removeTrackingArea(area)
-            }
-            addTrackingArea(
-                NSTrackingArea(
-                    rect: .zero,
-                    options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
-                    owner: self,
-                    userInfo: nil
-                )
-            )
-        }
-
-        override func mouseEntered(with event: NSEvent) {
-            if joinsGroup {
-                HoverRegistry.entered(self)
-            } else {
-                setHovered(true)
+    func unregister(_ id: UUID) {
+        // A hovered entry torn down while the pointer still rests over it
+        // (scroll-off, filter collapse) must still deliver its exit - the
+        // state write to the detaching view is harmless in SwiftUI, and the
+        // pop undoes its cursor push so the hand cannot strand.
+        guard let entry = entries[id] else { return }
+        entries[id] = nil
+        if entry.isHovered {
+            Task { @MainActor in
+                if entry.cursor != nil { NSCursor.pop() }
+                entry.onHover(false)
             }
         }
+    }
 
-        override func mouseExited(with event: NSEvent) {
-            setHovered(false)
+    /// The frame action fires on every layout and carries the live closure,
+    /// so an entry's callback can never go stale across view recycling.
+    func setFrame(
+        _ id: UUID,
+        _ frame: CGRect,
+        cursor: NSCursor?,
+        onHover: @escaping (Bool) -> Void
+    ) {
+        var entry = entries[id] ?? Entry(cursor: cursor, onHover: onHover)
+        entry.cursor = cursor
+        entry.onHover = onHover
+        entry.frame = frame
+        entries[id] = entry
+        recompute()
+    }
+
+    func setPointer(_ point: CGPoint?) {
+        guard point != pointer else { return }
+        pointer = point
+        recompute()
+    }
+
+    private func recompute() {
+        // Hover transitions hand state writes back to SwiftUI, and those
+        // re-renders re-run the geometry callbacks that drive this method.
+        // Delivering synchronously would close a layout loop (hover lights,
+        // transient frames report, hover clears, repeat). Hand the
+        // transitions to the next runloop tick instead; the frames reported
+        // then are settled, so the derivation converges.
+        //
+        // Cursor push/pop rides the same transitions: the entries' geometry
+        // is the rendered truth, so the hand appears exactly while the
+        // pointer is inside a click target and pops when it leaves - unlike
+        // cursorUpdate-driven styles, which strand an arrow whenever an exit
+        // is dropped.
+        var transitions: [() -> Void] = []
+        // Snapshot the keys: flip() writes entries[id] while the loop walks
+        // the dictionary - value replacement for existing keys is safe today,
+        // but any future insert/remove inside the loop would be undefined.
+        let ids = Array(entries.keys)
+        func flip(_ id: UUID, _ value: Bool) {
+            guard var entry = entries[id] else { return }
+            entry.isHovered = value
+            entries[id] = entry
+            transitions.append({ [onHover = entry.onHover, cursor = entry.cursor, value] in
+                if let cursor {
+                    if value { cursor.push() } else { NSCursor.pop() }
+                }
+                onHover(value)
+            })
         }
+        guard let pointer else {
+            for id in ids where entries[id]?.isHovered == true {
+                flip(id, false)
+            }
+            deliver(transitions)
+            return
+        }
+        for id in ids {
+            guard let entry = entries[id] else { continue }
+            let isHovered = entry.frame.contains(pointer)
+            guard isHovered != entry.isHovered else { continue }
+            flip(id, isHovered)
+        }
+        deliver(transitions)
+    }
 
-        fileprivate func setHovered(_ value: Bool) {
-            guard value != isReportedHovered else { return }
-            isReportedHovered = value
-            onHover?(value)
+    private func deliver(_ transitions: [() -> Void]) {
+        guard !transitions.isEmpty else { return }
+        Task { @MainActor in
+            for deliver in transitions {
+                deliver()
+            }
         }
     }
 }
 
-/// The live group-participating `HoverTracker` sensors. All call sites (the
-/// sensors and the event monitor) run on the main thread, so the registry is
-/// MainActor-confined.
-@MainActor
-private enum HoverRegistry {
-    private final class WeakBox {
-        weak var view: HoverTracker.TrackingView?
-        init(_ view: HoverTracker.TrackingView) { self.view = view }
+private struct HoverSpaceKey: EnvironmentKey {
+    static let defaultValue: HoverSpace? = nil
+}
+
+extension EnvironmentValues {
+    var hoverSpace: HoverSpace? {
+        get { self[HoverSpaceKey.self] }
+        set { self[HoverSpaceKey.self] = newValue }
     }
+}
 
-    private static var boxes: [WeakBox] = []
-    private static var monitor: Any?
+/// Declares a hover space: `tracksHover` descendants report their frames in
+/// it, and the pointer position is fed from this view's bounds. Attach once
+/// per list or container.
+private struct HoverTrackingSpace: ViewModifier {
+    @State private var space = HoverSpace()
 
-    static func add(_ view: HoverTracker.TrackingView) {
-        boxes.append(WeakBox(view))
-        pruneAndInstallMonitor()
-    }
-
-    /// One pointer, one hovered row: a new enter retires every other live
-    /// claim before taking effect. This is the backstop that makes dropped
-    /// `mouseExited`s unobservable - however the list scrolled or reflowed,
-    /// no earlier row can outlive the row the pointer has reached.
-    static func entered(_ view: HoverTracker.TrackingView) {
-        pruneAndInstallMonitor()
-        view.setHovered(true)
-        for box in boxes where box.view !== view {
-            box.view?.setHovered(false)
-        }
-    }
-
-    /// Scroll and drag move rows without any enter/exit when the pointer
-    /// rests still. Retire every claim and reinstall the areas: whichever
-    /// sensor ends up under the pointer gets AppKit's synthetic enter and
-    /// lights up alone.
-    static func geometryChanged() {
-        pruneAndInstallMonitor()
-        for box in boxes {
-            box.view?.setHovered(false)
-            box.view?.reinstallTrackingArea()
-        }
-    }
-
-    /// Installs the shared event monitor once, with the first sensor; no
-    /// sensors ever exist until a `tracksHover` view mounts.
-    private static func pruneAndInstallMonitor() {
-        boxes.removeAll { $0.view == nil }
-        guard monitor == nil else { return }
-        monitor = NSEvent.addLocalMonitorForEvents(
-            matching: [.scrollWheel, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
-        ) { event in
-            MainActor.assumeIsolated {
-                geometryChanged()
+    func body(content: Content) -> some View {
+        content
+            .environment(\.hoverSpace, space)
+            // One sensor for the whole space, behind the content: it never
+            // moves (no stale-area problem), and its flipped local pointer
+            // coordinates align exactly with the frames the rows report.
+            .background {
+                HoverSensorRepresentable(space: space)
             }
-            return event
+            .coordinateSpace(name: space.name)
+    }
+}
+
+/// Feeds the pointer position (in the sensor's own bounds, top-left origin)
+/// into its hover space.
+private struct HoverSensorRepresentable: NSViewRepresentable {
+    let space: HoverSpace
+
+    func makeNSView(context: Context) -> HoverSensorView {
+        let view = HoverSensorView()
+        view.space = space
+        return view
+    }
+
+    func updateNSView(_ nsView: HoverSensorView, context: Context) {
+        nsView.space = space
+    }
+}
+
+/// One tracking area over the whole space's bounds. The view is a background:
+/// it never participates in hit testing, never re-renders, and never moves
+/// relative to the coordinate space, so its area can neither strand nor churn.
+final class HoverSensorView: NSView {
+    weak var space: HoverSpace?
+
+    /// Hover only: clicks belong to the SwiftUI content this sits behind.
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas {
+            removeTrackingArea(area)
+        }
+        addTrackingArea(
+            NSTrackingArea(
+                rect: .zero,
+                options: [.mouseEnteredAndExited, .mouseMoved, .activeInActiveApp, .inVisibleRect],
+                owner: self,
+                userInfo: nil
+            )
+        )
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        feed(event.locationInWindow)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        feed(event.locationInWindow)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        space?.setPointer(nil)
+    }
+
+    private func feed(_ windowLocation: NSPoint) {
+        guard let space else { return }
+        // The sensor's window rect is AppKit's own truth about where the
+        // space's bounds sit; SwiftUI spaces are top-left origin, AppKit
+        // bottom-left, hence the flip.
+        let boundsInWindow = convert(bounds, to: nil)
+        let point = CGPoint(
+            x: windowLocation.x - boundsInWindow.minX,
+            y: boundsInWindow.maxY - windowLocation.y
+        )
+        space.setPointer(point)
+    }
+}
+
+/// Registers one view's frame in the enclosing hover space. Requires a
+/// `hoverTracking()` ancestor - every call site has one; without one the
+/// content passes through unchanged (hover cannot be derived there).
+private struct TrackHover: ViewModifier {
+    let onHover: (Bool) -> Void
+    let cursor: NSCursor?
+    @Environment(\.hoverSpace) private var environmentSpace: HoverSpace?
+    @State private var sensorID = UUID()
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let space = environmentSpace {
+            content
+                .onGeometryChange(for: CGRect.self) { proxy in
+                    proxy.frame(in: .named(space.name))
+                } action: { frame in
+                    space.setFrame(sensorID, frame, cursor: cursor, onHover: onHover)
+                }
+                .onAppear { space.register(sensorID, cursor: cursor, onHover: onHover) }
+                .onDisappear { space.unregister(sensorID) }
+        } else {
+            content
         }
     }
 }
 
 extension View {
-    /// Hover enter/exit for a view that has to keep tracking while AppKit views
-    /// (menus, text fields) sit inside it - the cases where `.onHover` hands the
-    /// pointer to the nested view and reports an exit. See `HoverTracker`.
-    ///
-    /// Group participation is the default: one pointer, one hovered row, so a
-    /// row's enter retires every other row's claim. Pass `independent: true`
-    /// for a sensor nested inside another tracked view's bounds (the overflow
-    /// button inside a hovered row's own trailing actions) - it must not
-    /// retire its host, or the host's actions would tear down under the
-    /// pointer and the two would chase each other in a flicker loop.
-    func tracksHover(_ onHover: @escaping (Bool) -> Void, independent: Bool = false) -> some View {
-        background { HoverTracker(onHover: onHover, joinsGroup: !independent) }
+    /// Declares a hover space: `tracksHover` descendants report their frames
+    /// in it and the pointer position is fed from this view's bounds. Attach
+    /// once per list or container.
+    func hoverTracking() -> some View {
+        modifier(HoverTrackingSpace())
+    }
+
+    /// Hover for a view whose pointer tracking must not depend on AppKit
+    /// enter/exit delivery - the cases where `.onHover` strands the highlight
+    /// and the cursor. Pushes/pops `cursor` (the pointing hand by default) on
+    /// the same verified transitions; see `HoverSpace`. Must have a
+    /// `hoverTracking()` ancestor; remove any `.clickCursor()` from the
+    /// tracked view, or the two cursor mechanisms will fight.
+    func tracksHover(
+        _ onHover: @escaping (Bool) -> Void,
+        cursor: NSCursor? = NSCursor.pointingHand
+    ) -> some View {
+        modifier(TrackHover(onHover: onHover, cursor: cursor))
     }
 }
 

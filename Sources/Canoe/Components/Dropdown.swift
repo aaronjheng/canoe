@@ -475,9 +475,17 @@ struct DropdownOverflowButton: View {
             .frame(minWidth: pillFloor, minHeight: pillFloor)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                    // On a lit row the backdrop is `subtleBackground` (≈#ECECEC
+                    // light, ≈#303030 dark); the pill's hover wash must land a
+                    // visible L* step past it. `border` measured 1/255 off
+                    // that backdrop - literally invisible - so the pill uses
+                    // the token the app already reserves for deepening a
+                    // filled surface on hover.
                     .fill(
                         isHovering
-                            ? (matchesIconButtons ? AppColor.tabHoverBackground : AppColor.border)
+                            ? (matchesIconButtons
+                                ? AppColor.tabHoverBackground
+                                : AppColor.selectionHoverBackground)
                             : .clear
                     )
             )
@@ -486,12 +494,11 @@ struct DropdownOverflowButton: View {
                 dropdown.toggle(id: id, showsSelection: false, width: width, rows: rows)
             }
             .dropdownAnchor(id: id)
-            .clickCursor()
-            // Independent: this button nests inside a hovered row's own
-            // trailing actions, so its enter must not retire the host row's
-            // hover claim - that tore the actions down under the pointer and
-            // the two chased each other in a flicker loop.
-            .tracksHover({ isHovering = $0 }, independent: true)
+            // Geometric tracking, not `.onHover`: the pill is nested inside
+            // its row's own hover chrome, and its hover fill must light
+            // together with the row (frames nest in the row's hover space;
+            // nothing is retired).
+            .tracksHover { isHovering = $0 }
             .animation(AppMotion.quick, value: isHovering)
             .help("More Actions")
             .accessibilityLabel("More Actions")

@@ -83,6 +83,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         mainWindow.contentView = NSHostingView(rootView: contentView)
         mainWindow.tabbingMode = .disallowed
         mainWindow.tabbingIdentifier = "Canoe"
+        // Deliberately NOT setting acceptsMouseMovedEvents: it must stay at
+        // the system default (off) or AppKit stops delivering cursorUpdate
+        // events, which is what `pointerStyle(.link)` (the click chrome's
+        // pointing hand) drives its cursor from. The hover sensors' tracking
+        // areas still get their events - NSHostingView turns mouse-moved
+        // delivery on for the window itself.
         mainWindow.collectionBehavior.insert(.fullScreenPrimary)
         // ARC owns the window: with the default isReleasedWhenClosed, close
         // would release it a second time and crash at the run loop's pool
