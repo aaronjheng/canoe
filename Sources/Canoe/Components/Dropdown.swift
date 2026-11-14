@@ -487,7 +487,11 @@ struct DropdownOverflowButton: View {
             }
             .dropdownAnchor(id: id)
             .clickCursor()
-            .tracksHover { isHovering = $0 }
+            // Independent: this button nests inside a hovered row's own
+            // trailing actions, so its enter must not retire the host row's
+            // hover claim - that tore the actions down under the pointer and
+            // the two chased each other in a flicker loop.
+            .tracksHover({ isHovering = $0 }, independent: true)
             .animation(AppMotion.quick, value: isHovering)
             .help("More Actions")
             .accessibilityLabel("More Actions")

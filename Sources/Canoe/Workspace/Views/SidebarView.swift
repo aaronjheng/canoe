@@ -245,7 +245,10 @@ private struct GroupHeader<Actions: View>: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
+        // Group-participating sensor (not SwiftUI .onHover): the header is a
+        // row in the same list, so its enter must retire any tree row still
+        // claiming hover (exits get dropped when rows shift under the pointer).
+        .tracksHover { isHovering = $0 }
         .clickCursor()
         .help(isExpanded ? "Collapse \(title)" : "Expand \(title)")
     }
