@@ -368,7 +368,8 @@ struct FolderDetailView: View {
             fillsContainer: true,
             placeholder: scriptColumn == .preRequest
                 ? "Runs before the request scripts of this folder (pm.variables.set, ...)"
-                : "Runs after the request scripts of this folder (pm.expect, pm.test)"
+                : "Runs after the request scripts of this folder (pm.expect, pm.test)",
+            showsOverviewRuler: true
         )
         .padding(.horizontal, AppSpacing.medium)
         .padding(.top, AppSpacing.small)

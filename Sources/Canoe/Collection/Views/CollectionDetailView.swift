@@ -251,7 +251,8 @@ struct CollectionDetailView: View {
             fillsContainer: true,
             placeholder: scriptColumn == .preRequest
                 ? "Runs before the request scripts of this collection (pm.variables.set, ...)"
-                : "Runs after the request scripts of this collection (pm.expect, pm.test)"
+                : "Runs after the request scripts of this collection (pm.expect, pm.test)",
+            showsOverviewRuler: true
         )
         .padding(.horizontal, AppSpacing.medium)
         .padding(.top, AppSpacing.small)

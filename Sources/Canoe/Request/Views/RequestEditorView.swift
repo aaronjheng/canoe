@@ -1810,7 +1810,8 @@ struct RequestEditorView: View {
                 }
             },
             formatActionName: "Format Script",
-            onFormatError: showInvalidScriptNote
+            onFormatError: showInvalidScriptNote,
+            showsOverviewRuler: true
         )
         .padding(.horizontal, AppSpacing.medium)
         .padding(.top, AppSpacing.small)
