@@ -2247,7 +2247,7 @@ struct ResponseViewerView: View {
             try response.body.write(to: url)
             saveError = nil
         } catch {
-            AppLogger.error("Failed to save response body: \(error)", category: "Response")
+            AppLogger.response.error("Failed to save response body: \(error)")
             saveError = "Could not save the response body: \(error.localizedDescription)"
         }
     }

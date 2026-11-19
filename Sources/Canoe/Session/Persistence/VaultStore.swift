@@ -187,7 +187,7 @@ final class VaultStore {
             do {
                 try FileManager.default.removeItem(at: localVault)
             } catch {
-                AppLogger.warn("Failed to remove the local vault unit: \(error)", category: "Vault")
+                AppLogger.vault.warning("Failed to remove the local vault unit: \(error)")
             }
         }
         startWatchingIfNeeded()
@@ -271,7 +271,7 @@ final class VaultStore {
                 do {
                     config = try JSONDecoder.iso.decode(VaultConfig.self, from: data)
                 } catch {
-                    AppLogger.error("Failed to decode vault config, using defaults: \(error)", category: "Vault")
+                    AppLogger.vault.error("Failed to decode vault config, using defaults: \(error)")
                     // Back up next to the undecodable file (inside vault/),
                     // before any later persistConfig overwrites it, so a
                     // manual recovery stays possible instead of a silent
@@ -302,10 +302,8 @@ final class VaultStore {
             corruptFileCount = failedNames.count
             corruptFileNames = failedNames.sorted()
             if !failedNames.isEmpty {
-                AppLogger.error(
-                    "Skipped \(failedNames.count) corrupt vault file(s)",
-                    category: "Vault",
-                    fields: ["files": failedNames.joined(separator: ", ")])
+                AppLogger.vault.error(
+                    "Skipped \(failedNames.count) corrupt vault file(s)", metadata: ["files": "\(failedNames.joined(separator: ", "))"])
             }
             // Rows `Lossy` skipped inside files that otherwise loaded. Counted
             // vault-wide because the files decode concurrently, so per-file
@@ -316,9 +314,7 @@ final class VaultStore {
                 droppedRowCount = DroppedElementCounter.shared.value
             }
             if droppedRowCount > 0 {
-                AppLogger.error(
-                    "Skipped \(droppedRowCount) unreadable row(s) inside vault files",
-                    category: "Vault")
+                AppLogger.vault.error("Skipped \(droppedRowCount) unreadable row(s) inside vault files")
             }
             // The id tiebreaker keeps the order deterministic when two files
             // share an orderIndex (legacy files, same-second iCloud copies).
@@ -353,18 +349,16 @@ final class VaultStore {
             if location == .iCloud {
                 await resolveConflicts()
             }
-            AppLogger.info(
+            AppLogger.vault.info(
                 "Vault loaded",
-                category: "Vault",
-                fields: [
+                metadata: [
                     "workspaces": "\(workspaces.count)",
                     "collections": "\(collections.count)",
                     "environments": "\(environments.count)",
-                ]
-            )
+                ])
         } catch {
             loadError = error.localizedDescription
-            AppLogger.error("Vault load failed: \(error)", category: "Vault")
+            AppLogger.vault.error("Vault load failed: \(error)")
         }
     }
 
@@ -635,7 +629,7 @@ final class VaultStore {
             localDatabase = database
             return database
         } catch {
-            AppLogger.error("Failed to open the local store: \(error)", category: "Vault")
+            AppLogger.vault.error("Failed to open the local store: \(error)")
             return nil
         }
     }
@@ -648,7 +642,7 @@ final class VaultStore {
         do {
             return try await database.loadDrafts()
         } catch {
-            AppLogger.error("Failed to load drafts: \(error)", category: "Vault")
+            AppLogger.vault.error("Failed to load drafts: \(error)")
             return VaultDrafts()
         }
     }
@@ -676,7 +670,7 @@ final class VaultStore {
         do {
             return try await database.loadHistory(limit: limit)
         } catch {
-            AppLogger.error("Failed to load history: \(error)", category: "Vault")
+            AppLogger.vault.error("Failed to load history: \(error)")
             return []
         }
     }
@@ -689,7 +683,7 @@ final class VaultStore {
         do {
             try await database.saveHistory(entries)
         } catch {
-            AppLogger.error("Failed to save history: \(error)", category: "Vault")
+            AppLogger.vault.error("Failed to save history: \(error)")
         }
     }
 
@@ -701,7 +695,7 @@ final class VaultStore {
         do {
             return try await database.loadResponseHistory(limit: limit)
         } catch {
-            AppLogger.error("Failed to load response history: \(error)", category: "Vault")
+            AppLogger.vault.error("Failed to load response history: \(error)")
             return [:]
         }
     }
@@ -714,7 +708,7 @@ final class VaultStore {
         do {
             try await database.saveResponseHistory(histories)
         } catch {
-            AppLogger.error("Failed to save response history: \(error)", category: "Vault")
+            AppLogger.vault.error("Failed to save response history: \(error)")
         }
     }
 
@@ -726,7 +720,7 @@ final class VaultStore {
         do {
             return try await database.loadConsole(limit: limit)
         } catch {
-            AppLogger.error("Failed to load console log: \(error)", category: "Vault")
+            AppLogger.vault.error("Failed to load console log: \(error)")
             return []
         }
     }
@@ -739,7 +733,7 @@ final class VaultStore {
         do {
             try await database.saveConsole(entries)
         } catch {
-            AppLogger.error("Failed to save console log: \(error)", category: "Vault")
+            AppLogger.vault.error("Failed to save console log: \(error)")
         }
     }
 
@@ -754,7 +748,7 @@ final class VaultStore {
         do {
             return try await database.loadVariableOverrides()
         } catch {
-            AppLogger.error("Failed to load variable overrides: \(error)", category: "Vault")
+            AppLogger.vault.error("Failed to load variable overrides: \(error)")
             return VariableOverrides()
         }
     }
@@ -771,7 +765,7 @@ final class VaultStore {
             // relaunch instead of resurrecting from stale rows.
             try await database.saveVariableOverrides(overrides)
         } catch {
-            AppLogger.error("Failed to save variable overrides: \(error)", category: "Vault")
+            AppLogger.vault.error("Failed to save variable overrides: \(error)")
         }
     }
 
@@ -795,7 +789,7 @@ final class VaultStore {
     /// Records a failed write: logs it and makes it visible. `kind` names
     /// what could not be written, so the banner says what was lost.
     private func noteSaveFailure(_ kind: String, id: String, subject: String, _ error: any Error) {
-        AppLogger.error("Failed to save \(subject) (\(kind)): \(error)", category: "Vault")
+        AppLogger.vault.error("Failed to save \(subject) (\(kind)): \(error)")
         failedSaveKinds[Self.failureKey(kind, id)] = failureMessage(
             for: kind, subject: subject, reason: error.localizedDescription)
         refreshSaveError()
@@ -804,7 +798,7 @@ final class VaultStore {
     /// A missing vault folder means nothing was written at all - previously a
     /// silent no-op, indistinguishable from success.
     private func noteMissingDirectory(_ kind: String, id: String, subject: String) {
-        AppLogger.error("Cannot save \(subject) (\(kind)): folder unavailable", category: "Vault")
+        AppLogger.vault.error("Cannot save \(subject) (\(kind)): folder unavailable")
         failedSaveKinds[Self.failureKey(kind, id)] = failureMessage(
             for: kind, subject: subject, reason: "the vault folder is unavailable.")
         refreshSaveError()
@@ -818,7 +812,7 @@ final class VaultStore {
     private func noteDeleteFailure(
         kind: String, id: String, subject: String, _ error: any Error
     ) {
-        AppLogger.error("Failed to delete \(subject) (\(kind)): \(error)", category: "Vault")
+        AppLogger.vault.error("Failed to delete \(subject) (\(kind)): \(error)")
         failedSaveKinds[Self.failureKey(kind, id)] = failureMessage(
             for: kind, subject: subject,
             reason: "it could not be deleted from disk (\(error.localizedDescription)).")
@@ -875,7 +869,7 @@ final class VaultStore {
         do {
             try await database.recordVaultDeletion(relative)
         } catch {
-            AppLogger.error("Failed to record vault deletion: \(error)", category: "Vault")
+            AppLogger.vault.error("Failed to record vault deletion: \(error)")
         }
     }
 
@@ -907,7 +901,7 @@ final class VaultStore {
         do {
             return try await database.loadVaultDeletions()
         } catch {
-            AppLogger.error("Failed to load deletion tombstones: \(error)", category: "Vault")
+            AppLogger.vault.error("Failed to load deletion tombstones: \(error)")
             // Failing safe toward restore: without tombstones the merge
             // behaves like the old resurrection-prone reconciliation.
             return [:]
@@ -962,7 +956,7 @@ final class VaultStore {
             do {
                 try await database.removeVaultDeletions(context.consumed)
             } catch {
-                AppLogger.error("Failed to prune deletion tombstones: \(error)", category: "Vault")
+                AppLogger.vault.error("Failed to prune deletion tombstones: \(error)")
             }
         }
     }
@@ -1034,10 +1028,9 @@ final class VaultStore {
             let firstData = try? Data(contentsOf: first)
             let secondData = try? Data(contentsOf: second)
             guard firstData == nil || firstData != secondData else { return }
-            AppLogger.warn(
+            AppLogger.vault.warning(
                 "iCloud merge tie with differing content",
-                category: "Vault",
-                fields: ["file": first.lastPathComponent, "kept": preferFirstOnTie ? "local" : "iCloud"])
+                metadata: ["file": "\(first.lastPathComponent)", "kept": "\(preferFirstOnTie ? "local" : "iCloud")"])
             if preferFirstOnTie {
                 try copyFileAtomically(from: first, to: second)
             } else {
@@ -1107,10 +1100,8 @@ final class VaultStore {
         guard let conflicts = NSFileVersion.unresolvedConflictVersionsOfItem(at: file),
             !conflicts.isEmpty
         else { return }
-        AppLogger.info(
-            "Resolving iCloud conflict",
-            category: "Vault",
-            fields: ["file": file.lastPathComponent, "versions": "\(conflicts.count)"])
+        AppLogger.vault.info(
+            "Resolving iCloud conflict", metadata: ["file": "\(file.lastPathComponent)", "versions": "\(conflicts.count)"])
         switch kind {
         case .collection:
             for version in conflicts {
@@ -1137,15 +1128,12 @@ final class VaultStore {
     /// the losing side survives next to the winner instead of vanishing.
     private func duplicateConflictVersion(_ version: NSFileVersion) async {
         guard let data = try? Data(contentsOf: version.url) else {
-            AppLogger.error(
-                "Could not read iCloud conflict version", category: "Vault",
-                fields: ["version": version.localizedName ?? "unknown"])
+            AppLogger.vault.error("Could not read iCloud conflict version", metadata: ["version": "\(version.localizedName ?? "unknown")"])
             return
         }
         guard var collection = try? JSONDecoder.iso.decode(Collection.self, from: data) else {
-            AppLogger.error(
-                "Could not decode iCloud conflict version", category: "Vault",
-                fields: ["version": version.localizedName ?? "unknown"])
+            AppLogger.vault.error(
+                "Could not decode iCloud conflict version", metadata: ["version": "\(version.localizedName ?? "unknown")"])
             return
         }
         collection.id = UUID()
@@ -1158,7 +1146,7 @@ final class VaultStore {
             try await FileStore.write(collection, to: file)
             upsert(collection, in: &collections)
         } catch {
-            AppLogger.error("Failed to save conflict duplicate: \(error)", category: "Vault")
+            AppLogger.vault.error("Failed to save conflict duplicate: \(error)")
         }
     }
 
@@ -1166,15 +1154,12 @@ final class VaultStore {
     /// losing side's variables survive next to the winner.
     private func duplicateEnvironmentConflictVersion(_ version: NSFileVersion) async {
         guard let data = try? Data(contentsOf: version.url) else {
-            AppLogger.error(
-                "Could not read iCloud conflict version", category: "Vault",
-                fields: ["version": version.localizedName ?? "unknown"])
+            AppLogger.vault.error("Could not read iCloud conflict version", metadata: ["version": "\(version.localizedName ?? "unknown")"])
             return
         }
         guard var environment = try? JSONDecoder.iso.decode(EnvironmentProfile.self, from: data) else {
-            AppLogger.error(
-                "Could not decode iCloud conflict version", category: "Vault",
-                fields: ["version": version.localizedName ?? "unknown"])
+            AppLogger.vault.error(
+                "Could not decode iCloud conflict version", metadata: ["version": "\(version.localizedName ?? "unknown")"])
             return
         }
         environment.id = UUID()
@@ -1189,15 +1174,12 @@ final class VaultStore {
     /// extra workspace by hand.
     private func duplicateWorkspaceConflictVersion(_ version: NSFileVersion) async {
         guard let data = try? Data(contentsOf: version.url) else {
-            AppLogger.error(
-                "Could not read iCloud conflict version", category: "Vault",
-                fields: ["version": version.localizedName ?? "unknown"])
+            AppLogger.vault.error("Could not read iCloud conflict version", metadata: ["version": "\(version.localizedName ?? "unknown")"])
             return
         }
         guard var workspace = try? JSONDecoder.iso.decode(Workspace.self, from: data) else {
-            AppLogger.error(
-                "Could not decode iCloud conflict version", category: "Vault",
-                fields: ["version": version.localizedName ?? "unknown"])
+            AppLogger.vault.error(
+                "Could not decode iCloud conflict version", metadata: ["version": "\(version.localizedName ?? "unknown")"])
             return
         }
         workspace.id = UUID()

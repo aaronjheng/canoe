@@ -26,14 +26,11 @@ extension AppStore {
     /// merges query params, injects auth + cookie headers, then runs the
     /// HTTP upgrade handshake.
     func connectWebSocket(_ request: Request) {
-        AppLogger.info(
-            "WS connect requested", category: "WebSocket",
-            fields: [
-                "request": request.name,
-                "state": String(describing: webSocketState(for: request.id)),
-            ])
+        AppLogger.webSocket.info(
+            "WS connect requested",
+            metadata: ["request": "\(request.name)", "state": "\(String(describing: webSocketState(for: request.id)))"])
         guard webSocketState(for: request.id).canConnect else {
-            AppLogger.info("WS connect ignored (not connectable)", category: "WebSocket")
+            AppLogger.webSocket.info("WS connect ignored (not connectable)")
             return
         }
         // In idle/disconnected states the connection slot is always empty
@@ -123,7 +120,7 @@ extension AppStore {
             // its late events are ignored, and settle the state right here.
             // The connect task's failure path is idempotent (it only cleans
             // up when the record still exists).
-            AppLogger.info("WS disconnect during handshake (abort)", category: "WebSocket", fields: ["user": String(isUserInitiated)])
+            AppLogger.webSocket.info("WS disconnect during handshake (abort)", metadata: ["user": "\(String(isUserInitiated))"])
             if let connection = webSocketConnections[requestID] {
                 connection.setEventHandler(nil)
                 connection.abort()
@@ -137,7 +134,7 @@ extension AppStore {
             return
         }
         setWebSocketState(.disconnecting, for: requestID)
-        AppLogger.info("WS disconnect requested", category: "WebSocket", fields: ["user": String(isUserInitiated)])
+        AppLogger.webSocket.info("WS disconnect requested", metadata: ["user": "\(String(isUserInitiated))"])
         webSocketConnections[requestID]?.close()
         // A server that never answers the close frame would strand the
         // button on "Disconnecting…": force the abort after a grace period.
@@ -154,9 +151,8 @@ extension AppStore {
     /// recorded only when this path is the one that ends the session (an
     /// aborted handshake was already settled by the disconnect).
     private func connectWebSocketDidFail(_ requestID: UUID, reason: String?, isAbort: Bool) {
-        AppLogger.info(
-            "WS connect task settled with failure", category: "WebSocket",
-            fields: ["reason": reason ?? "-", "abort": String(isAbort)])
+        AppLogger.webSocket.info(
+            "WS connect task settled with failure", metadata: ["reason": "\(reason ?? "-")", "abort": "\(String(isAbort))"])
         webSocketConnectTasks[requestID] = nil
         guard webSocketConnections[requestID] != nil else {
             // No connection object existed: the failure happened before the
@@ -200,7 +196,7 @@ extension AppStore {
         jar: (enabled: Bool, url: URL?)
     ) {
         guard webSocketConnections[requestID] != nil else {
-            AppLogger.info("WS event dropped (no live connection record)", category: "WebSocket")
+            AppLogger.webSocket.info("WS event dropped (no live connection record)")
             return
         }
         switch event {
@@ -246,9 +242,9 @@ extension AppStore {
     /// One connection reached the end of its life. The state flips to
     /// disconnected and the log records the outcome once.
     private func finishWebSocketClose(requestID: UUID, code: Int?, reason: String?, errorText: String?) {
-        AppLogger.info(
-            "WS session ended", category: "WebSocket",
-            fields: ["code": code.map(String.init) ?? "-", "reason": reason ?? "-", "error": errorText ?? "-"])
+        AppLogger.webSocket.info(
+            "WS session ended",
+            metadata: ["code": "\(code.map(String.init) ?? "-")", "reason": "\(reason ?? "-")", "error": "\(errorText ?? "-")"])
         webSocketConnectTasks[requestID] = nil
         webSocketConnectAt[requestID] = nil
         guard webSocketConnections[requestID] != nil else { return }
@@ -534,7 +530,7 @@ extension AppStore {
         let siblingOpen = openTabs.contains { $0.requestID == requestID }
         guard !siblingOpen else { return }
         // A tab close is intent, never a misfire: skip the quiescence guard.
-        AppLogger.info("WS disconnect via tab close", category: "WebSocket")
+        AppLogger.webSocket.info("WS disconnect via tab close")
         disconnectWebSocket(requestID, isUserInitiated: false)
     }
 

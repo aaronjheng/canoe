@@ -45,8 +45,7 @@ actor CookieStore {
             database = newDatabase
             return newDatabase
         } catch {
-            AppLogger.error(
-                "Failed to open the local store for cookies: \(error)", category: "Vault")
+            AppLogger.vault.error("Failed to open the local store for cookies: \(error)")
             return nil
         }
     }
@@ -181,7 +180,7 @@ actor CookieStore {
             try await database.saveCookies(cookies.sorted { $0.name < $1.name })
         } catch {
             // Persistence failure must not fail a send.
-            AppLogger.error("Failed to save cookies: \(error)", category: "Vault")
+            AppLogger.vault.error("Failed to save cookies: \(error)")
         }
     }
 

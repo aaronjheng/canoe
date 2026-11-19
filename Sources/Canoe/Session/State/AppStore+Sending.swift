@@ -597,7 +597,7 @@ extension AppStore {
         do {
             try response.body.write(to: url)
         } catch {
-            AppLogger.error("Failed to save downloaded response body: \(error)", category: "Send")
+            AppLogger.send.error("Failed to save downloaded response body: \(error)")
         }
     }
 

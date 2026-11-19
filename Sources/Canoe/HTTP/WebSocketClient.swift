@@ -183,7 +183,7 @@ final class WebSocketConnection: NSObject, @unchecked Sendable {
     /// the handshake): cancels everything in flight and invalidates the
     /// session so its delegate queue and sockets are released.
     func abort() {
-        AppLogger.info("WS transport abort() called", category: "WebSocket")
+        AppLogger.webSocket.info("WS transport abort() called")
         let (session, task) = state.withLock { state in
             (state.session, state.task)
         }
@@ -313,7 +313,7 @@ extension WebSocketConnection: URLSessionWebSocketDelegate, URLSessionTaskDelega
         webSocketTask: URLSessionWebSocketTask,
         didOpenWithProtocol protocol: String?
     ) {
-        AppLogger.info("WS transport open", category: "WebSocket", fields: ["protocol": `protocol` ?? "-"])
+        AppLogger.webSocket.info("WS transport open", metadata: ["protocol": "\(`protocol` ?? "-")"])
         succeedOpen(subprotocol: `protocol`)
     }
 
@@ -325,9 +325,9 @@ extension WebSocketConnection: URLSessionWebSocketDelegate, URLSessionTaskDelega
     ) {
         // The close frame only counts after the connection was open: a
         // pre-open failure owns its report through the failed handshake.
-        AppLogger.info(
-            "WS transport didCloseWith", category: "WebSocket",
-            fields: ["code": String(closeCode.rawValue), "reason": Self.closeReasonText(reason) ?? "-"])
+        AppLogger.webSocket.info(
+            "WS transport didCloseWith",
+            metadata: ["code": "\(String(closeCode.rawValue))", "reason": "\(Self.closeReasonText(reason) ?? "-")"])
         let wasOpen = state.withLock { $0.opened }
         guard wasOpen else { return }
         emitClosed(
@@ -337,9 +337,7 @@ extension WebSocketConnection: URLSessionWebSocketDelegate, URLSessionTaskDelega
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        AppLogger.info(
-            "WS transport didComplete", category: "WebSocket",
-            fields: ["error": error.map(String.init(describing:)) ?? "nil"])
+        AppLogger.webSocket.info("WS transport didComplete", metadata: ["error": "\(error.map(String.init(describing:)) ?? "nil")"])
         let wasOpen = state.withLock { $0.opened }
         if !wasOpen {
             // The handshake never completed: the open continuation owns the

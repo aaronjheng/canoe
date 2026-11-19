@@ -34,13 +34,13 @@ final class SettingsStore {
         // that point are worth logging.
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
         guard let data = try? Data(contentsOf: fileURL) else {
-            AppLogger.error("Failed to read settings file, using defaults", category: "Settings")
+            AppLogger.settings.error("Failed to read settings file, using defaults")
             return
         }
         do {
             settings = try JSONDecoder().decode(AppSettings.self, from: data)
         } catch {
-            AppLogger.error("Failed to decode settings, using defaults: \(error)", category: "Settings")
+            AppLogger.settings.error("Failed to decode settings, using defaults: \(error)")
         }
     }
 
@@ -49,7 +49,7 @@ final class SettingsStore {
             let data = try JSONEncoder().encode(settings)
             try data.write(to: fileURL, options: .atomic)
         } catch {
-            AppLogger.error("Failed to save settings: \(error)", category: "Settings")
+            AppLogger.settings.error("Failed to save settings: \(error)")
         }
     }
 }

@@ -132,7 +132,7 @@ actor LocalDatabase {
         do {
             try openHandle()
         } catch let failure as Failure where failure.isCorruption {
-            AppLogger.error("Local store unreadable, recreating: \(failure.message)", category: "Vault")
+            AppLogger.vault.error("Local store unreadable, recreating: \(failure.message)")
             moveAside()
             try openHandle()
         }

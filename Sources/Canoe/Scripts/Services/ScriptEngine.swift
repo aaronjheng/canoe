@@ -259,7 +259,7 @@ actor ScriptEngine {
             _ = try runtime.evaluate(
                 "__pm_deliver_send_response()", timeLimitMs: Self.evaluationTimeLimitMs)
         } catch {
-            AppLogger.error("pm.sendRequest delivery failed: \(error)", category: "Scripts")
+            AppLogger.scripts.error("pm.sendRequest delivery failed: \(error)")
         }
         host.finishSendRequest()
         if !sendWaiters.isEmpty { sendWaiters.removeFirst().resume() }
