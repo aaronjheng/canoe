@@ -803,7 +803,12 @@ struct EnvironmentPickerPanel: View {
         // exact bug class the checkmark placeholder already hit once.
         .fixedSize(horizontal: false, vertical: true)
         .popupPanel()
-        .onAppear { searchFocused = true }
+        // Focus once the panel is mounted, not in onAppear: the insertion
+        // update also re-renders the window's other panes, whose previously
+        // focused text fields re-assert their focus in that same pass and
+        // win over the request (the sidebar filter kept the caret and took
+        // the typing). A task runs after the pass has committed.
+        .task { searchFocused = true }
         .onChange(of: store.activeWorkspaceEnvironments) { _, _ in
             keyboard = nil
         }

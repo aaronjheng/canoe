@@ -112,14 +112,24 @@ struct FilterField: View {
         guard blurMonitor == nil else { return }
         blurMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
             MainActor.assumeIsolated {
-                if isFocused, let window = event.window {
-                    let point = CGPoint(
-                        x: event.locationInWindow.x,
-                        y: window.frame.height - event.locationInWindow.y)
-                    if !fieldFrame.contains(point) {
-                        isFocused = false
-                    }
-                }
+                guard isFocused, let window = event.window else { return }
+                // Blur only text editing: while some other control holds
+                // first responder (a dropdown panel's focusable root, say)
+                // this box's state is stale and must not blur it.
+                guard window.firstResponder is NSTextView else { return }
+                let point = CGPoint(
+                    x: event.locationInWindow.x,
+                    y: window.frame.height - event.locationInWindow.y)
+                guard !fieldFrame.contains(point) else { return }
+                // Resign the field editor rather than writing the focus state:
+                // a SwiftUI focus write issued from inside the mouse-down gets
+                // dropped when something else claims focus in the same update
+                // (the environment picker opening over a focused filter), and
+                // the box then keeps the accent ring and live caret after the
+                // click went elsewhere - the panel's own field never gets the
+                // editor. AppKit's resign is observed by SwiftUI either way
+                // (same pattern as KeyValueEditor's click-away).
+                window.makeFirstResponder(nil)
             }
             return event
         }
