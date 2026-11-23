@@ -30,9 +30,6 @@ build:
         "DEVELOPMENT_TEAM=${DEVELOPMENT_TEAM:-}" \
         ONLY_ACTIVE_ARCH=YES build
 
-build-cli:
-    cd Sources/CanoeCLI && swift build -c release
-
 clean:
     rm -rf .build
 
@@ -43,14 +40,10 @@ run: build
     @'/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister' -f '{{ app_bundle }}'
     @open '{{ app_bundle }}'
 
-install: build build-cli
+install: build
     @rm -rf ~/Applications/Canoe.app
     @cp -R '{{ app_bundle }}' ~/Applications/Canoe.app
     @echo 'Installed to ~/Applications/Canoe.app'
-    @mkdir -p ~/.local/bin
-    @cp Sources/CanoeCLI/.build/release/canoe ~/.local/bin/canoe
-    @chmod +x ~/.local/bin/canoe
-    @echo 'Installed CLI to ~/.local/bin/canoe'
 
 uninstall:
     @osascript -e 'quit app "Canoe"' 2>/dev/null || true
