@@ -11,11 +11,16 @@ crate-type = ["staticlib"]
 [dependencies]
 # The formatter backend has no usable registry release (every published
 # version is yanked), so the workspace crates are pinned to one oxc
-# revision; cargo fetches it into `~/.cargo` like any git dependency.
-oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "a22c9f2abc74cbc00a75cf3d7ad6adeeb2a22fc1" }
-oxc_diagnostics = { git = "https://github.com/oxc-project/oxc", rev = "a22c9f2abc74cbc00a75cf3d7ad6adeeb2a22fc1" }
-oxc_formatter = { git = "https://github.com/oxc-project/oxc", rev = "a22c9f2abc74cbc00a75cf3d7ad6adeeb2a22fc1" }
-oxc_span = { git = "https://github.com/oxc-project/oxc", rev = "a22c9f2abc74cbc00a75cf3d7ad6adeeb2a22fc1" }
+# release tag: `oxfmt_v*` tags are the only line that covers all four in a
+# single workspace commit (the crates carry different version numbers -
+# `oxc_formatter` tracks oxfmt's own version, the rest `crates_v*`).
+# Bumping every entry to the same tag is mandatory: two tags mean two
+# workspace commits, i.e. duplicate `oxc_span`/`oxc_allocator` crates from
+# different sources that do not typecheck against each other.
+oxc_allocator = { git = "https://github.com/oxc-project/oxc", tag = "oxfmt_v0.80.0" }
+oxc_diagnostics = { git = "https://github.com/oxc-project/oxc", tag = "oxfmt_v0.80.0" }
+oxc_formatter = { git = "https://github.com/oxc-project/oxc", tag = "oxfmt_v0.80.0" }
+oxc_span = { git = "https://github.com/oxc-project/oxc", tag = "oxfmt_v0.80.0" }
 
 # Mirrors the oxc workspace's own release profile (the spike built inside
 # it and inherited these); without it the archive ships fat with debug
