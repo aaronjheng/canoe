@@ -40,6 +40,19 @@ final class AppStore {
     /// (whole row = into). Stale values are harmless - every drag start
     /// overwrites it.
     var sidebarDraggingKind: String?
+    /// Rows currently checked by ⌘-click / ⇧-click in the Items tree. A plain
+    /// click clears it; batch actions operate on the whole set. Never saved.
+    var sidebarSelection: Set<SidebarSelection> = [] {
+        didSet {
+            if sidebarSelection.isEmpty { sidebarSelectionAnchor = nil }
+        }
+    }
+    /// The row a ⇧-click range starts from (Postman's anchor). Cleared with
+    /// the selection.
+    var sidebarSelectionAnchor: SidebarSelection?
+    /// Staged batch delete: the confirmation lives at the sidebar root so
+    /// every row's context menu can raise the same dialog.
+    var presentSidebarBatchDeleteConfirm = false
 
     // MARK: - Sidebar expansion state
 

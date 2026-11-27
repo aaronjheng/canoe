@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -44,6 +45,18 @@ struct SidebarView: View {
             }
         }
         .background(AppColor.primaryBackground)
+        .confirmationDialog(
+            "Delete \(store.sidebarSelection.count) items?",
+            isPresented: $store.presentSidebarBatchDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Delete \(store.sidebarSelection.count) Items", role: .destructive) {
+                store.batchDeleteSidebarSelection()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Folders delete their subfolders; requests inside them move to the collection root. This cannot be undone.")
+        }
     }
 }
 
@@ -280,6 +293,7 @@ private struct EnvironmentRow: View {
 
     private var isActive: Bool { store.activeEnvironment?.id == env.id }
     private var isSelected: Bool { store.selectedTab == .environment(env.id) }
+    private var isMultiSelected: Bool { store.isSidebarSelected(.environment(env.id)) }
 
     /// Hover chrome for the row and for its actions. The actions have to
     /// outlive the pointer leaving the row for their own open menu, or the
@@ -313,7 +327,7 @@ private struct EnvironmentRow: View {
 
     var body: some View {
         Button {
-            store.preview(.environment(env.id))
+            store.sidebarClick(.environment(env.id)) { store.preview(.environment(env.id)) }
         } label: {
             HStack(spacing: AppSpacing.xSmall) {
                 Text(env.name)
@@ -336,20 +350,24 @@ private struct EnvironmentRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                    .fill(AppColor.rowFill(isSelected: isSelected, isHovering: showsActions))
+                    .fill(AppColor.rowFill(isSelected: isSelected || isMultiSelected, isHovering: showsActions))
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .tracksHover { isHovering = $0 }
-        .animation(AppMotion.quick, value: isSelected)
+        .animation(AppMotion.quick, value: isSelected || isMultiSelected)
         .animation(AppMotion.quick, value: showsActions)
         // Double-click pins the preview tab (same instant-click reasoning
         // as the request rows).
         .simultaneousGesture(
             TapGesture(count: 2).onEnded { store.pin(.environment(env.id)) }
         )
-        .contextMenu { DropdownMenuContent(rows: environmentActions) }
+        .contextMenu {
+            DropdownMenuContent(
+                rows: store.sidebarContextRows(for: .environment(env.id), single: environmentActions)
+            )
+        }
         .overlay(alignment: .trailing) { hoverActions }
         .help(isActive ? "\(env.name) (active environment)" : "Edit \(env.name)")
         .confirmationDialog(
@@ -762,6 +780,7 @@ private struct CollectionTree: View {
 
     /// Highlighted when the collection's page is the selected tab.
     private var isSelected: Bool { store.selectedTab == .collection(collection.id) }
+    private var isMultiSelected: Bool { store.isSidebarSelected(.collection(collection.id)) }
 
     /// Hover chrome for the row and for its actions. The actions have to
     /// outlive the pointer leaving the row for their own open menu, or the
@@ -897,8 +916,10 @@ private struct CollectionTree: View {
                 // reaches the inner button alone, so the chevron only ever
                 // toggles.
                 Button {
-                    store.preview(.collection(collection.id))
-                    store.toggleSidebarNode(collection.id)
+                    store.sidebarClick(.collection(collection.id)) {
+                        store.preview(.collection(collection.id))
+                        store.toggleSidebarNode(collection.id)
+                    }
                 } label: {
                     HStack(spacing: AppSpacing.xxSmall) {
                         Button {
@@ -925,13 +946,13 @@ private struct CollectionTree: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                            .fill(AppColor.rowFill(isSelected: isSelected, isHovering: showsActions))
+                            .fill(AppColor.rowFill(isSelected: isSelected || isMultiSelected, isHovering: showsActions))
                     )
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .tracksHover { isHoveringHeader = $0 }
-                .animation(AppMotion.quick, value: isSelected)
+                .animation(AppMotion.quick, value: isSelected || isMultiSelected)
                 .animation(AppMotion.quick, value: showsActions)
                 .help("Open \(collection.name)")
                 // Drag source: plain-text payload "collection-<uuid>". The
@@ -999,13 +1020,16 @@ private struct CollectionTree: View {
                 )
                 .contextMenu {
                     DropdownMenuContent(
-                        rows: [
-                            DropdownRow.action("Add Request", systemImage: "plus") { addRequest() },
-                            DropdownRow.action(
-                                "Add WebSocket Request",
-                                systemImage: "dot.radiowaves.left.and.right"
-                            ) { addWebSocketRequest() },
-                        ] + collectionActionsRows
+                        rows: store.sidebarContextRows(
+                            for: .collection(collection.id),
+                            single: [
+                                DropdownRow.action("Add Request", systemImage: "plus") { addRequest() },
+                                DropdownRow.action(
+                                    "Add WebSocket Request",
+                                    systemImage: "dot.radiowaves.left.and.right"
+                                ) { addWebSocketRequest() },
+                            ] + collectionActionsRows
+                        )
                     )
                 }
                 .overlay(alignment: .trailing) { hoverActions }
@@ -1066,6 +1090,7 @@ private struct FolderTree: View {
     /// mark the collection row carries, so the sidebar shows which folder the
     /// open page belongs to.
     private var isSelected: Bool { store.selectedTab == .folder(folder.id) }
+    private var isMultiSelected: Bool { store.isSidebarSelected(.folder(folder.id)) }
 
     private var isFiltering: Bool {
         !store.sidebarFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1189,8 +1214,10 @@ private struct FolderTree: View {
                 // reaches the inner button alone, so the chevron only ever
                 // toggles.
                 Button {
-                    store.preview(.folder(folder.id))
-                    store.toggleSidebarNode(folder.id)
+                    store.sidebarClick(.folder(folder.id)) {
+                        store.preview(.folder(folder.id))
+                        store.toggleSidebarNode(folder.id)
+                    }
                 } label: {
                     HStack(spacing: 0) {
                         // The chevron sits one tree step per level right of the
@@ -1232,7 +1259,7 @@ private struct FolderTree: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                            .fill(AppColor.rowFill(isSelected: isSelected, isHovering: showsActions))
+                            .fill(AppColor.rowFill(isSelected: isSelected || isMultiSelected, isHovering: showsActions))
                     )
                     .overlay(alignment: .leading) {
                         IndentGuides(depth: depth)
@@ -1241,7 +1268,7 @@ private struct FolderTree: View {
                 }
                 .buttonStyle(.plain)
                 .tracksHover { isHoveringHeader = $0 }
-                .animation(AppMotion.quick, value: isSelected)
+                .animation(AppMotion.quick, value: isSelected || isMultiSelected)
                 .animation(AppMotion.quick, value: showsActions)
                 .help("Open \(folder.name)")
                 // Drag source: enables moving folders via drag-and-drop.
@@ -1300,8 +1327,11 @@ private struct FolderTree: View {
                 )
                 .contextMenu {
                     DropdownMenuContent(
-                        rows: [DropdownRow.action("Add Request", systemImage: "plus") { addRequest() }]
-                            + folderActionsRows
+                        rows: store.sidebarContextRows(
+                            for: .folder(folder.id),
+                            single: [DropdownRow.action("Add Request", systemImage: "plus") { addRequest() }]
+                                + folderActionsRows
+                        )
                     )
                 }
                 .overlay(alignment: .trailing) { hoverActions }
@@ -1355,6 +1385,7 @@ private struct RequestRow: View {
     private var showsActions: Bool { isHovering || dropdown.active?.id == overflowID }
 
     private var isSelected: Bool { store.selectedTab == .request(request.id) }
+    private var isMultiSelected: Bool { store.isSidebarSelected(.request(request.id)) }
 
     /// Inline rename via the hover/context action.
     private var isRenamingNode: Bool { isRenaming }
@@ -1447,7 +1478,7 @@ private struct RequestRow: View {
                 renameRow
             } else {
                 Button {
-                    store.previewRequest(request.id)
+                    store.sidebarClick(.request(request.id)) { store.previewRequest(request.id) }
                 } label: {
                     HStack(spacing: 0) {
                         // The method tag sits on the content column: one expander
@@ -1471,7 +1502,7 @@ private struct RequestRow: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                            .fill(AppColor.rowFill(isSelected: isSelected, isHovering: showsActions))
+                            .fill(AppColor.rowFill(isSelected: isSelected || isMultiSelected, isHovering: showsActions))
                     )
                     .overlay(alignment: .leading) {
                         IndentGuides(depth: depth)
@@ -1480,7 +1511,7 @@ private struct RequestRow: View {
                 }
                 .buttonStyle(.plain)
                 .tracksHover { isHovering = $0 }
-                .animation(AppMotion.quick, value: isSelected)
+                .animation(AppMotion.quick, value: isSelected || isMultiSelected)
                 .animation(AppMotion.quick, value: showsActions)
                 // Double-click pins the preview tab. The Button above still
                 // fires immediately on each click (no double-click hold
@@ -1524,7 +1555,11 @@ private struct RequestRow: View {
                     sidebarInsertionLine(
                         isVisible: store.sidebarDropIndicator == SidebarDropIndicator(targetID: request.id, position: .below))
                 }
-                .contextMenu { DropdownMenuContent(rows: rowActions) }
+                .contextMenu {
+                    DropdownMenuContent(
+                        rows: store.sidebarContextRows(for: .request(request.id), single: rowActions)
+                    )
+                }
                 .overlay(alignment: .trailing) { hoverActions }
                 .help(request.name)
                 .confirmationDialog(
@@ -1853,5 +1888,236 @@ extension AppStore {
             // A dragged collection over a request/folder row: no home for it.
             return
         }
+    }
+}
+
+// MARK: - Multi-select
+
+extension AppStore {
+    /// The rows that are on screen right now, in display order. ⇧-click uses
+    /// this to select a range; it mirrors the views' own filter and expansion
+    /// rules so a range never reaches a row the user cannot see.
+    var orderedVisibleSidebarRows: [SidebarSelection] {
+        let isFiltering = !sidebarFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        var rows: [SidebarSelection] = []
+
+        func appendFolder(_ folder: Folder, in collection: Collection) {
+            rows.append(.folder(folder.id))
+            guard isSidebarNodeExpanded(folder.id) else { return }
+            for sub in childFolders(of: folder.id, in: collection)
+            where !isFiltering || folderMatchesFilter(sub.id, in: collection) {
+                appendFolder(sub, in: collection)
+            }
+            for request in requests(in: folder.id, collection: collection)
+            where !isFiltering || requestMatchesFilter(request) {
+                rows.append(.request(request.id))
+            }
+        }
+
+        for collection in filteredCollections {
+            rows.append(.collection(collection.id))
+            guard isSidebarNodeExpanded(collection.id) else { continue }
+            for folder in childFolders(of: nil, in: collection)
+            where !isFiltering || folderMatchesFilter(folder.id, in: collection) {
+                appendFolder(folder, in: collection)
+            }
+            for request in requests(in: nil, collection: collection)
+            where !isFiltering || requestMatchesFilter(request) {
+                rows.append(.request(request.id))
+            }
+        }
+        if isEnvironmentsSectionExpanded {
+            let query = sidebarFilter.trimmingCharacters(in: .whitespacesAndNewlines)
+            for env in activeWorkspaceEnvironments
+            where query.isEmpty || env.name.localizedCaseInsensitiveContains(query) {
+                rows.append(.environment(env.id))
+            }
+        }
+        return rows
+    }
+
+    /// Plain clicks keep their old behavior (preview, and clear any previous
+    /// multi-selection). ⌘-click toggles one row; ⇧-click selects the range
+    /// from the anchor, like Finder and Postman.
+    func sidebarClick(_ item: SidebarSelection, preview: () -> Void) {
+        let flags = NSEvent.modifierFlags
+        if flags.contains(.command) {
+            toggleSidebarSelection(item)
+        } else if flags.contains(.shift) {
+            selectSidebarRange(to: item)
+        } else {
+            sidebarSelection = []
+            preview()
+        }
+    }
+
+    func toggleSidebarSelection(_ item: SidebarSelection) {
+        if sidebarSelection.contains(item) {
+            sidebarSelection.remove(item)
+            if sidebarSelectionAnchor == item { sidebarSelectionAnchor = nil }
+        } else {
+            sidebarSelection.insert(item)
+            sidebarSelectionAnchor = item
+        }
+    }
+
+    func selectSidebarRange(to item: SidebarSelection) {
+        let rows = orderedVisibleSidebarRows
+        guard !rows.isEmpty else { return }
+        let anchor =
+            sidebarSelectionAnchor.flatMap { rows.firstIndex(of: $0) }
+            ?? rows.firstIndex(of: item) ?? 0
+        let end = rows.firstIndex(of: item) ?? anchor
+        sidebarSelection = Set(rows[min(anchor, end)...max(anchor, end)])
+        // Keep the original anchor so repeated ⇧-clicks extend the same range.
+        if sidebarSelectionAnchor == nil { sidebarSelectionAnchor = rows[anchor] }
+    }
+
+    func clearSidebarSelection() {
+        sidebarSelection = []
+    }
+
+    func isSidebarSelected(_ item: SidebarSelection) -> Bool {
+        sidebarSelection.contains(item)
+    }
+
+    private func sidebarSelectedIDs(of kind: SidebarSelection.Kind) -> [UUID] {
+        sidebarSelection.filter { $0.kind == kind }.map(\.id)
+    }
+
+    /// Right-clicking a row that belongs to a multi-selection offers the
+    /// batch menu; every other row keeps its own single-item menu.
+    func sidebarContextRows(for item: SidebarSelection, single: [DropdownRow]) -> [DropdownRow] {
+        guard sidebarSelection.count > 1, sidebarSelection.contains(item) else { return single }
+        return sidebarBatchMenuRows
+    }
+
+    /// One context menu for every checked row: the batch actions all clear
+    /// the selection when they finish so stale rows cannot linger.
+    var sidebarBatchMenuRows: [DropdownRow] {
+        let count = sidebarSelection.count
+        let requestIDs = sidebarSelectedIDs(of: .request)
+        var rows: [DropdownRow] = []
+
+        if requestIDs.count == count, !requestIDs.isEmpty {
+            rows.append(
+                DropdownRow.action("Copy as cURL", systemImage: "curlybraces") {
+                    self.copySidebarSelectionAsCURL()
+                }
+            )
+        }
+        rows.append(
+            DropdownRow.action("Duplicate \(count) Items", systemImage: "doc.on.doc") {
+                self.batchDuplicateSidebarSelection()
+            }
+        )
+
+        let destinations = sidebarMoveDestinations
+        if !destinations.isEmpty {
+            rows.append(.divider())
+            for destination in destinations {
+                rows.append(
+                    DropdownRow.action("Move to \(destination.label)") {
+                        self.batchMoveSidebarSelection(toCollection: destination.collectionID, folder: destination.folderID)
+                    }
+                )
+            }
+        }
+
+        rows.append(.divider())
+        rows.append(
+            DropdownRow.action("Delete \(count) Items", systemImage: "trash", isDestructive: true) {
+                self.presentSidebarBatchDeleteConfirm = true
+            }
+        )
+        return rows
+    }
+
+    /// Flat destinations for the batch Move action: each collection root and
+    /// every folder (prefixed with its path). Collections and environments
+    /// are not movable, so they are simply skipped by `batchMove…`.
+    struct SidebarMoveDestination: Sendable {
+        let label: String
+        let collectionID: UUID
+        let folderID: UUID?
+    }
+
+    var sidebarMoveDestinations: [SidebarMoveDestination] {
+        var result: [SidebarMoveDestination] = []
+        for collection in visibleCollections {
+            result.append(
+                SidebarMoveDestination(label: collection.name, collectionID: collection.id, folderID: nil)
+            )
+            func walk(_ parentID: UUID?, prefix: String) {
+                for folder in childFolders(of: parentID, in: collection) {
+                    let path = "\(prefix) / \(folder.name)"
+                    result.append(
+                        SidebarMoveDestination(label: path, collectionID: collection.id, folderID: folder.id)
+                    )
+                    walk(folder.id, prefix: path)
+                }
+            }
+            walk(nil, prefix: collection.name)
+        }
+        return result
+    }
+
+    func batchMoveSidebarSelection(toCollection collectionID: UUID, folder folderID: UUID?) {
+        for item in sidebarSelection {
+            switch item {
+            case .request(let id): moveRequest(id, to: folderID, in: collectionID)
+            case .folder(let id): moveFolder(id, to: folderID, in: collectionID)
+            default: break
+            }
+        }
+        clearSidebarSelection()
+    }
+
+    func batchDuplicateSidebarSelection() {
+        for id in sidebarSelectedIDs(of: .request) { duplicateRequest(id) }
+        for id in sidebarSelectedIDs(of: .folder) {
+            guard let collection = collectionForFolder(id) else { continue }
+            duplicateFolder(id, in: collection.id)
+        }
+        for id in sidebarSelectedIDs(of: .collection) { duplicateCollection(id) }
+        for id in sidebarSelectedIDs(of: .environment) { duplicateEnvironment(id) }
+        clearSidebarSelection()
+    }
+
+    /// Deletes in dependency order: requests first, then folders, then
+    /// collections, then environments. That way a selected request nested in
+    /// a selected folder is gone before the folder removes it from its tree.
+    func batchDeleteSidebarSelection() {
+        // Capture before clearing: the selection drives both the ids and the
+        // confirmation's count, and every delete below mutates the vault.
+        let requests = sidebarSelectedIDs(of: .request)
+        let folders = sidebarSelectedIDs(of: .folder)
+        let collections = sidebarSelectedIDs(of: .collection)
+        let environments = sidebarSelectedIDs(of: .environment)
+        clearSidebarSelection()
+        for id in requests { deleteRequest(id) }
+        for id in folders {
+            guard let collection = collectionForFolder(id) else { continue }
+            deleteFolder(id, in: collection.id)
+        }
+        for id in collections { deleteCollection(id) }
+        for id in environments { deleteEnvironment(id) }
+    }
+
+    /// Copies every selected request as a resolved cURL command, separated
+    /// by blank lines so the paste stays readable.
+    func copySidebarSelectionAsCURL() {
+        let requests = sidebarSelectedIDs(of: .request).compactMap { request(withID: $0) }
+        guard !requests.isEmpty else { return }
+        let snippets = requests.map { request in
+            CodeSnippetGenerator.generate(
+                request: request,
+                variables: variablesForRequest(request),
+                authorization: authorizationForRequest(request),
+                language: .curl
+            )
+        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(snippets.joined(separator: "\n\n"), forType: .string)
     }
 }

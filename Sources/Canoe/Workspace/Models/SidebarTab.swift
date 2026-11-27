@@ -32,3 +32,35 @@ struct SidebarDropIndicator: Equatable, Sendable {
     let targetID: UUID
     let position: SidebarDropPosition
 }
+
+// MARK: - Multi-select
+
+/// One row checked in the sidebar's multi-selection (Postman-style ⌘-click
+/// and ⇧-click). IDs are globally unique, but the kind is kept alongside so
+/// a batch action can dispatch without re-scanning the whole vault. Like
+/// drop hover state, this is machine-local UI state and is never persisted.
+enum SidebarSelection: Hashable, Sendable {
+    enum Kind: Hashable, Sendable {
+        case collection, folder, request, environment
+    }
+
+    case collection(UUID)
+    case folder(UUID)
+    case request(UUID)
+    case environment(UUID)
+
+    var kind: Kind {
+        switch self {
+        case .collection: .collection
+        case .folder: .folder
+        case .request: .request
+        case .environment: .environment
+        }
+    }
+
+    var id: UUID {
+        switch self {
+        case .collection(let id), .folder(let id), .request(let id), .environment(let id): id
+        }
+    }
+}
