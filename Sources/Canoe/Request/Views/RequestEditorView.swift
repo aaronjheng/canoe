@@ -1950,16 +1950,18 @@ struct RequestEditorView: View {
     }
 
     /// The timeout row: same left column shape, a right-aligned seconds
-    /// field instead of a switch. Empty uses the app default (30s). For
-    /// WebSocket requests the same value bounds the handshake instead.
+    /// field instead of a switch. Empty uses the app-wide default (a 24 h
+    /// idle cap until changed in Settings); for WebSocket requests the same
+    /// value bounds the handshake and empty falls back to 30 s.
     private var settingsTimeoutRow: some View {
         settingsNumberRow(
             title: isWebSocket ? "Handshake timeout (seconds)" : "Timeout (seconds)",
             description:
                 isWebSocket
-                ? "How long to wait for the server to complete the WebSocket handshake. Empty uses the app default (30s)."
-                : "Maximum idle time between data arrivals before the request gives up. Empty uses the app default (30s).",
-            placeholder: "30",
+                ? "How long to wait for the server to complete the WebSocket handshake. Empty uses 30 seconds."
+                : "Maximum idle time between data arrivals before the request gives up. Empty uses the app-wide timeout"
+                    + " (no practical limit by default - a 24-hour idle cap until changed in Settings).",
+            placeholder: isWebSocket ? "30" : "Default",
             text: timeoutBinding,
             chrome: SettingsFieldChrome(
                 isFocused: $isTimeoutFocused, isHovered: $isTimeoutHovered)

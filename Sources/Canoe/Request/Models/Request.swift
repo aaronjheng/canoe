@@ -73,10 +73,12 @@ struct Request: Identifiable, Codable, Hashable, Sendable {
     var postResponseScriptEnabled: Bool = true
     /// Per-request send settings (Postman's request-level Settings tab):
     /// whether 3xx responses are followed (and how many at most), the idle
-    /// timeout in seconds (0 = the app default of 30), cookie-jar
-    /// participation, and TLS server-certificate validation. URLSession's
-    /// request-object `timeoutInterval` covers the idle gap; the resource
-    /// timeout stays the session's 120 s.
+    /// timeout in seconds (0 = use the app-wide default - a 24 h idle cap
+    /// until changed in Settings; a WebSocket handshake instead falls back
+    /// to 30 s), cookie-jar participation, and TLS server-certificate
+    /// validation. URLSession's request-object `timeoutInterval` covers the
+    /// idle gap; the whole-exchange bound is the session's resource timeout
+    /// (120 s at minimum, or the effective idle cap + 60 s).
     var followRedirects: Bool = true
     var timeoutSeconds: Double = 0
     /// Send the Authorization header to redirected hosts (including HTTPS

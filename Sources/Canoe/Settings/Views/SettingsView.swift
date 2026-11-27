@@ -61,7 +61,11 @@ struct SettingsView: View {
             } header: {
                 Text("Requests")
             } footer: {
-                Text("Idle limit between bytes before a request is cut. 0 = no limit. The request's own Settings tab can override this.")
+                Text(
+                    "Maximum idle time between bytes before a request is cut. 0 = no practical limit"
+                        + " (a 24-hour idle cap, since URLSession has no true off switch)."
+                        + " A request's own Settings tab can override this."
+                )
             }
             Section {
                 HStack {

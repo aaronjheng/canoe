@@ -53,12 +53,14 @@ struct AppSettings: Codable, Equatable {
     }
 }
 
-/// Requests defaults mirrored from Postman's General settings. Both values
-/// use 0 as "unlimited".
+/// Requests defaults mirrored from Postman's General settings. `maxResponseSizeMB`
+/// uses 0 as a true unlimited size; `requestTimeoutSeconds` uses 0 as an
+/// effectively unlimited idle cap, which URLSession approximates with 24 hours.
 struct GeneralSettings: Codable, Equatable, Sendable {
     /// Seconds a request may idle between bytes before it is cut. When the
     /// request's own Settings tab also names a timeout, that value wins.
-    /// 0 = no limit (approximated by a 24 h session bound).
+    /// 0 = no practical limit, approximated by URLSession's 24 h idle bound
+    /// (the whole-exchange bound sits 60 s above the effective idle cap).
     var requestTimeoutSeconds: Int = 0
 
     /// MB limit on one buffered response body (the viewer and the response
