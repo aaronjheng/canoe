@@ -605,6 +605,14 @@ private struct VariableRow: View {
                     }
                 }
                 valueView
+                if !variable.description.isEmpty {
+                    Text(variable.description)
+                        .font(AppFont.small)
+                        .foregroundStyle(AppColor.tertiaryText)
+                        .lineLimit(2)
+                        .textSelection(.enabled)
+                        .help(variable.description)
+                }
                 if let overriddenBy {
                     Badge(text: "Overridden by \(overriddenBy)")
                         .help("A higher-precedence scope defines this key, so this value is never used.")

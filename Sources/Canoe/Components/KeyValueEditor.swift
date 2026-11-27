@@ -43,8 +43,10 @@ struct KeyValueEditorTitleAction {
 private enum CellFocus: Hashable {
     case key(UUID)
     case value(UUID)
+    case description(UUID)
     case ghostKey
     case ghostValue
+    case ghostDescription
 }
 
 /// Postman-style key/value table: a bordered grid with a column header row
@@ -95,6 +97,13 @@ struct KeyValueEditor<T: KVItem>: View {
     /// "Variable" instead of "Key").
     var keyHeader: String = "Key"
     var valueHeader: String = "Value"
+    /// Optional third text column (Postman's variables Description column).
+    /// nil keeps the two-column grid used by params, headers and form fields.
+    /// Only variable tables opt in; the column splits the remaining width
+    /// evenly with Key and Value.
+    var descriptionKeyPath: WritableKeyPath<T, String>?
+    var descriptionHeader: String = "Description"
+    var descriptionPlaceholder: String = "Description"
     /// Column-header fill for the table. Defaults to the shared gray wash so
     /// every key/value grid reads as a table; callers may still override.
     var headerBackground: Color? = AppColor.tableHeaderBackground
@@ -337,6 +346,14 @@ struct KeyValueEditor<T: KVItem>: View {
         }
     }
 
+    /// Whether a row carries any text worth round-tripping through Bulk
+    /// Edit. A description-only row has no `key: value` text to show, but
+    /// must still occupy a line so positional reuse keeps its description.
+    private func hasText(_ item: T) -> Bool {
+        !item.key.isEmpty || !item.value.isEmpty
+            || (descriptionKeyPath.map { !item[keyPath: $0].isEmpty } ?? false)
+    }
+
     /// Enters Bulk Edit: the text starts from the enabled rows (disabled
     /// rows are invisible there and survive untouched); table focus state
     /// is reset so nothing leaks across the mode switch.
@@ -344,7 +361,7 @@ struct KeyValueEditor<T: KVItem>: View {
         bulkText =
             items
             .filter { $0.isEnabled }
-            .filter { !$0.key.isEmpty || !$0.value.isEmpty }
+            .filter { hasText($0) }
             .map { "\($0.key): \($0.value)" }
             .joined(separator: "\n")
         ghost = nil
@@ -364,15 +381,16 @@ struct KeyValueEditor<T: KVItem>: View {
     /// Tables without a secret column (params, headers) match by
     /// `(key, value)`: duplicate keys are legal there, so only the exact
     /// pair proves a line is the same row. Variable tables (the ones with
-    /// a secret column) match by key alone: keys are unique, and rows
-    /// carry flags outside the text (the secret eye) that would be
-    /// silently reset if an edited value spun up a fresh row.
+    /// a secret column) reuse by text position first, then by key: rows
+    /// carry flags outside the text (the secret eye and the description)
+    /// that would be silently reset if an edited key spun up a fresh row.
     private func applyBulkText(_ text: String) {
         var parsed: [T] = []
         parsed.reserveCapacity(text.count / 8 + 1)
         // Reuse pool: the enabled rows currently in the model, in order.
         var reusable = items.filter(\.isEnabled)
         let reuseByKey = secretKeyPath != nil
+        var reuseCursor = 0
         for line in text.components(separatedBy: "\n") {
             let trimmedLine = line.trimmingCharacters(in: .whitespaces)
             guard !trimmedLine.isEmpty else { continue }
@@ -386,7 +404,18 @@ struct KeyValueEditor<T: KVItem>: View {
                 value = ""
             }
             let row: T
-            if let index = reusable.firstIndex(where: reuseByKey ? { $0.key == key } : { $0.key == key && $0.value == value }) {
+            // Variable tables keep metadata outside the text (the secret flag
+            // and now the description). Reuse the row at the same text
+            // position first, so renaming a key in Bulk Edit does not silently
+            // drop that metadata; key matching remains the fallback and the
+            // only rule for tables where duplicate keys are legal.
+            let positionalIndex = reuseByKey && reuseCursor < reusable.count ? reuseCursor : nil
+            reuseCursor += 1
+            let keyedIndex = reusable.firstIndex(
+                where: reuseByKey
+                    ? { $0.key == key }
+                    : { $0.key == key && $0.value == value })
+            if let index = positionalIndex ?? keyedIndex {
                 var reused = reusable.remove(at: index)
                 if reuseByKey { reused.value = value }
                 row = reused
@@ -442,10 +471,19 @@ struct KeyValueEditor<T: KVItem>: View {
                         set: { item[keyPath: path] = $0 }
                     )
                 }
+                let descriptionBinding = descriptionKeyPath.map { path -> Binding<String> in
+                    Binding(
+                        get: { item[keyPath: path] },
+                        set: { item[keyPath: path] = $0 }
+                    )
+                }
                 KVRow(
                     isEnabled: $item.isEnabled,
                     key: $item.key,
                     value: $item.value,
+                    description: descriptionBinding,
+                    descriptionFocus: .description(item.id),
+                    descriptionPlaceholder: descriptionPlaceholder,
                     kind: kindBinding,
                     showsKindMenu: showsKindMenu,
                     kindMenuWidth: kindMenuWidth,
@@ -489,6 +527,9 @@ struct KeyValueEditor<T: KVItem>: View {
                     isEnabled: ghostEnabledBinding,
                     key: ghostBinding(\.key, focusOn: { .key($0) }),
                     value: ghostBinding(\.value, focusOn: { .value($0) }),
+                    description: ghostDescriptionBinding,
+                    descriptionFocus: .ghostDescription,
+                    descriptionPlaceholder: descriptionPlaceholder,
                     kind: ghostKindBinding,
                     showsKindMenu: showsKindMenu,
                     kindMenuWidth: kindMenuWidth,
@@ -536,6 +577,10 @@ struct KeyValueEditor<T: KVItem>: View {
             headerLabel(keyHeader, isKey: true)
             verticalRule
             headerLabel(valueHeader)
+            if descriptionKeyPath != nil {
+                verticalRule
+                headerLabel(descriptionHeader)
+            }
             if showsIconColumns {
                 Color.clear.frame(width: trailingColumnWidth)
             }
@@ -644,6 +689,19 @@ struct KeyValueEditor<T: KVItem>: View {
         )
     }
 
+    /// A description-only row is still content: it must materialize like a
+    /// key/value row and survive a focus move (otherwise typing a description
+    /// first would silently drop the row). When no description column is
+    /// configured this is the original key/value check.
+    private func isRowEmpty(_ row: T) -> Bool {
+        guard row.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            row.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return false }
+        guard let descriptionKeyPath else { return true }
+        return row[keyPath: descriptionKeyPath]
+            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     /// Editing the ghost row: the first character materializes it into
     /// `items` and moves keyboard focus to the materialized row, so typing
     /// continues seamlessly. Clearing a materialized row removes it again.
@@ -656,7 +714,7 @@ struct KeyValueEditor<T: KVItem>: View {
             set: { newValue in
                 var row = ghost ?? makeNew()
                 row[keyPath: keyPath] = newValue
-                let isEmpty = row.key.isEmpty && row.value.isEmpty
+                let isEmpty = isRowEmpty(row)
                 if let index = items.firstIndex(where: { $0.id == row.id }) {
                     if isEmpty {
                         items.remove(at: index)
@@ -670,6 +728,13 @@ struct KeyValueEditor<T: KVItem>: View {
                 focusedCell = isEmpty ? nil : focusOn(row.id)
             }
         )
+    }
+
+    /// Ghost row's Description cell. Uses the same materializing binding as
+    /// Key/Value, so typing a description first creates a real row.
+    private var ghostDescriptionBinding: Binding<String>? {
+        guard let descriptionKeyPath else { return nil }
+        return ghostBinding(descriptionKeyPath, focusOn: { .description($0) })
     }
 
     /// Ghost row's Type picker. Materializes on first non-default kind so a
@@ -781,13 +846,11 @@ struct KeyValueEditor<T: KVItem>: View {
     private func pruneAbandonedEmptyRows(_ newValue: CellFocus?) {
         let focusedRowID: UUID?
         switch newValue {
-        case .key(let id), .value(let id): focusedRowID = id
-        case .ghostKey, .ghostValue, nil: focusedRowID = nil
+        case .key(let id), .value(let id), .description(let id): focusedRowID = id
+        case .ghostKey, .ghostValue, .ghostDescription, nil: focusedRowID = nil
         }
         items.removeAll { row in
-            row.id != focusedRowID
-                && row.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                && row.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            row.id != focusedRowID && isRowEmpty(row)
         }
     }
 
@@ -810,6 +873,10 @@ private struct KVRow: View {
     @Binding var isEnabled: Bool
     @Binding var key: String
     @Binding var value: String
+    /// Optional Description cell (variable tables); nil for every other grid.
+    var description: Binding<String>?
+    let descriptionFocus: CellFocus
+    let descriptionPlaceholder: String
     /// Form-data Type menu, trailing inside the key cell (Postman).
     var kind: Binding<FormFieldKind>?
     let showsKindMenu: Bool
@@ -875,6 +942,7 @@ private struct KVRow: View {
     private enum HoveredCell: Hashable {
         case key
         case value
+        case description
     }
 
     private var isGhostRow: Bool { onDelete == nil }
@@ -1009,6 +1077,25 @@ private struct KVRow: View {
                     )
                 }
             }
+            if description != nil {
+                verticalRule
+                cell(.description) {
+                    if let description {
+                        VariableHighlightEditor(
+                            text: description,
+                            variables: variables,
+                            suggestions: suggestions,
+                            font: .systemSubheadline,
+                            placeholder: descriptionPlaceholder,
+                            focus: focus,
+                            focusValue: descriptionFocus,
+                            isEditable: isEnabled,
+                            onEditingEnded: onEditingEnded,
+                            onHoverChanged: { setHover(.description, $0) }
+                        )
+                    }
+                }
+            }
             trailingColumn
             if bulkEditCellWidth > 0 {
                 Color.clear.frame(width: bulkEditCellWidth)
@@ -1111,7 +1198,11 @@ private struct KVRow: View {
     }
 
     private func isCellFocused(_ id: HoveredCell) -> Bool {
-        focus.wrappedValue == (id == .key ? keyFocus : valueFocus)
+        switch id {
+        case .key: focus.wrappedValue == keyFocus
+        case .value: focus.wrappedValue == valueFocus
+        case .description: focus.wrappedValue == descriptionFocus
+        }
     }
 
     private func setHover(_ cell: HoveredCell, _ hovering: Bool) {

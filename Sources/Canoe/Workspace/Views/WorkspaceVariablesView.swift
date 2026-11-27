@@ -39,6 +39,7 @@ struct WorkspaceVariablesView: View {
                 suggestions: suggestions,
                 keyHeader: "Variable",
                 valueHeader: "Value",
+                descriptionKeyPath: \.description,
                 headerBackground: nil,
                 secretKeyPath: \.isSecret,
                 // Manual order (Postman-style): rows resolve and display in

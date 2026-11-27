@@ -2,11 +2,16 @@ import Foundation
 
 /// A single variable belonging to a workspace, collection, or environment.
 /// Postman-style: a variable can be disabled (excluded from resolution) and
-/// marked secret (masked in the UI, but resolved the same way).
+/// marked secret (masked in the UI, but resolved the same way). `description`
+/// is documentation only - it never takes part in `{{...}}` resolution.
 struct Variable: Identifiable, Codable, Hashable, Sendable {
     var id: UUID = UUID()
     var key: String = ""
     var value: String = ""
+    /// Optional documentation for this variable (Postman's Description
+    /// column). Empty by default so old vault files and synthesized script
+    /// variables carry no text.
+    var description: String = ""
     var isSecret: Bool = false
     var isEnabled: Bool = true
 
@@ -14,6 +19,7 @@ struct Variable: Identifiable, Codable, Hashable, Sendable {
         case id
         case key
         case value
+        case description
         case isSecret
         case isEnabled
     }
@@ -27,6 +33,7 @@ extension Variable {
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         key = try container.decodeIfPresent(String.self, forKey: .key) ?? ""
         value = try container.decodeIfPresent(String.self, forKey: .value) ?? ""
+        description = (try? container.decodeIfPresent(String.self, forKey: .description)) ?? ""
         isSecret = try container.decodeIfPresent(Bool.self, forKey: .isSecret) ?? false
         isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
     }
