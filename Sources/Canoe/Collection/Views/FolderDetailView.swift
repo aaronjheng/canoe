@@ -1,3 +1,4 @@
+import Plume
 import SwiftUI
 
 /// Tab-based folder page: a folder is a unit of the collection, not just a tree
@@ -239,6 +240,9 @@ struct FolderDetailView: View {
     /// (debounced, like the description).
     @State private var scriptColumn: FolderScriptColumn = .preRequest
     @State private var scriptSaveTask: Task<Void, Never>?
+    /// The `ScriptFormatter` diagnostic shown under the focused editor when
+    /// ⌥⇧F hits a script that does not parse; retired after a beat.
+    @State private var invalidScriptNote: String?
 
     enum FolderScriptColumn: String {
         case preRequest = "Before request"
@@ -369,15 +373,51 @@ struct FolderDetailView: View {
             placeholder: scriptColumn == .preRequest
                 ? "Runs before the request scripts of this folder (pm.variables.set, ...)"
                 : "Runs after the request scripts of this folder (pm.expect, pm.test)",
+            // Same ⌥⇧F as the request Scripts tab (Postman's format action).
+            formatHandler: { source in
+                do {
+                    return try ScriptFormatter.format(source)
+                } catch let error as ScriptFormatter.ScriptFormatError {
+                    throw TextFormatError(message: error.message)
+                }
+            },
+            formatActionName: "Format Script",
+            onFormatError: showInvalidScriptNote,
             showsOverviewRuler: true
         )
         .padding(.horizontal, AppSpacing.medium)
         .padding(.top, AppSpacing.small)
         .padding(.bottom, AppSpacing.small)
+        .overlay(alignment: .bottom) {
+            if let invalidScriptNote {
+                Text("Invalid JavaScript - \(invalidScriptNote)")
+                    .font(AppFont.small)
+                    .foregroundStyle(AppColor.error)
+                    .padding(.horizontal, AppSpacing.small)
+                    .padding(.vertical, AppSpacing.xSmall)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(AppColor.error.opacity(AppOpacity.errorBackground))
+                    )
+                    .padding(.bottom, AppSpacing.comfortable)
+            }
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AppColor.controlBackground)
         .onChange(of: draft.preRequestScript) { _, _ in scheduleScriptSave() }
         .onChange(of: draft.postResponseScript) { _, _ in scheduleScriptSave() }
+    }
+
+    /// Surfaces the `ScriptFormatter` diagnostic and retires it after a
+    /// beat; a newer note (another ⌥⇧F meanwhile) outlives this timer.
+    private func showInvalidScriptNote(_ message: String) {
+        invalidScriptNote = message
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.5))
+            if invalidScriptNote == message {
+                invalidScriptNote = nil
+            }
+        }
     }
 
     /// Debounces script keystrokes into one auto-save per idle gap (the
