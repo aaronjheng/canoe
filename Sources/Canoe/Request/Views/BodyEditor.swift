@@ -147,6 +147,7 @@ struct BodyEditor: View {
                 scrollBeyondLastLine: true,
                 unicodeHighlight: true
             )
+            .id(request.id)
             .background(AppColor.codeBackground)
             // Same gutter as the key/value body types (see KeyValueEditor):
             // switching Body type must not shift the content's left edge.
